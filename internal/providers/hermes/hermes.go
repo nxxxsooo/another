@@ -135,12 +135,9 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		if content.Valid {
 			text = content.String
 		}
-		if text == "" {
+		mrole, ok := hermesMapRole(role)
+		if !ok || hermesSkipMessage(mrole, text) {
 			continue
-		}
-		mrole := model.RoleUser
-		if role == "assistant" {
-			mrole = model.RoleAssistant
 		}
 		conv.Messages = append(conv.Messages, model.Message{Role: mrole, Content: text})
 	}
@@ -207,6 +204,9 @@ func hermesUserLines(db *sql.DB, sessionID string) []string {
 	for rows.Next() {
 		var content sql.NullString
 		if rows.Scan(&content) == nil && content.Valid && content.String != "" {
+			if hermesSkipMessage(model.RoleUser, content.String) {
+				continue
+			}
 			lines = append(lines, content.String)
 		}
 	}
