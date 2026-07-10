@@ -6,18 +6,18 @@ import (
 	"os"
 	"strings"
 
-	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/CyrusSE/agenthop/internal/index"
 	"github.com/CyrusSE/agenthop/internal/migrate"
 	"github.com/CyrusSE/agenthop/internal/model"
 	"github.com/CyrusSE/agenthop/internal/provider"
 	"github.com/CyrusSE/agenthop/internal/registry"
 	"github.com/CyrusSE/agenthop/internal/util"
+	"github.com/atotto/clipboard"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 var (
@@ -111,7 +111,10 @@ func (i sessionItem) FilterValue() string {
 	return i.summary.ID + " " + i.summary.Title + " " + i.summary.ProjectPath + " " + i.summary.Provider
 }
 
-type providerItem struct{ id, name string; count int }
+type providerItem struct {
+	id, name string
+	count    int
+}
 
 func (i providerItem) Title() string {
 	return fmt.Sprintf("%s %s", i.name, mutedStyle.Render(fmt.Sprintf("(%d)", i.count)))
@@ -135,7 +138,7 @@ func actionItems(reg *registry.Registry, sm model.Summary) []list.Item {
 	items := []list.Item{
 		actionItem{id: "preview", title: "Preview messages", desc: "Read conversation in the right pane"},
 		actionItem{id: "migrate", title: "Migrate to another agent", desc: "Hop this session to Codex, Cursor, etc."},
-		actionItem{id: "copy-id", title: "Copy session ID", desc: sm.ShortID() + " (full id to clipboard)"},
+		actionItem{id: "copy-id", title: "Copy session ID", desc: sm.ID},
 	}
 	if p, err := reg.Get(sm.Provider); err == nil && p.SupportsResume() {
 		cmd := p.ResumeCommand(provider.WriteResult{SessionID: sm.ID, ProjectPath: sm.ProjectPath})
@@ -474,6 +477,10 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.lastResume = msg.res.Resume
+		target := msg.res.TargetName
+		if target == "" {
+			target = "target"
+		}
 		if msg.res.AlreadyExists {
 			m.status = okStyle.Render("Already migrated — resume command ready (press c to copy)")
 		} else {
@@ -483,7 +490,20 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.backStage = stageSessions
 		}
 		m.stage = stagePreview
-		m.preview.SetContent(mutedStyle.Render("Migration complete.\n\nResume command:\n") + m.lastResume)
+		var b strings.Builder
+		b.WriteString(titleStyle.Render("Migrated to "+target) + "\n\n")
+		if m.selected != nil {
+			b.WriteString(mutedStyle.Render("From: "+registry.DisplayName(m.reg, m.selected.summary.Provider)+" · "+m.selected.summary.ID) + "\n")
+		}
+		if msg.res.Write != nil {
+			b.WriteString(mutedStyle.Render("Session: "+msg.res.Write.SessionID) + "\n")
+			b.WriteString(mutedStyle.Render("Path: "+util.TildePath(msg.res.Write.StoragePath)) + "\n\n")
+		}
+		b.WriteString(accentStyle.Render("Resume command") + "\n")
+		b.WriteString(m.lastResume + "\n\n")
+		b.WriteString(mutedStyle.Render("Press c to copy · esc to go back"))
+		m.preview.SetContent(b.String())
+		m.preview.GotoTop()
 		m.layout()
 		return m, nil
 	case indexRefreshedMsg:
@@ -639,7 +659,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					case "copy-id":
 						_ = clipboard.WriteAll(m.selected.summary.ID)
-						m.status = okStyle.Render("Copied session ID to clipboard")
+						m.status = okStyle.Render("Copied session ID: " + m.selected.summary.ID)
 						return m, nil
 					case "resume":
 						if p, err := m.reg.Get(m.selected.summary.Provider); err == nil {

@@ -67,10 +67,20 @@ type Summary struct {
 }
 
 func (s Summary) ShortID() string {
-	if len(s.ID) <= 8 {
+	if len(s.ID) <= 16 {
 		return s.ID
 	}
-	return s.ID[len(s.ID)-8:]
+	if i := strings.IndexByte(s.ID, '_'); i > 0 && i < len(s.ID)-4 {
+		tail := s.ID[i+1:]
+		if len(tail) <= 20 {
+			return "…" + tail
+		}
+		return "…" + tail[len(tail)-16:]
+	}
+	if len(s.ID) <= 20 {
+		return s.ID
+	}
+	return "…" + s.ID[len(s.ID)-16:]
 }
 
 func OriginDigest(conv *Conversation) string {

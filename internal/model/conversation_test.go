@@ -23,7 +23,11 @@ func TestOriginDigestStable(t *testing.T) {
 
 func TestSummaryShortID(t *testing.T) {
 	s := model.Summary{ID: "01234567-89ab-cdef-0123-456789abcdef"}
-	if s.ShortID() != "89abcdef" {
+	if s.ShortID() != "…123-456789abcdef" {
 		t.Fatalf("short id = %q", s.ShortID())
+	}
+	s2 := model.Summary{ID: "20260628_151621_cd7bdb"}
+	if s2.ShortID() != "…151621_cd7bdb" {
+		t.Fatalf("hermes short id = %q", s2.ShortID())
 	}
 }
