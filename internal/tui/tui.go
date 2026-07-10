@@ -171,6 +171,7 @@ type indexRefreshedMsg struct {
 	err        error
 	updated    int
 	reloadPage bool
+	initial    bool
 }
 
 type modelState struct {
@@ -280,20 +281,20 @@ func targetItems(reg *registry.Registry, exclude string) []list.Item {
 }
 
 func (m modelState) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen)}
-	total := 0
+	// Show the cached page immediately, then always refresh in the background
+	// so sessions created since the last run appear without a manual 'r'.
+	cmds := []tea.Cmd{m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen), backgroundIndexCmd(m.reg, m.idx)}
 	if counts, err := m.idx.CountByProvider(); err == nil {
+		total := 0
 		for _, n := range counts {
 			total += n
 		}
 		if total > 0 {
 			cmds = append(cmds, func() tea.Msg {
-				return indexRefreshedMsg{counts: counts, reloadPage: false}
+				return indexRefreshedMsg{counts: counts, initial: true}
 			})
-			return tea.Batch(cmds...)
 		}
 	}
-	cmds = append(cmds, backgroundIndexCmd(m.reg, m.idx))
 	return tea.Batch(cmds...)
 }
 
@@ -507,6 +508,11 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 	case indexRefreshedMsg:
+		if msg.initial {
+			// Cached counts for instant render; background refresh still running.
+			m.providers.SetItems(providerItems(m.reg, msg.counts))
+			return m, nil
+		}
 		m.indexing = false
 		m.loading = false
 		if msg.err != nil {

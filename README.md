@@ -61,7 +61,7 @@ Requires **Go 1.22+** for building from source. The install script places `agent
 
 ## Quick start
 
-**1. Open the TUI** (indexes in the background on first run):
+**1. Open the TUI** (shows cached sessions instantly, refreshes the index in the background on every launch):
 
 ```bash
 agenthop
