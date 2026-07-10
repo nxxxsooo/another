@@ -52,7 +52,12 @@ func (a *App) importCmd() *cobra.Command {
 					fmt.Printf("Dry run OK: already exists at %s\n", dup.StoragePath)
 					return nil
 				}
-				_ = a.Index.RecordMigration(dst.ID(), model.OriginDigest(&conv), dup.SessionID, dup.StoragePath)
+				if ens, ok := dst.(provider.ResumeEnsurer); ok {
+					if err := ens.EnsureResumable(&conv, *dup); err != nil {
+						return fmt.Errorf("ensure resumable: %w", err)
+					}
+				}
+				_ = a.Index.RecordMigration(dst.ID(), model.OriginDigest(&conv), dup.SessionID, dup.StoragePath, conv.ID, conv.Provider)
 				fmt.Printf("ℹ️  Already imported to %s\n   Session: %s\n   Resume:  %s\n",
 					dst.DisplayName(), dup.SessionID, dst.ResumeCommand(*dup))
 				return nil
@@ -68,7 +73,7 @@ func (a *App) importCmd() *cobra.Command {
 				fmt.Printf("Dry run OK: would write to %s\n", write.StoragePath)
 				return nil
 			}
-			if err := a.Index.RecordMigration(dst.ID(), model.OriginDigest(&conv), write.SessionID, write.StoragePath); err != nil {
+			if err := a.Index.RecordMigration(dst.ID(), model.OriginDigest(&conv), write.SessionID, write.StoragePath, conv.ID, conv.Provider); err != nil {
 				return fmt.Errorf("record migration: %w", err)
 			}
 			if _, err := index.UpdateIncremental(ctx, a.Registry, a.Index, dst.ID()); err != nil {

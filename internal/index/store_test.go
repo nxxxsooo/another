@@ -88,7 +88,7 @@ func TestMigrationDedup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if err := store.RecordMigration("opencode", "digest-abc", "ses_123", "/db#ses_123"); err != nil {
+	if err := store.RecordMigration("opencode", "digest-abc", "ses_123", "/db#ses_123", "src-1", "claude-code"); err != nil {
 		t.Fatal(err)
 	}
 	sid, path, ok, err := store.FindMigration("opencode", "digest-abc")

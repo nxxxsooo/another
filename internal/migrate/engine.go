@@ -60,8 +60,13 @@ func (e *Engine) Run(ctx context.Context, opts Options) (*Result, error) {
 		return nil, provider.ErrNotInstalled
 	}
 	if existing, ok := FindDuplicate(e.Index, dst, conv); ok {
+		if ens, ok := dst.(provider.ResumeEnsurer); ok && !opts.DryRun {
+			if err := ens.EnsureResumable(conv, *existing); err != nil {
+				return nil, fmt.Errorf("ensure resumable: %w", err)
+			}
+		}
 		if e.Index != nil && !opts.DryRun {
-			_ = e.Index.RecordMigration(dst.ID(), model.OriginDigest(conv), existing.SessionID, existing.StoragePath)
+			_ = e.Index.RecordMigration(dst.ID(), model.OriginDigest(conv), existing.SessionID, existing.StoragePath, conv.ID, conv.Provider)
 		}
 		return &Result{
 			Source:        conv,
@@ -79,7 +84,7 @@ func (e *Engine) Run(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("write: %w", err)
 	}
 	if !opts.DryRun && e.Index != nil {
-		_ = e.Index.RecordMigration(dst.ID(), model.OriginDigest(conv), write.SessionID, write.StoragePath)
+		_ = e.Index.RecordMigration(dst.ID(), model.OriginDigest(conv), write.SessionID, write.StoragePath, conv.ID, conv.Provider)
 		_, _ = index.UpdateIncremental(ctx, e.Registry, e.Index, dst.ID())
 	}
 	return &Result{

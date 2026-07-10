@@ -30,9 +30,9 @@ type WriteOpts struct {
 }
 
 type WriteResult struct {
-	SessionID   string
-	StoragePath string
-	ProjectPath string
+	SessionID     string
+	StoragePath   string
+	ProjectPath   string
 	AlreadyExists bool
 }
 
@@ -48,6 +48,12 @@ type Provider interface {
 	ResumeCommand(result WriteResult) string
 }
 
+// ResumeEnsurer is implemented by targets that must register sessions in a local index (e.g. Codex threads DB).
+type ResumeEnsurer interface {
+	Provider
+	EnsureResumable(conv *model.Conversation, ref WriteResult) error
+}
+
 type StubProvider struct {
 	id          string
 	displayName string
@@ -59,10 +65,10 @@ func NewStub(id, displayName, docURL string, paths ...PathSpec) *StubProvider {
 	return &StubProvider{id: id, displayName: displayName, paths: paths, docURL: docURL}
 }
 
-func (s *StubProvider) ID() string          { return s.id }
-func (s *StubProvider) DisplayName() string { return s.displayName }
+func (s *StubProvider) ID() string               { return s.id }
+func (s *StubProvider) DisplayName() string      { return s.displayName }
 func (s *StubProvider) DefaultPaths() []PathSpec { return s.paths }
-func (s *StubProvider) Installed() bool     { return false }
+func (s *StubProvider) Installed() bool          { return false }
 
 func (s *StubProvider) Discover(context.Context, DiscoverOpts) ([]model.Summary, error) {
 	return nil, nil
@@ -76,7 +82,7 @@ func (s *StubProvider) Write(context.Context, *model.Conversation, WriteOpts) (*
 	return nil, ErrNotInstalled
 }
 
-func (s *StubProvider) SupportsResume() bool { return false }
+func (s *StubProvider) SupportsResume() bool             { return false }
 func (s *StubProvider) ResumeCommand(WriteResult) string { return "" }
 
 func (s *StubProvider) DocURL() string { return s.docURL }

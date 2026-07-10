@@ -74,26 +74,36 @@ CREATE TABLE IF NOT EXISTS migration_dedup (
   session_id TEXT NOT NULL,
   storage_path TEXT NOT NULL,
   created_at INTEGER NOT NULL,
+  origin_id TEXT,
+  origin_source TEXT,
   PRIMARY KEY (provider, origin_digest)
 );
 CREATE INDEX IF NOT EXISTS idx_migration_dedup_provider ON migration_dedup(provider);
 `)
+	if err != nil {
+		return err
+	}
+	_, _ = s.db.Exec(`ALTER TABLE migration_dedup ADD COLUMN origin_id TEXT`)
+	_, _ = s.db.Exec(`ALTER TABLE migration_dedup ADD COLUMN origin_source TEXT`)
+	_, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_migration_dedup_origin ON migration_dedup(provider, origin_id, origin_source)`)
 	return err
 }
 
 // RecordMigration stores a successful migration for deduplication (SQLite and JSONL targets).
-func (s *Store) RecordMigration(providerID, originDigest, sessionID, storagePath string) error {
+func (s *Store) RecordMigration(providerID, originDigest, sessionID, storagePath, originID, originSource string) error {
 	if originDigest == "" || sessionID == "" {
 		return nil
 	}
 	_, err := s.db.Exec(`
-INSERT INTO migration_dedup (provider, origin_digest, session_id, storage_path, created_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO migration_dedup (provider, origin_digest, session_id, storage_path, created_at, origin_id, origin_source)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(provider, origin_digest) DO UPDATE SET
   session_id=excluded.session_id,
   storage_path=excluded.storage_path,
-  created_at=excluded.created_at
-`, providerID, originDigest, sessionID, storagePath, time.Now().Unix())
+  created_at=excluded.created_at,
+  origin_id=excluded.origin_id,
+  origin_source=excluded.origin_source
+`, providerID, originDigest, sessionID, storagePath, time.Now().Unix(), originID, originSource)
 	return err
 }
 
@@ -105,6 +115,31 @@ func (s *Store) FindMigration(providerID, originDigest string) (sessionID, stora
 	err = s.db.QueryRow(`
 SELECT session_id, storage_path FROM migration_dedup
 WHERE provider = ? AND origin_digest = ? LIMIT 1`, providerID, originDigest).Scan(&sessionID, &storagePath)
+	if err == sql.ErrNoRows {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return sessionID, storagePath, true, nil
+}
+
+// FindMigrationByOrigin returns a prior migration for the same source session id.
+func (s *Store) FindMigrationByOrigin(providerID, originID, originSource string) (sessionID, storagePath string, ok bool, err error) {
+	if originID == "" {
+		return "", "", false, nil
+	}
+	if originSource != "" {
+		err = s.db.QueryRow(`
+SELECT session_id, storage_path FROM migration_dedup
+WHERE provider = ? AND origin_id = ? AND origin_source = ?
+ORDER BY created_at DESC LIMIT 1`, providerID, originID, originSource).Scan(&sessionID, &storagePath)
+	} else {
+		err = s.db.QueryRow(`
+SELECT session_id, storage_path FROM migration_dedup
+WHERE provider = ? AND origin_id = ?
+ORDER BY created_at DESC LIMIT 1`, providerID, originID).Scan(&sessionID, &storagePath)
+	}
 	if err == sql.ErrNoRows {
 		return "", "", false, nil
 	}

@@ -78,7 +78,7 @@ func TestFindDuplicateIndex(t *testing.T) {
 		Messages: []model.Message{{Role: model.RoleUser, Content: "indexed dedup"}},
 	}
 	digest := model.OriginDigest(conv)
-	_ = store.RecordMigration("hermes", digest, "hermes-ses-1", "/hermes/state.db#hermes-ses-1")
+	_ = store.RecordMigration("hermes", digest, "hermes-ses-1", "/hermes/state.db#hermes-ses-1", "src-3", "claude-code")
 	wr, ok := migrate.FindDuplicate(store, hermes.New(), conv)
 	if !ok {
 		t.Fatal("expected index duplicate")

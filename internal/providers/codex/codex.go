@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -334,12 +335,32 @@ func stringField(m map[string]any, k string) string {
 	return ""
 }
 
+func codexV2Timestamp(t time.Time) string {
+	if t.IsZero() {
+		t = time.Now().UTC()
+	}
+	return t.UTC().Format("2006-01-02T15:04:05.000Z")
+}
+
+func codexV2Line(ts string, typ string, payload map[string]any) (string, error) {
+	b, err := json.Marshal(map[string]any{
+		"timestamp": ts,
+		"type":      typ,
+		"payload":   payload,
+	})
+	return string(b), err
+}
+
 func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts provider.WriteOpts) (*provider.WriteResult, error) {
 	if len(conv.Messages) == 0 {
 		return nil, provider.ErrEmptySession
 	}
 	now := time.Now().UTC()
-	sessionID := uuid.New().String()
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+	sessionID := id.String()
 	parts := now.Format("2006-01-02T15-04-05")
 	dir := filepath.Join(p.sessionsRoot, now.Format("2006"), now.Format("01"), now.Format("02"))
 	path := filepath.Join(dir, "rollout-"+parts+"-"+sessionID+".jsonl")
@@ -350,36 +371,49 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 	if opts.DryRun {
 		return &provider.WriteResult{SessionID: sessionID, StoragePath: path, ProjectPath: project}, nil
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	cliVersion, modelProvider := p.codexDefaults()
+	lines, err := buildV2RolloutLines(conv, sessionID, project, now, cliVersion, modelProvider)
+	if err != nil {
 		return nil, err
 	}
-	meta := model.NewMigrationMeta(conv)
-	var lines []string
-	sessionMeta := map[string]any{
-		"type": "session_meta", "session_id": sessionID, "cwd": project,
-		"timestamp": now.Format(time.RFC3339Nano),
-	}
-	if b, err := json.Marshal(sessionMeta); err == nil {
-		lines = append(lines, string(b))
-	}
-	for _, m := range conv.Messages {
-		role := string(m.Role)
-		row := map[string]any{
-			"type": "event_msg", "timestamp": m.Timestamp.UTC().Format(time.RFC3339Nano),
-			"event_msg": map[string]any{"role": role, "message": m.PlainText()},
-		}
-		if b, err := json.Marshal(row); err == nil {
-			lines = append(lines, string(b))
-		}
-	}
-	metaLine := map[string]any{"type": model.MigrationType, "data": meta}
-	if b, err := json.Marshal(metaLine); err == nil {
-		lines = append(lines, string(b))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
 	}
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		return nil, err
 	}
-	return &provider.WriteResult{SessionID: sessionID, StoragePath: path, ProjectPath: project}, nil
+	result := &provider.WriteResult{SessionID: sessionID, StoragePath: path, ProjectPath: project}
+	if err := p.EnsureResumable(conv, *result); err != nil {
+		return nil, fmt.Errorf("register codex thread: %w", err)
+	}
+	return result, nil
+}
+
+func buildV2RolloutLines(conv *model.Conversation, sessionID, project string, now time.Time, cliVersion, modelProvider string) ([]string, error) {
+	meta := model.NewMigrationMeta(conv)
+	var lines []string
+	metaTS := codexV2Timestamp(now)
+	if line, err := codexV2Line(metaTS, "session_meta", map[string]any{
+		"id": sessionID, "session_id": sessionID,
+		"timestamp": now.Format(time.RFC3339Nano),
+		"cwd":       project, "originator": "agenthop", "source": "cli",
+		"thread_source": "user", "cli_version": cliVersion,
+		"model_provider": modelProvider,
+	}); err != nil {
+		return nil, err
+	} else {
+		lines = append(lines, line)
+	}
+	turnLines, err := codexBuildTurnLines(conv.Messages, project, now)
+	if err != nil {
+		return nil, err
+	}
+	lines = append(lines, turnLines...)
+	metaLine := map[string]any{"type": model.MigrationType, "data": meta}
+	if b, err := json.Marshal(metaLine); err == nil {
+		lines = append(lines, string(b))
+	}
+	return lines, nil
 }
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
