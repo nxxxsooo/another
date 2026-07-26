@@ -86,6 +86,7 @@ func SkipUserMessage(text string) bool {
 		return true
 	}
 	for _, prefix := range []string{
+		"[Request interrupted by user",
 		"<local-command-caveat>",
 		"<local-command-stdout>",
 		"<task-notification>",

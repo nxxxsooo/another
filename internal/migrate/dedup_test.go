@@ -78,13 +78,26 @@ func TestFindDuplicateIndex(t *testing.T) {
 		Messages: []model.Message{{Role: model.RoleUser, Content: "indexed dedup"}},
 	}
 	digest := model.OriginDigest(conv)
-	_ = store.RecordMigration("hermes", digest, "hermes-ses-1", "/hermes/state.db#hermes-ses-1", "src-3", "claude-code")
+	dbPath := filepath.Join(dir, "state.db")
+	if err := os.WriteFile(dbPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = store.RecordMigration("hermes", digest, "hermes-ses-1", dbPath+"#hermes-ses-1", "src-3", "claude-code")
 	wr, ok := migrate.FindDuplicate(store, hermes.New(), conv)
 	if !ok {
 		t.Fatal("expected index duplicate")
 	}
 	if wr.SessionID != "hermes-ses-1" {
 		t.Fatalf("session id = %q", wr.SessionID)
+	}
+	// A dedup record pointing at a deleted target must not count as a duplicate.
+	_ = store.RecordMigration("hermes", digest+"gone", "hermes-ses-2", filepath.Join(dir, "missing.db")+"#hermes-ses-2", "src-4", "claude-code")
+	conv2 := &model.Conversation{
+		ID: "src-4", Provider: "claude-code",
+		Messages: []model.Message{{Role: model.RoleUser, Content: "stale dedup"}},
+	}
+	if _, ok := migrate.FindDuplicate(store, hermes.New(), conv2); ok {
+		t.Fatal("stale index record with deleted target must not dedup")
 	}
 }
 

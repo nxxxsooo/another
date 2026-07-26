@@ -82,6 +82,10 @@ func DecodeCursorProjectPath(encoded string) string {
 	if encoded == "" {
 		return ""
 	}
+	// heal dirs written by an old agenthop bug that doubled the prefix
+	if strings.HasPrefix(encoded, "home-home-") {
+		encoded = encoded[len("home-"):]
+	}
 	if strings.HasPrefix(encoded, "home-") {
 		return "/" + strings.ReplaceAll(encoded, "-", string(filepath.Separator))
 	}

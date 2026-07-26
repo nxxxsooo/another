@@ -162,8 +162,7 @@ func (p *Provider) summarizeTranscript(path string) (model.Summary, error) {
 		return model.Summary{}, err
 	}
 	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
-	encoded := filepath.Base(filepath.Dir(filepath.Dir(path)))
-	project := util.DecodeCursorProjectPath(encoded)
+	project := util.DecodeCursorProjectPath(transcriptProjectDir(path))
 	picker := util.NewTitlePicker(80)
 	var msgCount int
 	_ = util.ReadJSONLLines(path, 0, func(line []byte) error {
@@ -219,6 +218,24 @@ func (p *Provider) summarizeTranscript(path string) (model.Summary, error) {
 		UpdatedAt: st.ModTime(), CreatedAt: st.ModTime(), MessageCount: msgCount,
 		StoragePath: path, SourceMtime: st.ModTime().Unix(),
 	}, nil
+}
+
+// transcriptProjectDir returns the encoded project dir name for a transcript
+// path, i.e. the segment before "agent-transcripts" — transcripts sit either
+// directly in that dir or nested one level per session.
+func transcriptProjectDir(path string) string {
+	dir := filepath.Dir(path)
+	for dir != "" {
+		parent := filepath.Dir(dir)
+		if filepath.Base(dir) == "agent-transcripts" {
+			return filepath.Base(parent)
+		}
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return filepath.Base(filepath.Dir(filepath.Dir(path)))
 }
 
 func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Conversation, error) {
@@ -340,11 +357,11 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 		project, _ = os.Getwd()
 	}
 	abs, _ := filepath.Abs(project)
-	encoded := util.EncodeClaudeProjectPath(abs)
-	encoded = strings.TrimPrefix(encoded, "-")
-	workspaceKey := encoded
+	// "/home/x/proj" encodes to "home-x-proj", which DecodeCursorProjectPath
+	// reverses; prefixing another "home-" made rediscovery decode /home/home/x.
+	encoded := strings.TrimPrefix(util.EncodeClaudeProjectPath(abs), "-")
 	sessionID := uuid.New().String()
-	transcriptDir := filepath.Join(p.projectsRoot, "home-"+encoded, "agent-transcripts", sessionID)
+	transcriptDir := filepath.Join(p.projectsRoot, encoded, "agent-transcripts", sessionID)
 	path := filepath.Join(transcriptDir, sessionID+".jsonl")
 	if opts.DryRun {
 		return &provider.WriteResult{SessionID: sessionID, StoragePath: path, ProjectPath: project}, nil
@@ -372,7 +389,6 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		return nil, err
 	}
-	_ = workspaceKey
 	return &provider.WriteResult{SessionID: sessionID, StoragePath: path, ProjectPath: project}, nil
 }
 

@@ -118,7 +118,7 @@ func FindDuplicate(idx DedupIndex, dst provider.Provider, conv *model.Conversati
 			if err != nil {
 				return nil, false
 			}
-			if ok {
+			if ok && migrationTargetExists(path) {
 				return &provider.WriteResult{
 					SessionID:     sid,
 					StoragePath:   path,
@@ -131,7 +131,7 @@ func FindDuplicate(idx DedupIndex, dst provider.Provider, conv *model.Conversati
 			if err != nil {
 				return nil, false
 			}
-			if ok {
+			if ok && migrationTargetExists(path) {
 				return &provider.WriteResult{
 					SessionID:     sid,
 					StoragePath:   path,
@@ -219,6 +219,19 @@ func scanJSONLForOrigin(path, originID, originSource string) (string, bool) {
 		return nil
 	})
 	return found, found != ""
+}
+
+// migrationTargetExists guards index dedup hits against deleted target files;
+// "db#session" paths are checked on the db file part.
+func migrationTargetExists(path string) bool {
+	if path == "" {
+		return true
+	}
+	if i := strings.IndexByte(path, '#'); i > 0 {
+		path = path[:i]
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func writeResultFromPath(path string) *provider.WriteResult {

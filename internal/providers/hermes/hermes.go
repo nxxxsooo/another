@@ -174,13 +174,24 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 		return nil, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`INSERT INTO sessions (id, source, started_at, message_count, title) VALUES (?, 'cli', ?, ?, ?)`,
-		sessionID, now, len(conv.Messages), title); err != nil {
+	// sessions.title has a unique index; disambiguate collisions with the id.
+	var titleCount int
+	_ = tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE title = ?`, title).Scan(&titleCount)
+	if titleCount > 0 {
+		title = title + " · " + sessionID[:8]
+	}
+	if _, err = tx.Exec(`INSERT INTO sessions (id, source, started_at, message_count, title, cwd) VALUES (?, 'cli', ?, ?, ?, ?)`,
+		sessionID, now, len(conv.Messages), title, conv.ProjectPath); err != nil {
 		return nil, err
 	}
-	for _, m := range conv.Messages {
-		if _, err = tx.Exec(`INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)`,
-			sessionID, string(m.Role), m.PlainText()); err != nil {
+	for i, m := range conv.Messages {
+		// messages.timestamp is NOT NULL; keep ordering for zero timestamps.
+		ts := float64(m.Timestamp.UnixMilli()) / 1000
+		if m.Timestamp.IsZero() {
+			ts = now + float64(i)/1000
+		}
+		if _, err = tx.Exec(`INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)`,
+			sessionID, string(m.Role), m.PlainText(), ts); err != nil {
 			return nil, err
 		}
 	}
