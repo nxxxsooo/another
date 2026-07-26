@@ -52,6 +52,11 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		if strings.Contains(path, "observer-sessions") && strings.Contains(path, "claude-mem") {
 			return nil
 		}
+		if opts.SkipUnchanged != nil {
+			if info, err := d.Info(); err == nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
+				return nil
+			}
+		}
 		sm, err := p.summarizeFile(path)
 		if err != nil || sm.ID == "" {
 			return nil
@@ -176,7 +181,12 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		if row.Type != "user" && row.Type != "assistant" {
 			return nil
 		}
-		if row.Message == nil {
+		if row.Message == nil || row.IsMeta {
+			return nil
+		}
+		content := contentString(row.Message.Content)
+		if content == "" {
+			// tool_result-only or injected rows carry no text worth migrating
 			return nil
 		}
 		ts := util.ParseTime(row.Timestamp)
@@ -185,7 +195,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 			role = model.RoleAssistant
 		}
 		conv.Messages = append(conv.Messages, model.Message{
-			Role: role, Content: contentString(row.Message.Content), Timestamp: ts,
+			Role: role, Content: content, Timestamp: ts,
 		})
 		return nil
 	})

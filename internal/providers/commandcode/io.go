@@ -28,6 +28,11 @@ func discoverWithRoot(ctx context.Context, root, providerID string, opts provide
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
 			return nil
 		}
+		if opts.SkipUnchanged != nil {
+			if info, err := d.Info(); err == nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
+				return nil
+			}
+		}
 		sm, err := summarizeCCFile(path, providerID)
 		if err != nil || sm.ID == "" {
 			return nil

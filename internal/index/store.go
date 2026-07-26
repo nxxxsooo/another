@@ -68,6 +68,12 @@ CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+CREATE TABLE IF NOT EXISTS source_files (
+  provider TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  source_mtime INTEGER NOT NULL,
+  PRIMARY KEY (provider, storage_path)
+);
 CREATE TABLE IF NOT EXISTS migration_dedup (
   provider TEXT NOT NULL,
   origin_digest TEXT NOT NULL,
@@ -167,6 +173,14 @@ ON CONFLICT(provider, id) DO UPDATE SET
 `, summary.ID, summary.Provider, summary.ProjectPath, summary.Title,
 		summary.CreatedAt.Unix(), summary.UpdatedAt.Unix(), summary.MessageCount,
 		summary.StoragePath, summary.SourceMtime)
+	if err != nil {
+		return err
+	}
+	// Several files can share one session id (resumed sessions); freshness is
+	// tracked per file so incremental scans can skip every unchanged path.
+	_, err = s.db.Exec(`INSERT INTO source_files (provider, storage_path, source_mtime) VALUES (?, ?, ?)
+ON CONFLICT(provider, storage_path) DO UPDATE SET source_mtime=excluded.source_mtime`,
+		summary.Provider, summary.StoragePath, summary.SourceMtime)
 	return err
 }
 
@@ -402,7 +416,10 @@ func (s *Store) GetMeta(key string) (string, error) {
 
 func (s *Store) NeedsRefresh(providerID string, storagePath string, mtime int64) (bool, error) {
 	var existing int64
-	err := s.db.QueryRow(`SELECT source_mtime FROM sessions WHERE provider = ? AND storage_path = ? LIMIT 1`, providerID, storagePath).Scan(&existing)
+	err := s.db.QueryRow(`SELECT source_mtime FROM source_files WHERE provider = ? AND storage_path = ? LIMIT 1`, providerID, storagePath).Scan(&existing)
+	if err == sql.ErrNoRows {
+		err = s.db.QueryRow(`SELECT source_mtime FROM sessions WHERE provider = ? AND storage_path = ? LIMIT 1`, providerID, storagePath).Scan(&existing)
+	}
 	if err == sql.ErrNoRows {
 		return true, nil
 	}
@@ -507,10 +524,12 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 		if _, err := store.db.Exec(`DELETE FROM sessions WHERE provider = ?`, providerFilter); err != nil {
 			return 0, err
 		}
+		_, _ = store.db.Exec(`DELETE FROM source_files WHERE provider = ?`, providerFilter)
 	} else {
 		if _, err := store.db.Exec(`DELETE FROM sessions`); err != nil {
 			return 0, err
 		}
+		_, _ = store.db.Exec(`DELETE FROM source_files`)
 	}
 	total := 0
 	for _, p := range reg.All() {
@@ -532,7 +551,9 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 			total++
 		}
 	}
-	_ = store.SetMeta("last_rebuild", time.Now().UTC().Format(time.RFC3339))
+	now := time.Now().UTC().Format(time.RFC3339)
+	_ = store.SetMeta("last_rebuild", now)
+	_ = store.SetMeta("last_update", now)
 	return total, nil
 }
 
@@ -545,11 +566,15 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 		if !p.Installed() {
 			continue
 		}
-		summaries, err := p.Discover(ctx, provider.DiscoverOpts{})
-		if err != nil {
-			return total, fmt.Errorf("%s: %w", p.ID(), err)
+		pid := p.ID()
+		skip := func(storagePath string, mtime int64) bool {
+			need, err := store.NeedsRefresh(pid, storagePath, mtime)
+			return err == nil && !need
 		}
-		_ = recordDiscoverMeta(store, p.ID(), summaries)
+		summaries, err := p.Discover(ctx, provider.DiscoverOpts{SkipUnchanged: skip})
+		if err != nil {
+			return total, fmt.Errorf("%s: %w", pid, err)
+		}
 		for _, sm := range summaries {
 			need, err := store.NeedsRefresh(sm.Provider, sm.StoragePath, sm.SourceMtime)
 			if err != nil || need {
@@ -558,6 +583,11 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 				}
 				total++
 			}
+		}
+		// Skipped files never reach summaries, so record the indexed count
+		// rather than this scan's (partial) discover count.
+		if n, err := store.Count(ListOpts{Provider: pid}); err == nil {
+			_ = store.SetMeta(discoverCountMetaKey(pid), strconv.Itoa(n))
 		}
 	}
 	_ = store.SetMeta("last_update", time.Now().UTC().Format(time.RFC3339))

@@ -22,6 +22,9 @@ type SessionRef struct {
 type DiscoverOpts struct {
 	ProjectFilter string
 	Limit         int
+	// SkipUnchanged, when set, lets file-walking providers skip summarizing a
+	// storage path whose mtime already matches the index (incremental scans).
+	SkipUnchanged func(storagePath string, mtime int64) bool
 }
 
 type WriteOpts struct {

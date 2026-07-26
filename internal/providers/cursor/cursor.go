@@ -54,6 +54,11 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		if err != nil || d.IsDir() || filepath.Base(path) != "store.db" {
 			return nil
 		}
+		if opts.SkipUnchanged != nil {
+			if info, err := d.Info(); err == nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
+				return nil
+			}
+		}
 		sm, err := p.summarizeStore(path)
 		if err != nil || sm.ID == "" {
 			return nil
@@ -76,6 +81,11 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		}
 		if opts.Limit > 0 && len(out) >= opts.Limit {
 			return filepath.SkipAll
+		}
+		if opts.SkipUnchanged != nil {
+			if info, err := d.Info(); err == nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
+				return nil
+			}
 		}
 		sm, err := p.summarizeTranscript(path)
 		if err != nil || sm.ID == "" {

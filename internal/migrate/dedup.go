@@ -10,6 +10,7 @@ import (
 	"github.com/CyrusSE/agenthop/internal/model"
 	"github.com/CyrusSE/agenthop/internal/provider"
 	"github.com/CyrusSE/agenthop/internal/util"
+	"github.com/google/uuid"
 )
 
 // DedupIndex is satisfied by index.Store for migration deduplication.
@@ -222,11 +223,10 @@ func scanJSONLForOrigin(path, originID, originSource string) (string, bool) {
 
 func writeResultFromPath(path string) *provider.WriteResult {
 	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
-	base := filepath.Base(path)
-	if strings.HasPrefix(base, "rollout-") {
-		parts := strings.Split(strings.TrimSuffix(base, ".jsonl"), "-")
-		if len(parts) >= 2 {
-			id = parts[len(parts)-1]
+	if trimmed := strings.TrimPrefix(id, "rollout-"); trimmed != id && len(trimmed) >= 36 {
+		// codex rollout filenames end in a dash-containing UUID
+		if tail := trimmed[len(trimmed)-36:]; uuid.Validate(tail) == nil {
+			id = tail
 		}
 	}
 	_ = util.ReadJSONLLines(path, 3, func(line []byte) error {

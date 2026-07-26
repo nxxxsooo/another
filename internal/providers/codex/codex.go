@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,7 +20,12 @@ import (
 const ProviderID = "codex"
 
 // cap summarize scan so indexing thousands of rollout files stays practical.
-const codexSummarizeMaxLines = 500
+const (
+	codexSummarizeMaxLines = 500
+	codexSummarizeMaxBytes = 512 * 1024
+)
+
+var errSummarizeCap = errors.New("summarize byte cap reached")
 
 type Provider struct {
 	sessionsRoot string
@@ -58,6 +64,11 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		if err != nil || d.IsDir() || !strings.HasPrefix(filepath.Base(path), "rollout-") || !strings.HasSuffix(path, ".jsonl") {
 			return nil
 		}
+		if opts.SkipUnchanged != nil {
+			if info, err := d.Info(); err == nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
+				return nil
+			}
+		}
 		sm, err := p.summarizeFile(path)
 		if err != nil || sm.ID == "" {
 			return nil
@@ -85,11 +96,17 @@ func (p *Provider) SummarizeFile(path string) (model.Summary, error) {
 }
 
 func sessionIDFromRollout(path string) string {
-	base := filepath.Base(path)
-	base = strings.TrimSuffix(base, ".jsonl")
-	parts := strings.Split(base, "-")
-	if len(parts) >= 2 {
-		return parts[len(parts)-1]
+	base := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	base = strings.TrimPrefix(base, "rollout-")
+	// rollout-<timestamp>-<uuid>.jsonl: the UUID itself contains dashes, so
+	// take the trailing 36 chars instead of the last dash-separated field.
+	if len(base) >= 36 {
+		if tail := base[len(base)-36:]; uuid.Validate(tail) == nil {
+			return tail
+		}
+	}
+	if i := strings.LastIndexByte(base, '-'); i >= 0 && i+1 < len(base) {
+		return base[i+1:]
 	}
 	return base
 }
@@ -226,7 +243,12 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 	var msgCount int
 	var first, last time.Time
 	var project string
+	var scanned int
 	_ = util.ReadJSONLLines(path, codexSummarizeMaxLines, func(line []byte) error {
+		scanned += len(line)
+		if scanned > codexSummarizeMaxBytes {
+			return errSummarizeCap
+		}
 		var row map[string]any
 		if json.Unmarshal(line, &row) != nil {
 			return nil

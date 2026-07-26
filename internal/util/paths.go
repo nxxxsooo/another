@@ -128,7 +128,9 @@ func ScanJSONLEdges(path string, headLines int, tailChunk int64, match func(line
 		return false
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
+	// ponytail: cap head scan at 512KB — migration metadata lives in the first
+	// few lines or the tail; unbounded head reads made dedup walks scan GBs.
+	sc := bufio.NewScanner(io.LimitReader(f, 512*1024))
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for i := 0; i < headLines && sc.Scan(); i++ {
 		line := bytes.TrimSpace(sc.Bytes())
@@ -170,9 +172,29 @@ func TailJSONLLines(path string, maxLines int) ([][]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	// ponytail: fixed 256KB tail window instead of reading the whole file;
+	// a final line longer than the window is dropped and callers fall back.
+	const tailChunk = 256 * 1024
+	truncated := st.Size() > tailChunk
+	if truncated {
+		if _, err := f.Seek(st.Size()-tailChunk, io.SeekStart); err != nil {
+			return nil, err
+		}
+	}
 	data, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
+	}
+	if truncated {
+		if i := bytes.IndexByte(data, '\n'); i >= 0 {
+			data = data[i+1:]
+		} else {
+			data = nil
+		}
 	}
 	lines := bytes.Split(data, []byte("\n"))
 	var out [][]byte
