@@ -450,6 +450,11 @@ func TestListProjectCWDAtHome(t *testing.T) {
 
 func TestIndexBehindDiscoverAndStale(t *testing.T) {
 	dir := t.TempDir()
+	codexHome := filepath.Join(dir, "codex")
+	if err := os.MkdirAll(filepath.Join(codexHome, "sessions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", codexHome)
 	store, err := index.Open(filepath.Join(dir, "test.db"))
 	if err != nil {
 		t.Fatal(err)
