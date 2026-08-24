@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -69,7 +70,7 @@ func TestV2RolloutWhitespaceRoundTrip(t *testing.T) {
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := (&Provider{}).Load(t.Context(), provider.SessionRef{StoragePath: path})
+	loaded, err := (&Provider{}).Load(context.Background(), provider.SessionRef{StoragePath: path})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func TestV2RolloutPreservesAlreadyLoadedUserAssistantText(t *testing.T) {
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := (&Provider{}).Load(t.Context(), provider.SessionRef{StoragePath: path})
+	loaded, err := (&Provider{}).Load(context.Background(), provider.SessionRef{StoragePath: path})
 	if err != nil {
 		t.Fatal(err)
 	}

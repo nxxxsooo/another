@@ -210,6 +210,9 @@ func (a *App) showCmd() *cobra.Command {
 			}
 			for _, m := range msgs {
 				text := m.PlainText()
+				if m.Role == model.RoleUser {
+					text = util.DisplayUserText(text)
+				}
 				if !raw {
 					text = util.TruncateRunes(text, 2000)
 				}

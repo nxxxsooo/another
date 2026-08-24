@@ -38,3 +38,10 @@ func TestTitlePickerPrefersPlain(t *testing.T) {
 		t.Fatalf("Title() = %q", got)
 	}
 }
+
+func TestDisplayUserTextRemovesCursorEnvelope(t *testing.T) {
+	input := "<timestamp>Tuesday, Aug 25, 2026, 3:32 AM (UTC+7)</timestamp>\n<user_query>\ncheck my vps right now\n</user_query>"
+	if got := DisplayUserText(input); got != "check my vps right now" {
+		t.Fatalf("DisplayUserText() = %q", got)
+	}
+}

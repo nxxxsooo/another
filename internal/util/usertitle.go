@@ -93,6 +93,14 @@ func NormalizeUserText(text string) (string, bool) {
 	return text, text != "" && !SkipUserMessage(text)
 }
 
+// DisplayUserText removes provider transport wrappers without changing stored content.
+func DisplayUserText(text string) string {
+	if normalized, ok := NormalizeUserText(text); ok {
+		return normalized
+	}
+	return text
+}
+
 // SkipUserMessage reports agent-injected user lines that are not real prompts.
 func SkipUserMessage(text string) bool {
 	text = strings.TrimSpace(text)

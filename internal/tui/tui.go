@@ -495,7 +495,11 @@ func loadPreviewCmd(ctx context.Context, reg *registry.Registry, sm model.Summar
 			registry.DisplayName(reg, conv.Provider), util.FormatRelative(conv.UpdatedAt), len(conv.Messages))))
 		for _, msg := range conv.Messages {
 			role := accentStyle.Render(string(msg.Role))
-			b.WriteString(role + "\n" + msg.PlainText() + "\n\n")
+			text := msg.PlainText()
+			if msg.Role == model.RoleUser {
+				text = util.DisplayUserText(text)
+			}
+			b.WriteString(role + "\n" + text + "\n\n")
 		}
 		return previewLoadedMsg{content: b.String()}
 	}
