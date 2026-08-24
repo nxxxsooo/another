@@ -158,7 +158,7 @@ type MigrationMeta struct {
 
 const MigrationType = "agenthop_migration"
 
-const MigrationTargetFormatVersion = 4
+const MigrationTargetFormatVersion = 5
 
 // ParseMigrationMeta recognizes native agenthop markers and compatible ctxmv
 // markers, either bare or wrapped in a provider progress/data object.

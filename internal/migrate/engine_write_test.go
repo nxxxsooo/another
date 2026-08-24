@@ -91,6 +91,7 @@ func ptrMigration(meta model.MigrationMeta) *model.MigrationMeta { return &meta 
 func TestResumableConversationBoundsAndNormalizesProviderHistory(t *testing.T) {
 	source := &model.Conversation{ID: "long", Provider: "cursor", Title: "Long task"}
 	source.Messages = append(source.Messages, model.Message{Role: model.RoleUser, Content: "<user_info>provider setup</user_info>"})
+	source.Messages = append(source.Messages, model.Message{Role: model.RoleAssistant, Content: "[REDACTED]"})
 	for i := 0; i < 200; i++ {
 		source.Messages = append(source.Messages,
 			model.Message{Role: model.RoleUser, Content: fmt.Sprintf("<timestamp>now</timestamp><user_query>prompt %d</user_query>", i)},
@@ -117,6 +118,9 @@ func TestResumableConversationBoundsAndNormalizesProviderHistory(t *testing.T) {
 	}
 	var continueCount int
 	for _, message := range projected.Messages {
+		if message.Content == "[REDACTED]" {
+			t.Fatal("provider redaction placeholder reached resumable context")
+		}
 		if message.Content == "continue correctly" {
 			continueCount++
 		}

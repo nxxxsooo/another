@@ -727,7 +727,11 @@ func extractCursorMessage(row map[string]any) string {
 					}
 				}
 			}
-			return strings.Join(parts, "\n")
+			text := strings.Join(parts, "\n")
+			if strings.TrimSpace(text) == "[REDACTED]" {
+				return ""
+			}
+			return text
 		}
 	}
 	return ""

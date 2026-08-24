@@ -360,6 +360,16 @@ func TestStoredMessageRawHexAndProtobuf(t *testing.T) {
 	}
 }
 
+func TestExtractCursorMessageDropsRedactedToolPlaceholder(t *testing.T) {
+	row := map[string]any{"message": map[string]any{"content": []any{
+		map[string]any{"type": "text", "text": "[REDACTED]"},
+		map[string]any{"type": "tool_use", "name": "shell"},
+	}}}
+	if got := extractCursorMessage(row); got != "" {
+		t.Fatalf("redacted placeholder = %q", got)
+	}
+}
+
 func TestLoadStoreTraversesActiveGraphInReferenceOrder(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "store.db")

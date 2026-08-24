@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -176,6 +177,10 @@ func resumableConversation(source *model.Conversation) (*model.Conversation, str
 			continue
 		}
 		text := message.PlainText()
+		if message.Role == model.RoleAssistant && strings.TrimSpace(text) == "[REDACTED]" {
+			changed = true
+			continue
+		}
 		if message.Role == model.RoleUser {
 			normalized, ok := util.NormalizeUserText(text)
 			if !ok {
