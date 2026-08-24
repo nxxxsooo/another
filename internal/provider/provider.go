@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"os"
+	"time"
 
 	"github.com/CyrusSE/agenthop/internal/model"
 )
@@ -23,8 +25,27 @@ type DiscoverOpts struct {
 	ProjectFilter string
 	Limit         int
 	// SkipUnchanged, when set, lets file-walking providers skip summarizing a
-	// storage path whose mtime already matches the index (incremental scans).
+	// storage path whose Unix-seconds mtime already matches the index.
 	SkipUnchanged func(storagePath string, mtime int64) bool
+	// SkipSource is the precise variant used by the index. mtime is UnixNano;
+	// size catches filesystems whose timestamp resolution is coarse.
+	SkipSource func(storagePath string, mtime, size int64) bool
+}
+
+// SQLiteSourceStamp includes uncheckpointed WAL data in a database fingerprint.
+func SQLiteSourceStamp(path string, main os.FileInfo) (time.Time, int64, error) {
+	mtime, size := main.ModTime(), main.Size()
+	wal, err := os.Stat(path + "-wal")
+	if os.IsNotExist(err) {
+		return mtime, size, nil
+	}
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	if wal.ModTime().After(mtime) {
+		mtime = wal.ModTime()
+	}
+	return mtime, size + wal.Size(), nil
 }
 
 type WriteOpts struct {
@@ -51,10 +72,22 @@ type Provider interface {
 	ResumeCommand(result WriteResult) string
 }
 
+// PreviewLoader lets providers with large native stores load a bounded recent
+// preview without weakening full loads used by migration and verification.
+type PreviewLoader interface {
+	LoadPreview(context.Context, SessionRef, int) (*model.Conversation, error)
+}
+
 // ResumeEnsurer is implemented by targets that must register sessions in a local index (e.g. Codex threads DB).
 type ResumeEnsurer interface {
 	Provider
 	EnsureResumable(conv *model.Conversation, ref WriteResult) error
+}
+
+// WriteCleaner removes only the exact artifact returned by Write. Engines use
+// it when post-write verification fails; providers must not perform broad scans.
+type WriteCleaner interface {
+	CleanupWrite(context.Context, WriteResult) error
 }
 
 type StubProvider struct {

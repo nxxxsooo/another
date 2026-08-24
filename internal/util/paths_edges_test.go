@@ -27,3 +27,21 @@ func TestScanJSONLEdgesFindsTailMeta(t *testing.T) {
 		t.Fatal("expected tail migration line to match")
 	}
 }
+
+func TestReadJSONLPrefixBoundsLargeRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "large.jsonl")
+	data := `{"type":"response_item","payload":"` + strings.Repeat("x", 2<<20) + `"}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var got int
+	if err := util.ReadJSONLPrefix(path, 64<<10, 10, func(line []byte) error {
+		got = len(line)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got == 0 || got > 64<<10 {
+		t.Fatalf("callback bytes = %d, want 1..65536", got)
+	}
+}

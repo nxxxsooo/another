@@ -32,12 +32,13 @@ You hit a rate limit mid-task, or you want a different model for the next step. 
 
 | | What you get |
 |---|---|
-| **Browse** | Unified session list across agents, filtered by **here** (this folder) or **everywhere** |
-| **Preview** | Read conversation history before you migrate |
+| **Browse** | Unified, paginated session list across agents, filtered by **here** or **everywhere** |
+| **Search** | Find words in titles and normalized user/assistant messages |
+| **Preview** | Read the complete wrapped conversation before you migrate |
 | **Migrate** | One command (or TUI flow) to hop a session to another provider |
 | **Resume** | Copy or print the exact resume command for the target agent |
-| **Fast** | SQLite index at `~/.cache/agenthop/index.db` — no full JSONL rescan on every list |
-| **Safe** | Content-digest dedup — re-running migration won't duplicate sessions |
+| **Fast** | Source-aware SQLite index at `~/.cache/agenthop/index.db` — unchanged sessions are not reparsed |
+| **Safe** | Snapshot dedup, atomic writes, destination verification, and exact rollback |
 
 ---
 
@@ -61,7 +62,7 @@ Requires **Go 1.22+** for building from source. The install script places `agent
 
 ## Quick start
 
-**1. Open the TUI** (shows cached sessions instantly, refreshes the index in the background on every launch):
+**1. Open the TUI** (shows cached sessions instantly and refreshes metadata only when the index is stale):
 
 ```bash
 agenthop
@@ -84,7 +85,15 @@ agenthop list --limit 20
 # Preview a session
 agenthop show <session-id> --limit 15
 
-# Migrate Claude → Codex and get resume command
+# Search titles and conversation text
+agenthop search "database timeout" --cwd
+
+# Guided migration (both forms are equivalent)
+agenthop --migrate
+agenthop migrate
+
+# Direct ctxmv-style migration and resume command
+agenthop <session-id> --from claude-code --to codex -y
 agenthop migrate <session-id> --from claude-code --to codex -y
 agenthop resume <session-id> --from claude-code --to codex
 ```
@@ -92,12 +101,13 @@ agenthop resume <session-id> --from claude-code --to codex
 **3. Refresh the index** when you've created new sessions in your agents:
 
 ```bash
-agenthop index update          # incremental
-agenthop index rebuild         # full rebuild
+agenthop index update          # incremental metadata + changed full text
+agenthop index rebuild         # transactional metadata rebuild + full text
+agenthop index update --metadata-only
 agenthop list --refresh        # rescan then list
 ```
 
-> `list` reads from the cached index by default. Use `--refresh` only when you need a live rescan.
+> Full-text search stores normalized user/assistant conversation text locally in the private index. The cache directory is mode `0700` and SQLite files are mode `0600`.
 
 ---
 
@@ -115,7 +125,7 @@ The default interface is a Codex-style **session browser**: one list for all age
   1h ago  Refactor API           Codex · 8a2f1c3e · …/my-app
   …
 
-  ↑↓ navigate · enter actions · w here · a everywhere · [/] page · p agent · r refresh
+  ↑↓ navigate · enter preview · / search · m migrate · w here · a everywhere
 ```
 
 ### Here vs everywhere
@@ -130,7 +140,9 @@ The default interface is a Codex-style **session browser**: one list for all age
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Open **actions** menu for the selected session |
+| `Enter` | Preview the selected session |
+| `/` | Search titles and user/assistant messages |
+| `s` | Toggle subagent sessions |
 | `w` / `a` | Toggle **here** (this folder) vs **everywhere** |
 | `[` / `]` | Previous / next page (status shows `page N/M` when more sessions exist) |
 | `p` | Filter by agent provider |
@@ -140,7 +152,7 @@ The default interface is a Codex-style **session browser**: one list for all age
 | `Esc` | Back |
 | `q` | Quit |
 
-**Actions menu** (after `Enter` on a session): preview messages, migrate, copy session ID, copy resume command.
+At 100 columns or wider, detail and migration views use split panes. Narrow terminals use a full-width drilldown; previews rewrap when the terminal is resized.
 
 ---
 
@@ -153,7 +165,7 @@ The default interface is a Codex-style **session browser**: one list for all age
 | Cursor CLI | `cursor` | `cursor-agent --resume <id>` |
 | OpenCode | `opencode` | `opencode --session <id>` |
 | CommandCode | `commandcode` | `commandcode --resume <id>` |
-| Hermes | `hermes` | `hermes --session <id>` |
+| Hermes | `hermes` | `hermes --resume <id>` |
 
 Check that agent data paths are discoverable:
 
@@ -169,11 +181,13 @@ Add a new provider: [docs/adding-a-provider.md](docs/adding-a-provider.md)
 ## CLI
 
 ```bash
-agenthop list [--cwd] [--provider ID] [--limit N] [--refresh]
+agenthop [<id> --to provider] [--migrate]
+agenthop list [--cwd] [--provider ID] [--include-subagents] [--limit N] [--refresh]
+agenthop search <keywords> [--cwd] [--provider ID] [--include-subagents] [--no-wait]
 agenthop show <id> [--provider ID] [--limit N]
-agenthop migrate <id> --to <provider> [--from ID] [--dry-run] [-y]
+agenthop migrate [<id>] [--to provider] [--from ID] [--dry-run] [-y]
 agenthop resume <id> --to <provider> [--from ID]
-agenthop index {status|rebuild|update} [--provider ID]
+agenthop index {status|rebuild|update} [--provider ID] [--metadata-only]
 agenthop export <id> -o session.agenthop.json
 agenthop import session.agenthop.json --to <provider> [-y]
 agenthop providers [doctor]
@@ -205,8 +219,8 @@ Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Provider guide: [docs/adding
 
 ## Limitations
 
-- **Cursor GUI** chat history uses different storage than **Cursor CLI** (`cursor-agent`); agenthop indexes CLI sessions.
-- Tool and system messages may not round-trip perfectly on every target provider.
+- Cursor formats evolve frequently; Agenthop writes the native `store.db` graph, CLI `meta.json`, and transcript fallback, then verifies the conversation it can reload.
+- The portable fidelity contract covers ordered user/assistant text and timestamps. Tool, reasoning, image, and system structures are best-effort because providers do not share equivalent formats.
 - **Claude Code** resume may require `cd` to the original project directory.
 
 ---

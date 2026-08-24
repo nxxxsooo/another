@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/CyrusSE/agenthop/internal/index"
 	"github.com/CyrusSE/agenthop/internal/migrate"
@@ -15,9 +16,11 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
@@ -34,8 +37,8 @@ var (
 
 const (
 	minPageSize    = 50
-	maxPageSize    = 500
-	maxShowAllPage = 10000
+	maxPageSize    = 200
+	maxShowAllPage = 200
 )
 
 func pageSizeForHeight(h int) int {
@@ -58,6 +61,7 @@ const (
 	stageProviders
 	stagePreview
 	stageMigrate
+	stageConfirm
 )
 
 var providerColors = map[string]lipgloss.Color{
@@ -72,6 +76,7 @@ var providerColors = map[string]lipgloss.Color{
 type sessionItem struct {
 	summary     model.Summary
 	providerLbl string
+	snippet     string
 }
 
 func (i sessionItem) Title() string {
@@ -104,7 +109,11 @@ func (i sessionItem) Description() string {
 	if len(runes) > 36 {
 		proj = "…" + string(runes[len(runes)-35:])
 	}
-	return fmt.Sprintf("%s · %s · %s", lbl, i.summary.ShortID(), proj)
+	desc := fmt.Sprintf("%s · %s · %s", lbl, i.summary.ShortID(), proj)
+	if i.snippet != "" && i.snippet != i.summary.Title {
+		desc += " · " + truncate(strings.ReplaceAll(i.snippet, "\n", " "), 72)
+	}
+	return desc
 }
 
 func (i sessionItem) FilterValue() string {
@@ -171,40 +180,76 @@ type indexRefreshedMsg struct {
 	err        error
 	updated    int
 	reloadPage bool
-	initial    bool
+}
+type contentIndexedMsg struct {
+	status index.ContentIndexStatus
+	err    error
+}
+type searchResultsMsg struct {
+	items  []list.Item
+	query  string
+	status index.ContentIndexStatus
+	err    error
 }
 
 type modelState struct {
-	reg            *registry.Registry
-	idx            *index.Store
-	engine         *migrate.Engine
-	providers      list.Model
-	sessions       list.Model
-	actions        list.Model
-	targets        list.Model
-	preview        viewport.Model
-	spinner        spinner.Model
-	stage          int
-	backStage      int
-	selected       *sessionItem
-	loading        bool
-	indexing       bool
-	cwdMode        bool
-	pageOffset     int
-	pageSize       int
-	showAllOnPage  bool
-	totalSessions  int
-	providerFilter string
-	cwd            string
-	pageGen        uint64
-	lastResume     string
-	err            string
-	status         string
-	width          int
-	height         int
+	reg              *registry.Registry
+	idx              *index.Store
+	engine           *migrate.Engine
+	providers        list.Model
+	sessions         list.Model
+	actions          list.Model
+	targets          list.Model
+	preview          viewport.Model
+	searchInput      textinput.Model
+	spinner          spinner.Model
+	stage            int
+	backStage        int
+	selected         *sessionItem
+	loading          bool
+	indexing         bool
+	contentIndexing  bool
+	cwdMode          bool
+	pageOffset       int
+	pageSize         int
+	showAllOnPage    bool
+	includeSubagents bool
+	searching        bool
+	searchQuery      string
+	guided           bool
+	confirmTarget    string
+	totalSessions    int
+	providerFilter   string
+	cwd              string
+	pageGen          uint64
+	lastResume       string
+	err              string
+	status           string
+	width            int
+	height           int
+	ctx              context.Context
+	cancel           context.CancelFunc
+	previewContent   string
 }
 
 func Run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine) error {
+	return run(reg, idx, engine, nil, false)
+}
+
+// RunMigrate opens the migration picker, optionally preselecting a session.
+func RunMigrate(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, sessionID, from string) error {
+	var selected *model.Summary
+	if sessionID != "" {
+		sm, _, err := migrate.ResolveSession(context.Background(), reg, idx, sessionID, from)
+		if err != nil {
+			return err
+		}
+		selected = sm
+	}
+	return run(reg, idx, engine, selected, true)
+}
+
+func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initial *model.Summary, guided bool) error {
 	cwd, err := os.Getwd()
 	cwdMode := true
 	if err != nil {
@@ -238,16 +283,31 @@ func Run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine) error
 	actionList.DisableQuitKeybindings()
 
 	vp := viewport.New(64, 20)
+	search := textinput.New()
+	search.Prompt = "/ "
+	search.Placeholder = "search titles and messages"
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = accentStyle
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	m := modelState{
 		reg: reg, idx: idx, engine: engine,
 		providers: provList, sessions: sessList, actions: actionList, targets: targetList,
-		preview: vp, spinner: sp,
-		stage: stageSessions, cwdMode: cwdMode, cwd: cwd, indexing: true, pageGen: 1,
-		pageSize: 100, showAllOnPage: true,
+		preview: vp, searchInput: search, spinner: sp,
+		stage: stageSessions, cwdMode: cwdMode, cwd: cwd,
+		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
+		pageSize: 200, guided: guided, ctx: ctx, cancel: cancel,
+	}
+	m.contentIndexing = !m.indexing
+	if initial != nil {
+		sel := sessionItem{summary: *initial, providerLbl: registry.DisplayName(reg, initial.Provider)}
+		m.selected = &sel
+		m.sessions.SetItems([]list.Item{sel})
+		m.targets.SetItems(targetItems(reg, initial.Provider))
+		m.stage = stageMigrate
+		m.cwdMode = false
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, runErr := p.Run()
@@ -281,19 +341,11 @@ func targetItems(reg *registry.Registry, exclude string) []list.Item {
 }
 
 func (m modelState) Init() tea.Cmd {
-	// Show the cached page immediately, then always refresh in the background
-	// so sessions created since the last run appear without a manual 'r'.
-	cmds := []tea.Cmd{m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen), backgroundIndexCmd(m.reg, m.idx)}
-	if counts, err := m.idx.CountByProvider(); err == nil {
-		total := 0
-		for _, n := range counts {
-			total += n
-		}
-		if total > 0 {
-			cmds = append(cmds, func() tea.Msg {
-				return indexRefreshedMsg{counts: counts, initial: true}
-			})
-		}
+	cmds := []tea.Cmd{m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen)}
+	if m.indexing {
+		cmds = append(cmds, backgroundIndexCmd(m.ctx, m.reg, m.idx))
+	} else {
+		cmds = append(cmds, contentIndexCmd(m.ctx, m.reg, m.idx))
 	}
 	return tea.Batch(cmds...)
 }
@@ -317,9 +369,10 @@ func listOptsFor(m modelState) index.ListOpts {
 		offset = 0
 	}
 	opts := index.ListOpts{
-		Provider: m.providerFilter,
-		Limit:    limit,
-		Offset:   offset,
+		Provider:         m.providerFilter,
+		Limit:            limit,
+		Offset:           offset,
+		IncludeSubagents: m.includeSubagents,
 	}
 	if m.cwdMode && m.cwd != "" {
 		opts.ProjectCWD = m.cwd
@@ -372,31 +425,67 @@ func (m modelState) gotoStage(stage int) modelState {
 	return m
 }
 
-func backgroundIndexCmd(reg *registry.Registry, idx *index.Store) tea.Cmd {
+func backgroundIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Store) tea.Cmd {
 	return func() tea.Msg {
-		n, err := index.UpdateIncremental(context.Background(), reg, idx, "")
+		n, err := index.UpdateIncremental(ctx, reg, idx, "")
 		counts, _ := idx.CountByProvider()
 		return indexRefreshedMsg{counts: counts, err: err, updated: n, reloadPage: true}
 	}
 }
 
-func refreshIndexCmd(reg *registry.Registry, idx *index.Store, providerFilter string, reloadPage bool) tea.Cmd {
+func contentIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Store) tea.Cmd {
 	return func() tea.Msg {
-		n, err := index.UpdateIncremental(context.Background(), reg, idx, providerFilter)
+		_, _, err := idx.IndexPendingContent(ctx, reg, 0, false)
+		status, statusErr := idx.ContentStatus()
+		if err == nil {
+			err = statusErr
+		}
+		return contentIndexedMsg{status: status, err: err}
+	}
+}
+
+func searchCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, query, providerFilter, cwd string, includeSubagents bool) tea.Cmd {
+	return func() tea.Msg {
+		hits, err := idx.Search(index.SearchOpts{
+			Query: query, Provider: providerFilter, ProjectCWD: cwd,
+			IncludeSubagents: includeSubagents, Limit: maxShowAllPage,
+		})
+		status, statusErr := idx.ContentStatus()
+		if err == nil {
+			err = statusErr
+		}
+		items := make([]list.Item, 0, len(hits))
+		for _, hit := range hits {
+			items = append(items, sessionItem{summary: hit.Session, snippet: hit.Snippet,
+				providerLbl: registry.DisplayName(reg, hit.Session.Provider)})
+		}
+		return searchResultsMsg{items: items, query: query, status: status, err: err}
+	}
+}
+
+func refreshIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, providerFilter string, reloadPage bool) tea.Cmd {
+	return func() tea.Msg {
+		n, err := index.UpdateIncremental(ctx, reg, idx, providerFilter)
 		counts, _ := idx.CountByProvider()
 		return indexRefreshedMsg{counts: counts, err: err, updated: n, reloadPage: reloadPage}
 	}
 }
 
-func loadPreviewCmd(reg *registry.Registry, sm model.Summary) tea.Cmd {
+func loadPreviewCmd(ctx context.Context, reg *registry.Registry, sm model.Summary) tea.Cmd {
 	return func() tea.Msg {
 		p, err := reg.Get(sm.Provider)
 		if err != nil {
 			return previewLoadedMsg{err: err}
 		}
-		conv, err := p.Load(context.Background(), provider.SessionRef{
+		ref := provider.SessionRef{
 			ID: sm.ID, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath,
-		})
+		}
+		var conv *model.Conversation
+		if preview, ok := p.(provider.PreviewLoader); ok {
+			conv, err = preview.LoadPreview(ctx, ref, 40)
+		} else {
+			conv, err = p.Load(ctx, ref)
+		}
 		if err != nil {
 			return previewLoadedMsg{err: err}
 		}
@@ -404,22 +493,17 @@ func loadPreviewCmd(reg *registry.Registry, sm model.Summary) tea.Cmd {
 		b.WriteString(titleStyle.Render(truncate(conv.Title, 60)) + "\n")
 		b.WriteString(mutedStyle.Render(fmt.Sprintf("%s · %s · %d messages\n\n",
 			registry.DisplayName(reg, conv.Provider), util.FormatRelative(conv.UpdatedAt), len(conv.Messages))))
-		msgs := conv.Messages
-		if len(msgs) > 40 {
-			b.WriteString(mutedStyle.Render(fmt.Sprintf("… last 40 of %d\n\n", len(msgs))))
-			msgs = msgs[len(msgs)-40:]
-		}
-		for _, msg := range msgs {
+		for _, msg := range conv.Messages {
 			role := accentStyle.Render(string(msg.Role))
-			b.WriteString(role + "\n" + truncate(msg.PlainText(), 500) + "\n\n")
+			b.WriteString(role + "\n" + msg.PlainText() + "\n\n")
 		}
 		return previewLoadedMsg{content: b.String()}
 	}
 }
 
-func migrateCmd(engine *migrate.Engine, sm model.Summary, to string) tea.Cmd {
+func migrateCmd(ctx context.Context, engine *migrate.Engine, sm model.Summary, to string) tea.Cmd {
 	return func() tea.Msg {
-		res, err := engine.Run(context.Background(), migrate.Options{
+		res, err := engine.Run(ctx, migrate.Options{
 			SessionID: sm.ID, FromProvider: sm.Provider, ToProvider: to,
 		})
 		return migrateDoneMsg{res: res, err: err}
@@ -467,7 +551,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 			return m, nil
 		}
-		m.preview.SetContent(msg.content)
+		m.previewContent = msg.content
 		m.stage = stagePreview
 		m.layout()
 		return m, nil
@@ -487,6 +571,9 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = okStyle.Render("Migration complete — resume command ready (press c to copy)")
 		}
+		if len(msg.res.Warnings) > 0 {
+			m.status += fmt.Sprintf(" · %d warning(s)", len(msg.res.Warnings))
+		}
 		if m.backStage == stagePreview || m.backStage == stageMigrate {
 			m.backStage = stageSessions
 		}
@@ -502,17 +589,20 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		b.WriteString(accentStyle.Render("Resume command") + "\n")
 		b.WriteString(m.lastResume + "\n\n")
+		if len(msg.res.Warnings) > 0 {
+			b.WriteString(accentStyle.Render("Warnings") + "\n")
+			for _, warning := range msg.res.Warnings {
+				b.WriteString("- " + warning + "\n")
+			}
+			b.WriteString("\n")
+		}
 		b.WriteString(mutedStyle.Render("Press c to copy · esc to go back"))
-		m.preview.SetContent(b.String())
+		m.previewContent = b.String()
+		m.preview.SetContent(m.previewContent)
 		m.preview.GotoTop()
 		m.layout()
 		return m, nil
 	case indexRefreshedMsg:
-		if msg.initial {
-			// Cached counts for instant render; background refresh still running.
-			m.providers.SetItems(providerItems(m.reg, msg.counts))
-			return m, nil
-		}
 		m.indexing = false
 		m.loading = false
 		if msg.err != nil {
@@ -521,30 +611,111 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.providers.SetItems(providerItems(m.reg, msg.counts))
 		if msg.reloadPage {
+			m.contentIndexing = true
 			m.updateStatusLine()
 			var cmd tea.Cmd
 			m, cmd = dispatchPageLoad(m)
-			return m, cmd
+			return m, tea.Batch(cmd, contentIndexCmd(m.ctx, m.reg, m.idx))
 		}
 		m.status = fmt.Sprintf("Index updated (%d sessions)", msg.updated)
+		m.layout()
+		return m, nil
+	case contentIndexedMsg:
+		m.contentIndexing = false
+		if msg.err != nil && msg.err != context.Canceled {
+			m.err = "content index: " + msg.err.Error()
+		}
+		m.status = fmt.Sprintf("Content search: %d ready · %d pending · %d error",
+			msg.status.Indexed, msg.status.Pending, msg.status.Failed)
+		m.layout()
+		if m.searchQuery != "" {
+			project := ""
+			if m.cwdMode {
+				project = m.cwd
+			}
+			return m, searchCmd(m.ctx, m.reg, m.idx, m.searchQuery, m.providerFilter, project, m.includeSubagents)
+		}
+		return m, nil
+	case searchResultsMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.sessions.SetItems(msg.items)
+		m.searchQuery = msg.query
+		m.totalSessions = len(msg.items)
+		m.pageOffset = 0
+		m.status = fmt.Sprintf("%d results for %q · content %d ready/%d pending/%d error",
+			len(msg.items), msg.query, msg.status.Indexed, msg.status.Pending, msg.status.Failed)
+		m.layout()
 		return m, nil
 	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.searching {
+			switch msg.String() {
+			case "esc":
+				m.searching = false
+				m.searchInput.Blur()
+				if m.searchQuery != "" {
+					m.searchQuery = ""
+					m.searchInput.SetValue("")
+					var cmd tea.Cmd
+					m, cmd = dispatchPageLoad(m)
+					return m, cmd
+				}
+				m.layout()
+				return m, nil
+			case "enter":
+				query := strings.TrimSpace(m.searchInput.Value())
+				if query == "" {
+					return m, nil
+				}
+				m.searching = false
+				m.searchInput.Blur()
+				m.loading = true
+				project := ""
+				if m.cwdMode {
+					project = m.cwd
+				}
+				return m, tea.Batch(m.spinner.Tick, searchCmd(m.ctx, m.reg, m.idx, query, m.providerFilter, project, m.includeSubagents))
+			}
+			var cmd tea.Cmd
+			m.searchInput, cmd = m.searchInput.Update(msg)
+			return m, cmd
+		}
 		if m.loading {
 			if msg.String() == "ctrl+c" || msg.String() == "q" {
+				if m.cancel != nil {
+					m.cancel()
+				}
 				return m, tea.Quit
 			}
 			return m, nil
 		}
 		switch msg.String() {
 		case "ctrl+c", "q":
+			if m.cancel != nil {
+				m.cancel()
+			}
 			return m, tea.Quit
+		case "/":
+			if m.stage == stageSessions {
+				m.searching = true
+				m.searchInput.Focus()
+				m.layout()
+				return m, textinput.Blink
+			}
+			return m, nil
 		case "esc":
 			m.err = ""
 			prev := m.stage
 			switch m.stage {
+			case stageConfirm:
+				m.stage = stageMigrate
+				m.confirmTarget = ""
 			case stageMigrate:
 				m.stage = m.backStage
 			case stagePreview:
@@ -558,6 +729,14 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case stageProviders:
 				m.stage = stageSessions
 			default:
+				if m.stage == stageSessions && m.searchQuery != "" {
+					m.searchQuery = ""
+					m.searchInput.SetValue("")
+					m.pageOffset = 0
+					var cmd tea.Cmd
+					m, cmd = dispatchPageLoad(m)
+					return m, cmd
+				}
 				m.status = ""
 			}
 			if m.stage != prev {
@@ -629,7 +808,32 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.indexing = true
 			m.loading = true
 			filter := m.providerFilter
-			return m, tea.Batch(m.spinner.Tick, refreshIndexCmd(m.reg, m.idx, filter, true))
+			return m, tea.Batch(m.spinner.Tick, refreshIndexCmd(m.ctx, m.reg, m.idx, filter, true))
+		case "s":
+			if m.stage == stageSessions {
+				m.includeSubagents = !m.includeSubagents
+				m.pageOffset = 0
+				m.searchQuery = ""
+				m.searchInput.SetValue("")
+				var cmd tea.Cmd
+				m, cmd = dispatchPageLoad(m)
+				return m, cmd
+			}
+			return m, nil
+		case "y":
+			if m.stage == stageConfirm && m.selected != nil && m.confirmTarget != "" {
+				m.loading = true
+				m.err = ""
+				return m, tea.Batch(m.spinner.Tick, migrateCmd(m.ctx, m.engine, m.selected.summary, m.confirmTarget))
+			}
+			return m, nil
+		case "n":
+			if m.stage == stageConfirm {
+				m.stage = stageMigrate
+				m.confirmTarget = ""
+				m.layout()
+			}
+			return m, nil
 		case "enter":
 			switch m.stage {
 			case stageProviders:
@@ -645,9 +849,14 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 					sel := it
 					m.selected = &sel
-					m.actions.SetItems(actionItems(m.reg, it.summary))
-					m = m.gotoStage(stageActions)
-					return m, nil
+					if m.guided {
+						m.targets.SetItems(targetItems(m.reg, it.summary.Provider))
+						m = m.gotoStage(stageMigrate)
+						return m, nil
+					}
+					m.backStage = stageSessions
+					m.loading = true
+					return m, tea.Batch(m.spinner.Tick, loadPreviewCmd(m.ctx, m.reg, m.selected.summary))
 				}
 			case stageActions:
 				if m.selected == nil {
@@ -658,7 +867,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					case "preview":
 						m.backStage = stageActions
 						m.loading = true
-						return m, tea.Batch(m.spinner.Tick, loadPreviewCmd(m.reg, m.selected.summary))
+						return m, tea.Batch(m.spinner.Tick, loadPreviewCmd(m.ctx, m.reg, m.selected.summary))
 					case "migrate":
 						m.targets.SetItems(targetItems(m.reg, m.selected.summary.Provider))
 						m = m.gotoStage(stageMigrate)
@@ -686,9 +895,10 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if tgt, ok := m.targets.SelectedItem().(targetItem); ok {
-					m.loading = true
-					m.err = ""
-					return m, tea.Batch(m.spinner.Tick, migrateCmd(m.engine, m.selected.summary, tgt.id))
+					m.confirmTarget = tgt.id
+					m.stage = stageConfirm
+					m.layout()
+					return m, nil
 				}
 			}
 			return m, nil
@@ -740,6 +950,9 @@ func (m *modelState) updateStatusLine() {
 		if m.indexing {
 			m.status += " · indexing…"
 		}
+		if m.contentIndexing {
+			m.status += " · content indexing…"
+		}
 		return
 	}
 	if end == 0 {
@@ -773,44 +986,58 @@ func (m *modelState) updateStatusLine() {
 	if m.indexing {
 		m.status += " · indexing…"
 	}
+	if m.contentIndexing {
+		m.status += " · content indexing…"
+	}
 }
 
 func (m *modelState) layout() {
-	if m.width < 40 {
+	if m.width < 40 || m.height < 12 {
 		return
 	}
-	h := m.height - 6
-	if h < 8 {
-		h = 8
+	frameW, frameH := paneStyle.GetHorizontalFrameSize(), paneStyle.GetVerticalFrameSize()
+	m.searchInput.Width = max(8, m.width-4)
+	for _, l := range []*list.Model{&m.sessions, &m.providers, &m.actions, &m.targets} {
+		l.SetShowHelp(false)
+		l.SetShowPagination(false)
+		l.SetShowStatusBar(false)
 	}
+	headerH := lipgloss.Height(m.headerView())
+	paneOuterH := max(frameH+1, m.height-headerH-3)
+	h := max(1, paneOuterH-frameH)
+	wide := m.width >= 100
 	switch m.stage {
 	case stageProviders:
-		m.providers.SetSize(min(m.width-4, 48), h)
+		m.providers.SetSize(max(1, m.width-frameW), h)
 	case stageSessions:
-		m.sessions.SetSize(m.width-4, h)
+		m.sessions.SetSize(max(1, m.width-frameW), h)
 	case stageActions, stageMigrate:
-		w := m.width / 2
-		if w < 28 {
-			w = 28
+		left := 0
+		if wide {
+			left = m.width / 2
+			m.sessions.SetSize(max(1, left-frameW), h)
 		}
-		m.sessions.SetSize(w-2, h)
+		right := m.width - left
 		if m.stage == stageActions {
-			m.actions.SetSize(w-2, min(14, h))
+			m.actions.SetSize(max(1, right-frameW), h)
 		} else {
-			m.targets.SetSize(w-2, min(16, h))
+			m.targets.SetSize(max(1, right-frameW), h)
 		}
-	case stagePreview:
-		w := m.width / 3
-		if w < 28 {
-			w = 28
+	case stagePreview, stageConfirm:
+		left := 0
+		if wide {
+			left = m.width / 3
+			m.sessions.SetSize(max(1, left-frameW), h)
 		}
-		m.sessions.SetSize(w-2, h)
-		pw := m.width - w - 6
-		if pw < 28 {
-			pw = 28
-		}
-		m.preview.Width = pw
+		pw := m.width - left
+		m.preview.Width = max(1, pw-frameW)
 		m.preview.Height = h
+		if m.stage == stageConfirm {
+			m.previewContent = m.confirmationView()
+		}
+		y := m.preview.YOffset
+		m.preview.SetContent(ansi.Hardwrap(m.previewContent, m.preview.Width, false))
+		m.preview.SetYOffset(y)
 	}
 }
 
@@ -826,46 +1053,88 @@ func (m modelState) filterChips() string {
 }
 
 func (m modelState) View() string {
-	var b strings.Builder
-	b.WriteString(renderBanner())
-	b.WriteString(mutedStyle.Render("  session browser") + "  " + m.filterChips() + "\n")
-	if m.cwdMode && m.cwd != "" {
-		b.WriteString(mutedStyle.Render("  "+util.TildePath(m.cwd)) + "\n")
+	if m.width < 40 || m.height < 12 {
+		return ansi.Truncate("Terminal too small — resize to at least 40x12", max(1, m.width), "")
 	}
-	if m.loading {
-		b.WriteString(m.spinner.View() + mutedStyle.Render(" working…") + "\n")
+	header := m.headerView()
+	frameW, frameH := paneStyle.GetHorizontalFrameSize(), paneStyle.GetVerticalFrameSize()
+	paneOuterH := max(frameH+1, m.height-lipgloss.Height(header)-3)
+	contentH := max(1, paneOuterH-frameH)
+	renderPane := func(content string, outerW int) string {
+		w := max(1, outerW-frameW)
+		return paneStyle.Width(w).Height(contentH).MaxWidth(w).MaxHeight(contentH).Render(content)
 	}
-	if m.status != "" {
-		b.WriteString(m.status + "\n")
-	}
-	if m.err != "" {
-		b.WriteString(errStyle.Render("✗ "+m.err) + "\n")
-	}
-	b.WriteString("\n")
+	wide := m.width >= 100
+	var pane string
 	switch m.stage {
 	case stageProviders:
-		b.WriteString(paneStyle.Width(m.width - 4).Render(m.providers.View()))
+		pane = renderPane(m.providers.View(), m.width)
 	case stageSessions:
-		b.WriteString(paneStyle.Width(m.width - 4).Render(m.sessions.View()))
+		pane = renderPane(m.sessions.View(), m.width)
 	case stageActions:
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top,
-			paneStyle.Width(m.width/2-2).Render(m.sessions.View()),
-			paneStyle.Width(m.width/2-2).Render(m.actions.View()),
-		))
+		if wide {
+			left := m.width / 2
+			pane = lipgloss.JoinHorizontal(lipgloss.Top, renderPane(m.sessions.View(), left), renderPane(m.actions.View(), m.width-left))
+		} else {
+			pane = renderPane(m.actions.View(), m.width)
+		}
 	case stageMigrate:
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top,
-			paneStyle.Width(m.width/2-2).Render(m.sessions.View()),
-			paneStyle.Width(m.width/2-2).Render(m.targets.View()),
-		))
-	case stagePreview:
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top,
-			paneStyle.Width(m.width/3-2).Render(m.sessions.View()),
-			paneStyle.Width(m.width*2/3-4).Render(m.preview.View()),
-		))
+		if wide {
+			left := m.width / 2
+			pane = lipgloss.JoinHorizontal(lipgloss.Top, renderPane(m.sessions.View(), left), renderPane(m.targets.View(), m.width-left))
+		} else {
+			pane = renderPane(m.targets.View(), m.width)
+		}
+	case stagePreview, stageConfirm:
+		if wide {
+			left := m.width / 3
+			pane = lipgloss.JoinHorizontal(lipgloss.Top, renderPane(m.sessions.View(), left), renderPane(m.preview.View(), m.width-left))
+		} else {
+			pane = renderPane(m.preview.View(), m.width)
+		}
 	}
-	help := m.footerHelp()
-	b.WriteString("\n" + footerStyle.Width(m.width).Render(help))
-	return b.String()
+	footer := footerStyle.Width(max(1, m.width-footerStyle.GetHorizontalFrameSize())).Render(
+		ansi.Truncate(m.footerHelp(), max(1, m.width-footerStyle.GetHorizontalFrameSize()), "…"))
+	return lipgloss.JoinVertical(lipgloss.Left, header, pane, footer)
+}
+
+func (m modelState) headerView() string {
+	var lines []string
+	if m.width >= 80 && m.height >= 24 {
+		lines = append(lines, strings.TrimRight(renderBanner(), "\n"))
+	}
+	mode := "session browser"
+	if m.guided {
+		mode = "guided migration"
+	}
+	line := mutedStyle.Render("  "+mode) + "  " + m.filterChips()
+	if m.includeSubagents {
+		line += "  " + chipActive.Render("subagents")
+	}
+	lines = append(lines, ansi.Truncate(line, m.width, "…"))
+	if m.cwdMode && m.cwd != "" {
+		lines = append(lines, ansi.Truncate(mutedStyle.Render("  "+util.TildePath(m.cwd)), m.width, "…"))
+	}
+	if m.searching {
+		lines = append(lines, m.searchInput.View())
+	}
+	if m.loading {
+		lines = append(lines, m.spinner.View()+mutedStyle.Render(" working…"))
+	}
+	if m.status != "" {
+		lines = append(lines, ansi.Truncate(m.status, m.width, "…"))
+	}
+	if m.err != "" {
+		lines = append(lines, ansi.Truncate(errStyle.Render("✗ "+m.err), m.width, "…"))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m modelState) confirmationView() string {
+	name := registry.DisplayName(m.reg, m.confirmTarget)
+	return titleStyle.Render("Confirm migration") + "\n\n" +
+		fmt.Sprintf("Migrate %s to %s?\n\n", m.selected.summary.ShortID(), name) +
+		accentStyle.Render("y") + " confirm  " + mutedStyle.Render("n/esc cancel")
 }
 
 func (m modelState) footerHelp() string {
@@ -875,11 +1144,13 @@ func (m modelState) footerHelp() string {
 	case stagePreview:
 		return "↑↓ scroll preview · m migrate · c copy resume · esc back · q quit"
 	case stageMigrate:
-		return "↑↓ pick target · enter migrate · esc back · q quit"
+		return "↑↓ pick target · enter review · esc back · q quit"
+	case stageConfirm:
+		return "y confirm migration · n/esc cancel · q quit"
 	case stageProviders:
 		return "↑↓ pick agent · enter filter · esc back · q quit"
 	default:
-		return "↑↓ navigate · enter actions · w this folder · a all projects · 0/[/] page · p agent · m migrate · r refresh · esc · q quit"
+		return "↑↓ navigate · enter preview · / search · s subagents · w here · a all · [/] page · p agent · m migrate · r refresh · q quit"
 	}
 }
 
@@ -894,6 +1165,13 @@ func truncate(s string, n int) string {
 
 func min(a, b int) int {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
 		return a
 	}
 	return b

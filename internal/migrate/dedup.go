@@ -1,55 +1,28 @@
 package migrate
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/CyrusSE/agenthop/internal/model"
 	"github.com/CyrusSE/agenthop/internal/provider"
 	"github.com/CyrusSE/agenthop/internal/util"
-	"github.com/google/uuid"
 )
 
 // DedupIndex is satisfied by index.Store for migration deduplication.
 type DedupIndex interface {
 	FindMigration(providerID, originDigest string) (sessionID, storagePath string, ok bool, err error)
-	FindMigrationByOrigin(providerID, originID, originSource string) (sessionID, storagePath string, ok bool, err error)
+	FindLegacyMigrationByOrigin(providerID, originID, originSource string, originMessageCount int) (sessionID, storagePath string, ok bool, err error)
 }
 
-// FindExistingMigration scans JSONL storage for agenthop_migration metadata matching origin digest.
+// FindExistingMigration checks one known JSONL target. Broad storage scans are
+// deliberately left to the incremental index.
 func FindExistingMigration(storagePath, originDigest string) (string, bool) {
 	if storagePath == "" || originDigest == "" {
 		return "", false
 	}
-	if strings.HasSuffix(storagePath, ".jsonl") {
-		if path, ok := scanJSONLForDigest(storagePath, originDigest); ok {
-			return path, true
-		}
-	}
-	dir := storagePath
-	if strings.HasSuffix(storagePath, ".jsonl") {
-		dir = filepath.Dir(storagePath)
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", false
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-			continue
-		}
-		p := filepath.Join(dir, e.Name())
-		if p == storagePath {
-			continue
-		}
-		if path, ok := scanJSONLForDigest(p, originDigest); ok {
-			return path, true
-		}
-	}
-	return "", false
+	return scanJSONLForDigest(storagePath, originDigest)
 }
 
 var errDigestFound = errors.New("migration digest found")
@@ -74,197 +47,87 @@ func scanJSONLForDigest(path, originDigest string) (string, bool) {
 	return found, found != ""
 }
 
-func migrationMeta(line []byte) (digest, originID, originSource string) {
-	var row map[string]any
-	if json.Unmarshal(line, &row) != nil {
-		return "", "", ""
-	}
-	var data map[string]any
-	if t, _ := row["type"].(string); t == model.MigrationType {
-		data, _ = row["data"].(map[string]any)
-	} else if d, ok := row["data"].(map[string]any); ok {
-		if t, _ := d["type"].(string); t == model.MigrationType {
-			data = d
-		}
-	}
-	if data == nil {
-		return "", "", ""
-	}
-	digest, _ = data["originDigest"].(string)
-	originID, _ = data["originId"].(string)
-	originSource, _ = data["originSource"].(string)
-	return digest, originID, originSource
-}
-
 func migrationDigest(line []byte) string {
-	digest, _, _ := migrationMeta(line)
-	return digest
-}
-
-func migrationOrigin(line []byte) (originID, originSource string) {
-	_, originID, originSource = migrationMeta(line)
-	return originID, originSource
+	meta, ok := model.ParseMigrationMeta(line)
+	if !ok {
+		return ""
+	}
+	return meta.OriginDigest
 }
 
 // FindDuplicate searches the index and target provider storage for an existing migration of conv.
 func FindDuplicate(idx DedupIndex, dst provider.Provider, conv *model.Conversation) (*provider.WriteResult, bool) {
-	digest := model.OriginDigest(conv)
-	if digest == "" && conv.ID == "" {
-		return nil, false
+	result, ok, _ := FindDuplicateE(idx, dst, conv)
+	return result, ok
+}
+
+// FindDuplicateE is the error-reporting variant used by migrations, where an
+// index failure must not silently create another target.
+func FindDuplicateE(idx DedupIndex, dst provider.Provider, conv *model.Conversation) (*provider.WriteResult, bool, error) {
+	if conv.ID == "" || conv.Provider == "" {
+		return nil, false, nil
 	}
+	digest := model.SnapshotDigest(conv)
 	if idx != nil {
-		if digest != "" {
-			sid, path, ok, err := idx.FindMigration(dst.ID(), digest)
+		digests := []string{digest}
+		if legacy := model.LegacyOriginDigest(conv); legacy != digest {
+			digests = append(digests, legacy)
+		}
+		for _, candidate := range digests {
+			sid, path, ok, err := idx.FindMigration(dst.ID(), candidate)
 			if err != nil {
-				return nil, false
+				return nil, false, err
 			}
-			if ok && migrationTargetExists(path) {
-				return &provider.WriteResult{
+			if ok {
+				result := &provider.WriteResult{
 					SessionID:     sid,
 					StoragePath:   path,
 					AlreadyExists: true,
-				}, true
+				}
+				if migrationTargetMatches(dst, *result, conv, candidate, false) {
+					return result, true, nil
+				}
 			}
 		}
 		if conv.ID != "" {
-			sid, path, ok, err := idx.FindMigrationByOrigin(dst.ID(), conv.ID, conv.Provider)
+			sid, path, ok, err := idx.FindLegacyMigrationByOrigin(dst.ID(), conv.ID, conv.Provider, len(conv.Messages))
 			if err != nil {
-				return nil, false
+				return nil, false, err
 			}
-			if ok && migrationTargetExists(path) {
-				return &provider.WriteResult{
+			if ok {
+				result := &provider.WriteResult{
 					SessionID:     sid,
 					StoragePath:   path,
 					AlreadyExists: true,
-				}, true
+				}
+				if migrationTargetMatches(dst, *result, conv, "", true) {
+					return result, true, nil
+				}
 			}
 		}
 	}
-	for _, ps := range dst.DefaultPaths() {
-		root := ps.Path
-		if root == "" {
-			continue
-		}
-		if digest != "" {
-			if path, ok := walkForDigest(root, digest); ok {
-				return writeResultFromPath(path), true
-			}
-		}
-		if conv.ID != "" {
-			if path, ok := walkForOrigin(root, conv.ID, conv.Provider); ok {
-				return writeResultFromPath(path), true
-			}
-		}
-	}
-	return nil, false
+	return nil, false, nil
 }
 
-func walkForDigest(root, digest string) (string, bool) {
-	var found string
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
-			return nil
-		}
-		if p, ok := scanJSONLForDigest(path, digest); ok {
-			found = p
-			return filepath.SkipAll
-		}
-		return nil
+// migrationTargetMatches validates the exact target and its embedded origin
+// marker, rather than treating any loadable row/file as proof of a migration.
+func migrationTargetMatches(dst provider.Provider, result provider.WriteResult, source *model.Conversation, digest string, legacy bool) bool {
+	if result.SessionID == "" || result.StoragePath == "" {
+		return false
+	}
+	loaded, err := dst.Load(context.Background(), provider.SessionRef{
+		ID: result.SessionID, Provider: dst.ID(), StoragePath: result.StoragePath,
+		ProjectPath: result.ProjectPath,
 	})
-	return found, found != ""
-}
-
-func walkForOrigin(root, originID, originSource string) (string, bool) {
-	var found string
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
-			return nil
-		}
-		if p, ok := scanJSONLForOrigin(path, originID, originSource); ok {
-			found = p
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	return found, found != ""
-}
-
-func scanJSONLForOrigin(path, originID, originSource string) (string, bool) {
-	if originID == "" {
-		return "", false
+	if err != nil || loaded.Migration == nil {
+		return false
 	}
-	match := func(line []byte) bool {
-		id, src := migrationOrigin(line)
-		if id != originID {
-			return false
-		}
-		if originSource != "" && src != "" && src != originSource {
-			return false
-		}
-		return true
+	meta := loaded.Migration
+	if meta.OriginID != source.ID || meta.OriginSource != source.Provider {
+		return false
 	}
-	if util.ScanJSONLEdges(path, 25, 64*1024, match) {
-		return path, true
+	if legacy && meta.OriginDigest == "" {
+		return meta.OriginMessageCount == len(source.Messages)
 	}
-	st, err := os.Stat(path)
-	if err != nil || st.Size() > 512*1024 {
-		return "", false
-	}
-	var found string
-	_ = util.ReadJSONLLines(path, 0, func(line []byte) error {
-		if match(line) {
-			found = path
-			return errDigestFound
-		}
-		return nil
-	})
-	return found, found != ""
-}
-
-// migrationTargetExists guards index dedup hits against deleted target files;
-// "db#session" paths are checked on the db file part.
-func migrationTargetExists(path string) bool {
-	if path == "" {
-		return true
-	}
-	if i := strings.IndexByte(path, '#'); i > 0 {
-		path = path[:i]
-	}
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-func writeResultFromPath(path string) *provider.WriteResult {
-	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
-	if trimmed := strings.TrimPrefix(id, "rollout-"); trimmed != id && len(trimmed) >= 36 {
-		// codex rollout filenames end in a dash-containing UUID
-		if tail := trimmed[len(trimmed)-36:]; uuid.Validate(tail) == nil {
-			id = tail
-		}
-	}
-	_ = util.ReadJSONLLines(path, 3, func(line []byte) error {
-		var row map[string]any
-		if json.Unmarshal(line, &row) != nil {
-			return nil
-		}
-		if sid, _ := row["session_id"].(string); sid != "" {
-			id = sid
-		}
-		if payload, ok := row["payload"].(map[string]any); ok {
-			if sid, _ := payload["id"].(string); sid != "" {
-				id = sid
-			} else if sid, _ := payload["session_id"].(string); sid != "" {
-				id = sid
-			}
-		}
-		if sid, _ := row["sessionId"].(string); sid != "" {
-			id = sid
-		}
-		return nil
-	})
-	return &provider.WriteResult{
-		SessionID:     id,
-		StoragePath:   path,
-		AlreadyExists: true,
-	}
+	return meta.OriginDigest != "" && meta.OriginDigest == digest
 }

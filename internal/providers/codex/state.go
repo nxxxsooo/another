@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/CyrusSE/agenthop/internal/model"
 	"github.com/CyrusSE/agenthop/internal/provider"
+	"github.com/CyrusSE/agenthop/internal/util"
 	_ "modernc.org/sqlite"
 )
 
@@ -114,40 +116,27 @@ func (p *Provider) EnsureResumable(conv *model.Conversation, ref provider.WriteR
 }
 
 func rolloutIsAgenthopMigration(path string) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil || st.Size() == 0 {
-		return false
-	}
-	const tailSize = 8192
-	off := int64(0)
-	if st.Size() > tailSize {
-		off = st.Size() - tailSize
-	}
-	buf := make([]byte, st.Size()-off)
-	if _, err := f.ReadAt(buf, off); err != nil {
-		return false
-	}
-	tail := string(buf)
-	return strings.Contains(tail, `"type":"agenthop_migration"`) ||
-		strings.Contains(tail, `"type": "agenthop_migration"`)
+	return util.ScanJSONLEdges(path, 3, 8*1024, func(line []byte) bool {
+		_, ok := model.ParseMigrationMeta(line)
+		return ok || strings.Contains(string(line), `"type":"agenthop_migration"`) ||
+			strings.Contains(string(line), `"type": "agenthop_migration"`)
+	})
 }
 
 func rolloutNeedsV2Rewrite(path string) bool {
-	b, err := os.ReadFile(path)
-	if err != nil || len(b) == 0 {
+	f, err := os.Open(path)
+	if err != nil {
 		return true
 	}
-	line := string(b)
-	if idx := strings.IndexByte(line, '\n'); idx >= 0 {
-		line = line[:idx]
+	defer f.Close()
+	const maxSessionMetaLine = 64 * 1024
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 4096), maxSessionMetaLine)
+	if !sc.Scan() {
+		return true
 	}
 	var row map[string]any
-	if json.Unmarshal([]byte(line), &row) != nil {
+	if json.Unmarshal(sc.Bytes(), &row) != nil {
 		return true
 	}
 	if _, ok := row["payload"]; ok {
@@ -163,12 +152,8 @@ func (p *Provider) rewriteRolloutFile(path, sessionID, project string, conv *mod
 	if err != nil {
 		return err
 	}
-	tmp := path + ".agenthop.tmp"
 	content := strings.Join(lines, "\n") + "\n"
-	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return util.WriteFileAtomic(path, []byte(content), 0o644)
 }
 
 func (p *Provider) registerThread(sessionID, rolloutPath, project, title, firstUser string, now time.Time) error {
@@ -217,6 +202,20 @@ ON CONFLICT(id) DO UPDATE SET
 		cliVersion, firstUser, preview,
 		unix, unix*1000,
 	)
+	return err
+}
+
+func (p *Provider) deleteThread(sessionID string) error {
+	dbPath, err := p.resolveStateDB()
+	if err != nil || dbPath == "" {
+		return err
+	}
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.Exec(`DELETE FROM threads WHERE id = ?`, sessionID)
 	return err
 }
 

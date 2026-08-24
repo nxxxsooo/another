@@ -2,12 +2,15 @@ package commandcode
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/CyrusSE/agenthop/internal/config"
 	"github.com/CyrusSE/agenthop/internal/model"
 	"github.com/CyrusSE/agenthop/internal/provider"
+	"github.com/CyrusSE/agenthop/internal/util"
 )
 
 const ProviderID = "commandcode"
@@ -52,13 +55,35 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 }
 
 func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts provider.WriteOpts) (*provider.WriteResult, error) {
-	conv.Provider = ProviderID
 	return writeWithRoot(ctx, conv, opts, p.projectsRoot())
 }
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	if r.ProjectPath != "" {
-		return "cd " + r.ProjectPath + " && commandcode --resume " + r.SessionID
+		return "cd " + util.ShellQuote(r.ProjectPath) + " && commandcode --resume " + util.ShellQuote(r.SessionID)
 	}
-	return "commandcode --resume " + r.SessionID
+	return "commandcode --resume " + util.ShellQuote(r.SessionID)
+}
+
+func (p *Provider) CleanupWrite(_ context.Context, r provider.WriteResult) error {
+	path := r.StoragePath
+	if path == "" {
+		path = filepath.Join(p.projectsRoot(), util.EncodeClaudeProjectPath(r.ProjectPath), r.SessionID+".jsonl")
+	}
+	if !commandCodeCleanupPath(p.projectsRoot(), path) {
+		return fmt.Errorf("commandcode: refusing cleanup outside projects root: %s", path)
+	}
+	var first error
+	for _, target := range []string{path, strings.TrimSuffix(path, ".jsonl") + ".meta.json"} {
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
+func commandCodeCleanupPath(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != "." && !filepath.IsAbs(rel) && rel != ".." &&
+		!strings.HasPrefix(rel, ".."+string(filepath.Separator)) && strings.HasSuffix(rel, ".jsonl")
 }

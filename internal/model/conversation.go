@@ -3,6 +3,7 @@ package model
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -52,6 +53,8 @@ type Conversation struct {
 	Messages     []Message `json:"messages"`
 	StoragePath  string    `json:"storage_path,omitempty"`
 	MessageCount int       `json:"message_count"`
+	// Migration is set when a provider loads an agenthop-created target.
+	Migration *MigrationMeta `json:"-"`
 }
 
 type Summary struct {
@@ -63,8 +66,21 @@ type Summary struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 	MessageCount int       `json:"message_count"`
 	StoragePath  string    `json:"storage_path,omitempty"`
-	SourceMtime  int64     `json:"source_mtime,omitempty"`
+	// Kind is "root" unless the provider marks this as a child/subagent session.
+	Kind           string `json:"kind,omitempty"`
+	ParentID       string `json:"parent_id,omitempty"`
+	SourceMtime    int64  `json:"source_mtime,omitempty"` // nanoseconds since Unix epoch
+	SourceSize     int64  `json:"source_size,omitempty"`
+	SourcePriority int    `json:"-"` // provider preference when one session has multiple representations
+	// Migration is populated while discovering an agenthop-created target. It is
+	// consumed by the index and intentionally not part of the sessions table.
+	Migration *MigrationMeta `json:"-"`
 }
+
+const (
+	SessionKindRoot     = "root"
+	SessionKindSubagent = "subagent"
+)
 
 func (s Summary) ShortID() string {
 	if len(s.ID) <= 16 {
@@ -73,17 +89,50 @@ func (s Summary) ShortID() string {
 	if i := strings.IndexByte(s.ID, '_'); i > 0 && i < len(s.ID)-4 {
 		tail := s.ID[i+1:]
 		if len(tail) <= 20 {
-			return "…" + tail
+			return tail
 		}
-		return "…" + tail[len(tail)-16:]
+		return tail[len(tail)-16:]
 	}
-	if len(s.ID) <= 20 {
-		return s.ID
-	}
-	return "…" + s.ID[len(s.ID)-16:]
+	return s.ID[:16]
 }
 
-func OriginDigest(conv *Conversation) string {
+// ContentDigest identifies the ordered user/assistant text and specified
+// timestamps that must survive a provider round trip. System/tool messages are
+// intentionally excluded; zero timestamps are unspecified.
+func ContentDigest(conv *Conversation) string {
+	var b strings.Builder
+	for _, m := range conv.Messages {
+		if m.Role != RoleUser && m.Role != RoleAssistant {
+			continue
+		}
+		text := m.PlainText()
+		timestamp := ""
+		if !m.Timestamp.IsZero() {
+			timestamp = m.Timestamp.UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano)
+		}
+		fmt.Fprintf(&b, "%s\x1f%s\x1f%s\x1e", m.Role, timestamp, text)
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+// SnapshotDigest identifies one exact source-session snapshot. Including the
+// source provider and ID prevents unrelated sessions with identical text from
+// colliding during migration deduplication.
+func SnapshotDigest(conv *Conversation) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\x1f%s\x1e%s", conv.Provider, conv.ID, ContentDigest(conv))
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+// OriginDigest is kept for callers compiled against the Phase 1 API.
+// Deprecated: use SnapshotDigest for dedup or ContentDigest for round trips.
+func OriginDigest(conv *Conversation) string { return SnapshotDigest(conv) }
+
+// LegacyOriginDigest preserves the pre-content-normalization key so existing
+// migration_dedup rows remain reusable after an upgrade.
+func LegacyOriginDigest(conv *Conversation) string {
 	var b strings.Builder
 	for _, m := range conv.Messages {
 		ts := ""
@@ -107,12 +156,38 @@ type MigrationMeta struct {
 
 const MigrationType = "agenthop_migration"
 
+// ParseMigrationMeta recognizes native agenthop markers and compatible ctxmv
+// markers, either bare or wrapped in a provider progress/data object.
+func ParseMigrationMeta(line []byte) (*MigrationMeta, bool) {
+	var row map[string]any
+	if json.Unmarshal(line, &row) != nil {
+		return nil, false
+	}
+	data := row
+	if nested, ok := row["data"].(map[string]any); ok {
+		data = nested
+	}
+	typ, _ := data["type"].(string)
+	if typ != MigrationType && typ != "ctxmv_migration" {
+		return nil, false
+	}
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil, false
+	}
+	var meta MigrationMeta
+	if json.Unmarshal(b, &meta) != nil {
+		return nil, false
+	}
+	return &meta, true
+}
+
 func NewMigrationMeta(conv *Conversation) MigrationMeta {
 	return MigrationMeta{
 		Type:               MigrationType,
 		OriginID:           conv.ID,
 		OriginSource:       conv.Provider,
 		OriginMessageCount: len(conv.Messages),
-		OriginDigest:       OriginDigest(conv),
+		OriginDigest:       SnapshotDigest(conv),
 	}
 }

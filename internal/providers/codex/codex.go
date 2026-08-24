@@ -25,8 +25,6 @@ const (
 	codexSummarizeMaxBytes = 512 * 1024
 )
 
-var errSummarizeCap = errors.New("summarize byte cap reached")
-
 type Provider struct {
 	sessionsRoot string
 }
@@ -60,18 +58,30 @@ func (p *Provider) DefaultPaths() []provider.PathSpec {
 
 func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]model.Summary, error) {
 	var out []model.Summary
-	_ = filepath.WalkDir(p.sessionsRoot, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasPrefix(filepath.Base(path), "rollout-") || !strings.HasSuffix(path, ".jsonl") {
+	err := filepath.WalkDir(p.sessionsRoot, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasPrefix(filepath.Base(path), "rollout-") || !strings.HasSuffix(path, ".jsonl") {
 			return nil
 		}
-		if opts.SkipUnchanged != nil {
-			if info, err := d.Info(); err == nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
+		if info, infoErr := d.Info(); infoErr == nil {
+			if opts.SkipSource != nil && opts.SkipSource(path, info.ModTime().UnixNano(), info.Size()) {
+				return nil
+			}
+			if opts.SkipSource == nil && opts.SkipUnchanged != nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
 				return nil
 			}
 		}
 		sm, err := p.summarizeFile(path)
-		if err != nil || sm.ID == "" {
-			return nil
+		if err != nil {
+			return err
+		}
+		if sm.ID == "" {
+			return fmt.Errorf("empty session id in %s", path)
 		}
 		if opts.ProjectFilter != "" && !strings.Contains(sm.ProjectPath, opts.ProjectFilter) {
 			return nil
@@ -80,14 +90,9 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		if opts.Limit > 0 && len(out) >= opts.Limit {
 			return filepath.SkipAll
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
 		return nil
 	})
-	return out, nil
+	return out, err
 }
 
 // SummarizeFile returns a summary for a single rollout JSONL (used by tests and tooling).
@@ -138,7 +143,6 @@ func codexTextFromContent(content any) string {
 			continue
 		}
 		text, _ := m["text"].(string)
-		text = strings.TrimSpace(text)
 		if text != "" {
 			parts = append(parts, text)
 		}
@@ -146,10 +150,14 @@ func codexTextFromContent(content any) string {
 	return strings.Join(parts, "\n")
 }
 
-func codexApplyMeta(row map[string]any, id, project *string) {
+func codexApplyMeta(row map[string]any, id, project, parentID, kind *string, seen *bool) {
 	if t, _ := row["type"].(string); t != "session_meta" {
 		return
 	}
+	if *seen {
+		return
+	}
+	*seen = true
 	p := codexPayload(row)
 	sid, _ := p["id"].(string)
 	if sid == "" {
@@ -166,6 +174,14 @@ func codexApplyMeta(row map[string]any, id, project *string) {
 	} else if cwd, _ := p["cwd"].(string); cwd != "" {
 		*project = cwd
 	}
+	if source, ok := p["source"].(map[string]any); ok {
+		if subagent, ok := source["subagent"].(map[string]any); ok {
+			*kind = model.SessionKindSubagent
+			if spawn, ok := subagent["thread_spawn"].(map[string]any); ok {
+				*parentID = stringField(spawn, "parent_thread_id")
+			}
+		}
+	}
 }
 
 func codexNoteUserText(text string, picker *util.TitlePicker, msgCount *int) {
@@ -178,7 +194,6 @@ func codexNoteUserText(text string, picker *util.TitlePicker, msgCount *int) {
 }
 
 func codexApplyRow(row map[string]any, id, project *string, picker *util.TitlePicker, msgCount *int) {
-	codexApplyMeta(row, id, project)
 	switch t, _ := row["type"].(string); t {
 	case "event_msg":
 		if em, ok := row["event_msg"].(map[string]any); ok {
@@ -213,19 +228,32 @@ func codexApplyRow(row map[string]any, id, project *string, picker *util.TitlePi
 	}
 }
 
-func codexAppendMessage(conv *model.Conversation, seen map[string]bool, role, text string, ts time.Time) {
-	text = strings.TrimSpace(text)
+type codexLoadedMessage struct {
+	wireType  string
+	role      string
+	text      string
+	timestamp time.Time
+}
+
+func codexAppendMessage(conv *model.Conversation, last *codexLoadedMessage, wireType, role, text string, ts time.Time) {
 	if role != "user" && role != "assistant" || text == "" {
 		return
 	}
-	if role == "user" && codexSkipUserText(text) {
+	if role == "user" && conv.Migration == nil && codexSkipUserText(text) {
 		return
 	}
-	key := role + "|" + text
-	if seen[key] {
+	if role == "user" && text == codexRestoredUserPrompt {
 		return
 	}
-	seen[key] = true
+	current := codexLoadedMessage{wireType: wireType, role: role, text: text, timestamp: ts}
+	delta := current.timestamp.Sub(last.timestamp)
+	mirroredWireTypes := last.wireType == "event_msg" && current.wireType == "response_item" ||
+		last.wireType == "response_item" && current.wireType == "event_msg"
+	if last.role == current.role && last.text == current.text && mirroredWireTypes &&
+		!last.timestamp.IsZero() && delta >= 0 && delta <= time.Second {
+		return
+	}
+	*last = current
 	mrole := model.RoleUser
 	if role == "assistant" {
 		mrole = model.RoleAssistant
@@ -243,21 +271,38 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 	var msgCount int
 	var first, last time.Time
 	var project string
-	var scanned int
-	_ = util.ReadJSONLLines(path, codexSummarizeMaxLines, func(line []byte) error {
-		scanned += len(line)
-		if scanned > codexSummarizeMaxBytes {
-			return errSummarizeCap
-		}
+	kind := model.SessionKindRoot
+	parentID := ""
+	metaSeen := false
+	var migration *model.MigrationMeta
+	if err := util.ReadJSONLPrefix(path, codexSummarizeMaxBytes, codexSummarizeMaxLines, func(line []byte) error {
 		var row map[string]any
 		if json.Unmarshal(line, &row) != nil {
 			return nil
 		}
+		if meta, ok := model.ParseMigrationMeta(line); ok {
+			migration = meta
+		}
+		codexApplyMeta(row, &id, &project, &parentID, &kind, &metaSeen)
+		if ts := util.ParseTime(stringField(row, "timestamp")); !ts.IsZero() {
+			if first.IsZero() {
+				first = ts
+			}
+			last = ts
+		}
 		codexApplyRow(row, &id, &project, picker, &msgCount)
 		return nil
-	})
-	tail, _ := util.TailJSONLLines(path, 5)
+	}); err != nil {
+		return model.Summary{}, err
+	}
+	tail, err := util.TailJSONLLines(path, 5)
+	if err != nil {
+		return model.Summary{}, err
+	}
 	for _, line := range tail {
+		if meta, ok := model.ParseMigrationMeta(line); ok {
+			migration = meta
+		}
 		var row map[string]any
 		if json.Unmarshal(line, &row) != nil {
 			continue
@@ -284,7 +329,9 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 	return model.Summary{
 		ID: id, Provider: ProviderID, ProjectPath: project, Title: title,
 		CreatedAt: first, UpdatedAt: last, MessageCount: msgCount,
-		StoragePath: path, SourceMtime: st.ModTime().Unix(),
+		StoragePath: path, Kind: kind, ParentID: parentID,
+		SourceMtime: st.ModTime().UnixNano(), SourceSize: st.Size(),
+		Migration: migration,
 	}, nil
 }
 
@@ -298,14 +345,20 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		return nil, provider.ErrNotFound
 	}
 	conv := &model.Conversation{ID: ref.ID, Provider: ProviderID, StoragePath: path}
-	seen := map[string]bool{}
-	_ = util.ReadJSONLLines(path, 0, func(line []byte) error {
+	var lastMessage codexLoadedMessage
+	metaSeen := false
+	kind := model.SessionKindRoot
+	parentID := ""
+	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
+		if meta, ok := model.ParseMigrationMeta(line); ok {
+			conv.Migration = meta
+		}
 		var row map[string]any
 		if json.Unmarshal(line, &row) != nil {
 			return nil
 		}
 		var id, project string
-		codexApplyMeta(row, &id, &project)
+		codexApplyMeta(row, &id, &project, &parentID, &kind, &metaSeen)
 		if id != "" {
 			conv.ID = id
 		}
@@ -314,14 +367,14 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		}
 		ts := util.ParseTime(stringField(row, "timestamp"))
 		if em, ok := row["event_msg"].(map[string]any); ok {
-			codexAppendMessage(conv, seen, stringField(em, "role"), stringField(em, "message"), ts)
+			codexAppendMessage(conv, &lastMessage, "event_msg", stringField(em, "role"), stringField(em, "message"), ts)
 			return nil
 		}
 		switch t, _ := row["type"].(string); t {
 		case "event_msg":
 			p := codexPayload(row)
 			if pt, _ := p["type"].(string); pt == "user_message" {
-				codexAppendMessage(conv, seen, "user", stringField(p, "message"), ts)
+				codexAppendMessage(conv, &lastMessage, "event_msg", "user", stringField(p, "message"), ts)
 			}
 		case "response_item":
 			p := codexPayload(row)
@@ -329,10 +382,12 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 				return nil
 			}
 			role, _ := p["role"].(string)
-			codexAppendMessage(conv, seen, role, codexTextFromContent(p["content"]), ts)
+			codexAppendMessage(conv, &lastMessage, "response_item", role, codexTextFromContent(p["content"]), ts)
 		}
 		return nil
-	})
+	}); err != nil {
+		return nil, err
+	}
 	if len(conv.Messages) == 0 {
 		return nil, provider.ErrNotFound
 	}
@@ -346,6 +401,9 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		}
 	}
 	conv.Title = picker.Title()
+	if kind == model.SessionKindSubagent && parentID != "" && conv.ID == "" {
+		conv.ID = ref.ID
+	}
 	_ = st
 	return conv, nil
 }
@@ -401,12 +459,13 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+	if err := util.WriteFileAtomic(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		return nil, err
 	}
 	result := &provider.WriteResult{SessionID: sessionID, StoragePath: path, ProjectPath: project}
 	if err := p.EnsureResumable(conv, *result); err != nil {
-		return nil, fmt.Errorf("register codex thread: %w", err)
+		cleanupErr := p.CleanupWrite(ctx, *result)
+		return nil, errors.Join(fmt.Errorf("register codex thread: %w", err), cleanupErr)
 	}
 	return result, nil
 }
@@ -426,18 +485,36 @@ func buildV2RolloutLines(conv *model.Conversation, sessionID, project string, no
 	} else {
 		lines = append(lines, line)
 	}
+	metaLine := map[string]any{"type": model.MigrationType, "data": meta}
+	if b, err := json.Marshal(metaLine); err != nil {
+		return nil, err
+	} else {
+		lines = append(lines, string(b))
+	}
 	turnLines, err := codexBuildTurnLines(conv.Messages, project, now)
 	if err != nil {
 		return nil, err
 	}
 	lines = append(lines, turnLines...)
-	metaLine := map[string]any{"type": model.MigrationType, "data": meta}
-	if b, err := json.Marshal(metaLine); err == nil {
-		lines = append(lines, string(b))
-	}
 	return lines, nil
 }
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	return "codex resume " + r.SessionID
+	return "codex resume " + util.ShellQuote(r.SessionID)
+}
+
+func (p *Provider) CleanupWrite(_ context.Context, r provider.WriteResult) error {
+	if r.SessionID == "" || r.StoragePath == "" {
+		return fmt.Errorf("codex: missing cleanup target")
+	}
+	rel, err := filepath.Rel(p.sessionsRoot, r.StoragePath)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) || !strings.HasSuffix(rel, ".jsonl") {
+		return fmt.Errorf("codex: refusing cleanup outside sessions root: %s", r.StoragePath)
+	}
+	dbErr := p.deleteThread(r.SessionID)
+	fileErr := os.Remove(r.StoragePath)
+	if os.IsNotExist(fileErr) {
+		fileErr = nil
+	}
+	return errors.Join(dbErr, fileErr)
 }

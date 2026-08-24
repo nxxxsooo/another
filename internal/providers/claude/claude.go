@@ -3,6 +3,7 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,21 +46,33 @@ func (p *Provider) projectsRoot() string {
 func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]model.Summary, error) {
 	root := p.projectsRoot()
 	var out []model.Summary
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
 			return nil
 		}
 		if strings.Contains(path, "observer-sessions") && strings.Contains(path, "claude-mem") {
 			return nil
 		}
-		if opts.SkipUnchanged != nil {
-			if info, err := d.Info(); err == nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
+		if info, infoErr := d.Info(); infoErr == nil {
+			if opts.SkipSource != nil && opts.SkipSource(path, info.ModTime().UnixNano(), info.Size()) {
+				return nil
+			}
+			if opts.SkipSource == nil && opts.SkipUnchanged != nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
 				return nil
 			}
 		}
 		sm, err := p.summarizeFile(path)
-		if err != nil || sm.ID == "" {
-			return nil
+		if err != nil {
+			return err
+		}
+		if sm.ID == "" {
+			return fmt.Errorf("empty session id in %s", path)
 		}
 		if opts.ProjectFilter != "" && !strings.Contains(sm.ProjectPath, opts.ProjectFilter) {
 			return nil
@@ -68,23 +81,21 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		if opts.Limit > 0 && len(out) >= opts.Limit {
 			return filepath.SkipAll
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
 		return nil
 	})
-	return out, nil
+	return out, err
 }
 
 type claudeLine struct {
-	Type      string `json:"type"`
-	SessionID string `json:"sessionId"`
-	Timestamp string `json:"timestamp"`
-	UUID      string `json:"uuid"`
-	IsMeta    bool   `json:"isMeta"`
-	Message   *struct {
+	Type        string `json:"type"`
+	SessionID   string `json:"sessionId"`
+	Timestamp   string `json:"timestamp"`
+	UUID        string `json:"uuid"`
+	ParentUUID  string `json:"parentUuid"`
+	CWD         string `json:"cwd"`
+	IsSidechain bool   `json:"isSidechain"`
+	IsMeta      bool   `json:"isMeta"`
+	Message     *struct {
 		Role    string `json:"role"`
 		Content any    `json:"content"`
 	} `json:"message"`
@@ -97,18 +108,36 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 	}
 	base := filepath.Base(path)
 	id := strings.TrimSuffix(base, ".jsonl")
-	encoded := filepath.Base(filepath.Dir(path))
+	encoded := p.encodedProjectForPath(path)
 	project := util.DecodeClaudeProjectPath(encoded)
+	kind := model.SessionKindRoot
+	parentID := ""
+	if filepath.Base(filepath.Dir(path)) == "subagents" || strings.Contains(filepath.ToSlash(path), "/subagents/") {
+		kind = model.SessionKindSubagent
+	}
 	picker := util.NewTitlePicker(80)
+	var migration *model.MigrationMeta
 	var msgCount int
 	var first, last time.Time
-	_ = util.ReadJSONLLines(path, 0, func(line []byte) error {
+	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
+		if meta, ok := model.ParseMigrationMeta(line); ok {
+			migration = meta
+		}
 		var row claudeLine
 		if json.Unmarshal(line, &row) != nil {
 			return nil
 		}
+		if row.CWD != "" {
+			project = row.CWD
+		}
+		if row.IsSidechain {
+			kind = model.SessionKindSubagent
+		}
+		if kind == model.SessionKindSubagent && parentID == "" && row.SessionID != "" && row.SessionID != id {
+			parentID = row.SessionID
+		}
 		if row.Type != "user" && row.Type != "assistant" {
-			if row.SessionID != "" {
+			if kind == model.SessionKindRoot && row.SessionID != "" {
 				id = row.SessionID
 			}
 			return nil
@@ -129,13 +158,33 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 			picker.Note(contentString(row.Message.Content))
 		}
 		return nil
-	})
+	}); err != nil {
+		return model.Summary{}, err
+	}
+	if first.IsZero() {
+		first = st.ModTime()
+	}
+	if last.IsZero() {
+		last = st.ModTime()
+	}
 	title := picker.TitleOr("(no title)")
 	return model.Summary{
 		ID: id, Provider: ProviderID, ProjectPath: project, Title: title,
 		CreatedAt: first, UpdatedAt: last, MessageCount: msgCount,
-		StoragePath: path, SourceMtime: st.ModTime().Unix(),
+		StoragePath: path, Kind: kind, ParentID: parentID,
+		SourceMtime: st.ModTime().UnixNano(), SourceSize: st.Size(),
+		Migration: migration,
 	}, nil
+}
+
+func (p *Provider) encodedProjectForPath(path string) string {
+	rel, err := filepath.Rel(p.projectsRoot(), path)
+	if err == nil {
+		if first := strings.Split(filepath.ToSlash(rel), "/")[0]; first != "" && first != "." {
+			return first
+		}
+	}
+	return filepath.Base(filepath.Dir(path))
 }
 
 func contentString(c any) string {
@@ -165,18 +214,25 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if err != nil {
 		return nil, provider.ErrNotFound
 	}
-	encoded := filepath.Base(filepath.Dir(path))
+	encoded := p.encodedProjectForPath(path)
 	project := util.DecodeClaudeProjectPath(encoded)
+	isSubagent := strings.Contains(filepath.ToSlash(path), "/subagents/")
 	conv := &model.Conversation{
 		ID: ref.ID, Provider: ProviderID, ProjectPath: project, StoragePath: path,
 	}
-	_ = util.ReadJSONLLines(path, 0, func(line []byte) error {
+	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
+		if meta, ok := model.ParseMigrationMeta(line); ok {
+			conv.Migration = meta
+		}
 		var row claudeLine
 		if json.Unmarshal(line, &row) != nil {
 			return nil
 		}
-		if row.SessionID != "" {
+		if !isSubagent && row.SessionID != "" {
 			conv.ID = row.SessionID
+		}
+		if row.CWD != "" {
+			conv.ProjectPath = row.CWD
 		}
 		if row.Type != "user" && row.Type != "assistant" {
 			return nil
@@ -198,7 +254,9 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 			Role: role, Content: content, Timestamp: ts,
 		})
 		return nil
-	})
+	}); err != nil {
+		return nil, err
+	}
 	if len(conv.Messages) == 0 {
 		return nil, provider.ErrNotFound
 	}
@@ -238,32 +296,40 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	meta := model.NewMigrationMeta(conv)
 	var lines []string
-	progress := map[string]any{
-		"type": "progress", "sessionId": sessionID,
-		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-		"uuid": uuid.New().String(),
-		"data": meta,
-	}
-	if b, err := json.Marshal(progress); err == nil {
-		lines = append(lines, string(b))
-	}
 	var parent string
 	for _, m := range conv.Messages {
+		if m.Role != model.RoleUser && m.Role != model.RoleAssistant {
+			continue
+		}
+		content := m.PlainText()
+		if content == "" {
+			continue
+		}
 		u := uuid.New().String()
 		entryType := "user"
 		role := "user"
-		content := m.PlainText()
+		message := map[string]any{"role": role, "content": content}
 		if m.Role == model.RoleAssistant {
 			entryType = "assistant"
 			role = "assistant"
+			message = map[string]any{
+				"id": uuid.New().String(), "type": "message", "role": role,
+				"model":   "unknown",
+				"content": []any{map[string]any{"type": "text", "text": content}},
+			}
+		}
+		ts := m.Timestamp
+		if ts.IsZero() {
+			ts = time.Now().UTC()
 		}
 		row := map[string]any{
 			"type": entryType, "sessionId": sessionID,
-			"timestamp": m.Timestamp.UTC().Format(time.RFC3339Nano),
-			"uuid": u, "parentUuid": parent,
-			"message": map[string]any{"role": role, "content": content},
+			"timestamp": ts.UTC().Format(time.RFC3339Nano),
+			"uuid":      u, "parentUuid": parent,
+			"message": message,
+			"cwd":     project, "version": "0.0.0", "gitBranch": "",
+			"isSidechain": false, "userType": "external", "entrypoint": "cli",
 		}
 		if parent == "" {
 			delete(row, "parentUuid")
@@ -272,7 +338,20 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 		lines = append(lines, string(b))
 		parent = u
 	}
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+	if len(lines) == 0 {
+		return nil, provider.ErrEmptySession
+	}
+	progress := map[string]any{
+		"type": "progress", "sessionId": sessionID,
+		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+		"uuid":      uuid.New().String(), "data": model.NewMigrationMeta(conv),
+	}
+	if b, err := json.Marshal(progress); err != nil {
+		return nil, err
+	} else {
+		lines = append(lines, string(b))
+	}
+	if err := util.WriteFileAtomic(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		return nil, err
 	}
 	return &provider.WriteResult{SessionID: sessionID, StoragePath: path, ProjectPath: project}, nil
@@ -280,7 +359,18 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	if r.ProjectPath != "" {
-		return "cd " + r.ProjectPath + " && claude --resume " + r.SessionID
+		return "cd " + util.ShellQuote(r.ProjectPath) + " && claude --resume " + util.ShellQuote(r.SessionID)
 	}
-	return "claude --resume " + r.SessionID
+	return "claude --resume " + util.ShellQuote(r.SessionID)
+}
+
+func (p *Provider) CleanupWrite(_ context.Context, r provider.WriteResult) error {
+	rel, err := filepath.Rel(p.projectsRoot(), r.StoragePath)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) || !strings.HasSuffix(rel, ".jsonl") {
+		return fmt.Errorf("claude: refusing cleanup outside projects root: %s", r.StoragePath)
+	}
+	if err := os.Remove(r.StoragePath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }

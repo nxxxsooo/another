@@ -2,6 +2,7 @@ package codex_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,6 +19,26 @@ func writeRollout(t *testing.T, dir, name string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestDiscoverCancellationPrecedesSkip(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	sessions := filepath.Join(home, "sessions")
+	if err := os.MkdirAll(sessions, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRollout(t, sessions, "rollout-2025-06-01T10-00-00-0197f8a1-2b3c-7d4e-8f90-abcdef123456.jsonl")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	skipCalls := 0
+	_, err := codex.New().Discover(ctx, provider.DiscoverOpts{SkipSource: func(string, int64, int64) bool {
+		skipCalls++
+		return true
+	}})
+	if !errors.Is(err, context.Canceled) || skipCalls != 0 {
+		t.Fatalf("err=%v skip calls=%d", err, skipCalls)
+	}
 }
 
 // Filename UUIDs contain dashes; the session id must be the full UUID, not the
@@ -51,12 +72,14 @@ func TestDiscoverSkipUnchanged(t *testing.T) {
 	if err := os.MkdirAll(sessions, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeRollout(t, sessions, "rollout-2025-06-01T10-00-00-0197f8a1-2b3c-7d4e-8f90-abcdef123456.jsonl")
+	path := writeRollout(t, sessions, "rollout-2025-06-01T10-00-00-0197f8a1-2b3c-7d4e-8f90-abcdef123456.jsonl")
 	p := codex.New()
 	skipped := 0
+	var gotMtime int64
 	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{
 		SkipUnchanged: func(storagePath string, mtime int64) bool {
 			skipped++
+			gotMtime = mtime
 			return true
 		},
 	})
@@ -66,7 +89,25 @@ func TestDiscoverSkipUnchanged(t *testing.T) {
 	if skipped != 1 {
 		t.Fatalf("skip callback calls = %d, want 1", skipped)
 	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMtime != info.ModTime().Unix() {
+		t.Fatalf("skip mtime = %d, want Unix seconds %d", gotMtime, info.ModTime().Unix())
+	}
 	if len(sums) != 0 {
 		t.Fatalf("summaries = %d, want 0 when all files skipped", len(sums))
+	}
+	var preciseMtime, preciseSize int64
+	if _, err := p.Discover(context.Background(), provider.DiscoverOpts{SkipSource: func(_ string, mtime, size int64) bool {
+		preciseMtime, preciseSize = mtime, size
+		return true
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if preciseMtime != info.ModTime().UnixNano() || preciseSize != info.Size() {
+		t.Fatalf("precise fingerprint = (%d, %d), want (%d, %d)",
+			preciseMtime, preciseSize, info.ModTime().UnixNano(), info.Size())
 	}
 }

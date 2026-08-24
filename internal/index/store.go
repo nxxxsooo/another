@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,7 +16,8 @@ import (
 	"github.com/CyrusSE/agenthop/internal/provider"
 	"github.com/CyrusSE/agenthop/internal/registry"
 	"github.com/CyrusSE/agenthop/internal/util"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 type Store struct {
@@ -23,10 +25,32 @@ type Store struct {
 }
 
 func Open(path string) (*Store, error) {
+	appOwnedDir := path == "" || filepath.Clean(path) == filepath.Clean(config.IndexPath())
 	if path == "" {
 		path = config.IndexPath()
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	_, statErr := os.Lstat(dir)
+	createdDir := os.IsNotExist(statErr)
+	if statErr != nil && !createdDir {
+		return nil, statErr
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	if appOwnedDir || createdDir {
+		info, err := os.Lstat(dir)
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("secure index directory: refusing symlink %s", dir)
+		}
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return nil, fmt.Errorf("secure index directory: %w", err)
+		}
+	}
+	if err := validateIndexFiles(path); err != nil {
 		return nil, err
 	}
 	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
@@ -38,7 +62,39 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := chmodIndexFiles(path); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return s, nil
+}
+
+func validateIndexFiles(path string) error {
+	for _, candidate := range []string{path, path + "-wal", path + "-shm"} {
+		info, err := os.Lstat(candidate)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("secure index file %s: %w", candidate, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("secure index file: refusing non-regular target %s", candidate)
+		}
+	}
+	return nil
+}
+
+func chmodIndexFiles(path string) error {
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("secure index database: %w", err)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if err := os.Chmod(path+suffix, 0o600); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("secure index sidecar %s: %w", suffix, err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error {
@@ -60,6 +116,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   message_count INTEGER,
   storage_path TEXT NOT NULL,
   source_mtime INTEGER NOT NULL,
+	  kind TEXT NOT NULL DEFAULT 'root',
+	  parent_id TEXT,
+	  source_size INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (provider, id)
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
@@ -74,6 +133,43 @@ CREATE TABLE IF NOT EXISTS source_files (
   source_mtime INTEGER NOT NULL,
   PRIMARY KEY (provider, storage_path)
 );
+CREATE TABLE IF NOT EXISTS session_sources (
+  provider TEXT NOT NULL,
+  id TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  project_path TEXT,
+  title TEXT,
+  created_at INTEGER,
+  updated_at INTEGER,
+  message_count INTEGER,
+  source_mtime INTEGER NOT NULL,
+  source_size INTEGER NOT NULL DEFAULT 0,
+  source_priority INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL DEFAULT 'root',
+  parent_id TEXT,
+  PRIMARY KEY (provider, storage_path)
+);
+CREATE INDEX IF NOT EXISTS idx_session_sources_id ON session_sources(provider, id);
+CREATE TABLE IF NOT EXISTS content_index (
+  provider TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+	  storage_path TEXT NOT NULL DEFAULT '',
+  source_mtime INTEGER NOT NULL,
+  source_size INTEGER NOT NULL DEFAULT 0,
+	  session_updated INTEGER NOT NULL DEFAULT 0,
+	  message_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  error TEXT,
+  indexed_at INTEGER NOT NULL,
+  PRIMARY KEY (provider, session_id)
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS session_fts USING fts5(
+  provider UNINDEXED,
+  session_id UNINDEXED,
+  title,
+  body,
+  tokenize = 'unicode61'
+);
 CREATE TABLE IF NOT EXISTS migration_dedup (
   provider TEXT NOT NULL,
   origin_digest TEXT NOT NULL,
@@ -82,6 +178,8 @@ CREATE TABLE IF NOT EXISTS migration_dedup (
   created_at INTEGER NOT NULL,
   origin_id TEXT,
   origin_source TEXT,
+	  origin_message_count INTEGER NOT NULL DEFAULT 0,
+	  legacy INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (provider, origin_digest)
 );
 CREATE INDEX IF NOT EXISTS idx_migration_dedup_provider ON migration_dedup(provider);
@@ -89,27 +187,96 @@ CREATE INDEX IF NOT EXISTS idx_migration_dedup_provider ON migration_dedup(provi
 	if err != nil {
 		return err
 	}
-	_, _ = s.db.Exec(`ALTER TABLE migration_dedup ADD COLUMN origin_id TEXT`)
-	_, _ = s.db.Exec(`ALTER TABLE migration_dedup ADD COLUMN origin_source TEXT`)
+	for _, statement := range []string{
+		`ALTER TABLE migration_dedup ADD COLUMN origin_id TEXT`,
+		`ALTER TABLE migration_dedup ADD COLUMN origin_source TEXT`,
+		`ALTER TABLE migration_dedup ADD COLUMN origin_message_count INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE migration_dedup ADD COLUMN legacy INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'root'`,
+		`ALTER TABLE sessions ADD COLUMN parent_id TEXT`,
+		`ALTER TABLE sessions ADD COLUMN source_size INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE content_index ADD COLUMN session_updated INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE content_index ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE content_index ADD COLUMN storage_path TEXT NOT NULL DEFAULT ''`,
+	} {
+		if err := addColumn(s.db, statement); err != nil {
+			return err
+		}
+	}
+	if _, err := s.db.Exec(`
+INSERT OR IGNORE INTO session_sources
+  (provider, id, storage_path, project_path, title, created_at, updated_at, message_count,
+   source_mtime, source_size, kind, parent_id)
+SELECT provider, id, storage_path, project_path, title, created_at, updated_at, message_count,
+       source_mtime, source_size, kind, parent_id
+FROM sessions`); err != nil {
+		return err
+	}
 	_, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_migration_dedup_origin ON migration_dedup(provider, origin_id, origin_source)`)
 	return err
 }
 
+func addColumn(db *sql.DB, statement string) error {
+	_, err := db.Exec(statement)
+	if err == nil || duplicateColumnError(err) {
+		return nil
+	}
+	return err
+}
+
+func duplicateColumnError(err error) bool {
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_ERROR &&
+		strings.Contains(sqliteErr.Error(), "duplicate column name:")
+}
+
 // RecordMigration stores a successful migration for deduplication (SQLite and JSONL targets).
 func (s *Store) RecordMigration(providerID, originDigest, sessionID, storagePath, originID, originSource string) error {
+	return s.RecordMigrationSnapshot(providerID, originDigest, sessionID, storagePath, originID, originSource, 0)
+}
+
+// RecordMigrationSnapshot stores a current-format, digest-addressed migration.
+func (s *Store) RecordMigrationSnapshot(providerID, originDigest, sessionID, storagePath, originID, originSource string, originMessageCount int) error {
 	if originDigest == "" || sessionID == "" {
 		return nil
 	}
 	_, err := s.db.Exec(`
-INSERT INTO migration_dedup (provider, origin_digest, session_id, storage_path, created_at, origin_id, origin_source)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO migration_dedup (provider, origin_digest, session_id, storage_path, created_at, origin_id, origin_source, origin_message_count, legacy)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
 ON CONFLICT(provider, origin_digest) DO UPDATE SET
   session_id=excluded.session_id,
   storage_path=excluded.storage_path,
   created_at=excluded.created_at,
   origin_id=excluded.origin_id,
-  origin_source=excluded.origin_source
-`, providerID, originDigest, sessionID, storagePath, time.Now().Unix(), originID, originSource)
+  origin_source=excluded.origin_source,
+  origin_message_count=excluded.origin_message_count,
+  legacy=0
+`, providerID, originDigest, sessionID, storagePath, time.Now().Unix(), originID, originSource, originMessageCount)
+	return err
+}
+
+func recordIndexedMigration(tx *sql.Tx, summary model.Summary) error {
+	meta := summary.Migration
+	if meta == nil || meta.OriginID == "" || summary.ID == "" {
+		return nil
+	}
+	digest, legacy := meta.OriginDigest, 0
+	if digest == "" {
+		// The sentinel is only a storage key. Legacy lookup is explicitly gated by
+		// legacy=1 and matching originMessageCount.
+		digest, legacy = "legacy:"+summary.ID, 1
+	}
+	_, err := tx.Exec(`
+INSERT INTO migration_dedup
+  (provider, origin_digest, session_id, storage_path, created_at, origin_id, origin_source, origin_message_count, legacy)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(provider, origin_digest) DO UPDATE SET
+  session_id=excluded.session_id, storage_path=excluded.storage_path,
+  created_at=excluded.created_at, origin_id=excluded.origin_id,
+  origin_source=excluded.origin_source,
+  origin_message_count=excluded.origin_message_count, legacy=excluded.legacy`,
+		summary.Provider, digest, summary.ID, summary.StoragePath, time.Now().Unix(),
+		meta.OriginID, meta.OriginSource, meta.OriginMessageCount, legacy)
 	return err
 }
 
@@ -155,43 +322,119 @@ ORDER BY created_at DESC LIMIT 1`, providerID, originID).Scan(&sessionID, &stora
 	return sessionID, storagePath, true, nil
 }
 
+// FindLegacyMigrationByOrigin matches only pre-digest markers and requires the
+// same message count. Current digest records never fall back to origin id.
+func (s *Store) FindLegacyMigrationByOrigin(providerID, originID, originSource string, originMessageCount int) (sessionID, storagePath string, ok bool, err error) {
+	if originID == "" {
+		return "", "", false, nil
+	}
+	err = s.db.QueryRow(`
+SELECT session_id, storage_path FROM migration_dedup
+WHERE provider = ? AND origin_id = ? AND origin_source = ?
+  AND origin_message_count = ? AND legacy = 1
+ORDER BY created_at DESC LIMIT 1`, providerID, originID, originSource, originMessageCount).Scan(&sessionID, &storagePath)
+	if err == sql.ErrNoRows {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return sessionID, storagePath, true, nil
+}
+
 func (s *Store) Upsert(summary model.Summary) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := upsertSource(tx, summary); err != nil {
+		return err
+	}
+	if err := recordIndexedMigration(tx, summary); err != nil {
+		return err
+	}
+	if err := rebuildProviderSessions(tx, summary.Provider); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func normalizeSummary(summary model.Summary) model.Summary {
 	if summary.ProjectPath != "" {
 		summary.ProjectPath = util.NormalizeProjectPath(summary.ProjectPath)
 	}
-	_, err := s.db.Exec(`
-INSERT INTO sessions (id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(provider, id) DO UPDATE SET
+	if summary.Kind == "" {
+		summary.Kind = model.SessionKindRoot
+	}
+	return summary
+}
+
+func upsertSource(tx *sql.Tx, summary model.Summary) error {
+	summary = normalizeSummary(summary)
+	_, err := tx.Exec(`
+INSERT INTO session_sources
+  (provider, id, storage_path, project_path, title, created_at, updated_at, message_count,
+   source_mtime, source_size, source_priority, kind, parent_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(provider, storage_path) DO UPDATE SET
+  id=excluded.id,
   project_path=excluded.project_path,
   title=excluded.title,
   created_at=excluded.created_at,
   updated_at=excluded.updated_at,
   message_count=excluded.message_count,
-  storage_path=excluded.storage_path,
-  source_mtime=excluded.source_mtime
-`, summary.ID, summary.Provider, summary.ProjectPath, summary.Title,
+  source_mtime=excluded.source_mtime,
+  source_size=excluded.source_size,
+  source_priority=excluded.source_priority,
+  kind=excluded.kind,
+  parent_id=excluded.parent_id`,
+		summary.Provider, summary.ID, summary.StoragePath, summary.ProjectPath, summary.Title,
 		summary.CreatedAt.Unix(), summary.UpdatedAt.Unix(), summary.MessageCount,
-		summary.StoragePath, summary.SourceMtime)
+		summary.SourceMtime, summary.SourceSize, summary.SourcePriority, summary.Kind, summary.ParentID)
 	if err != nil {
 		return err
 	}
-	// Several files can share one session id (resumed sessions); freshness is
-	// tracked per file so incremental scans can skip every unchanged path.
-	_, err = s.db.Exec(`INSERT INTO source_files (provider, storage_path, source_mtime) VALUES (?, ?, ?)
+	// Keep the legacy table populated so older Agenthop builds can still decide
+	// whether a source changed after a downgrade.
+	_, err = tx.Exec(`INSERT INTO source_files (provider, storage_path, source_mtime) VALUES (?, ?, ?)
 ON CONFLICT(provider, storage_path) DO UPDATE SET source_mtime=excluded.source_mtime`,
 		summary.Provider, summary.StoragePath, summary.SourceMtime)
 	return err
 }
 
+func rebuildProviderSessions(tx *sql.Tx, providerID string) error {
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE provider = ?`, providerID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`
+INSERT INTO sessions
+  (id, provider, project_path, title, created_at, updated_at, message_count, storage_path,
+   source_mtime, kind, parent_id, source_size)
+SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path,
+       source_mtime, kind, parent_id, source_size
+FROM (
+	  SELECT ss.*,
+	    ROW_NUMBER() OVER (
+	      PARTITION BY provider, id
+	      ORDER BY source_priority DESC, updated_at DESC, message_count DESC,
+	               source_mtime DESC, storage_path ASC
+    ) AS source_rank
+  FROM session_sources ss WHERE provider = ?
+)
+WHERE source_rank = 1`, providerID)
+	return err
+}
+
 type ListOpts struct {
-	Provider      string
-	ProjectFilter string
-	ProjectExact  string
-	ProjectCWD    string // sessions whose project_path equals this directory exactly
-	Limit         int
-	Offset        int
-	Query         string
+	Provider         string
+	ProjectFilter    string
+	ProjectExact     string
+	ProjectCWD       string // sessions whose project_path equals this directory exactly
+	Limit            int
+	Offset           int
+	Query            string
+	IncludeSubagents bool
 }
 
 func (s *Store) listWhere(opts ListOpts) (string, []any) {
@@ -200,6 +443,9 @@ func (s *Store) listWhere(opts ListOpts) (string, []any) {
 	if opts.Provider != "" {
 		q += ` AND provider = ?`
 		args = append(args, opts.Provider)
+	}
+	if !opts.IncludeSubagents {
+		q += ` AND kind = 'root'`
 	}
 	if opts.ProjectCWD != "" {
 		norm := util.NormalizeProjectPath(opts.ProjectCWD)
@@ -241,7 +487,7 @@ func (s *Store) Count(opts ListOpts) (int, error) {
 
 func (s *Store) List(opts ListOpts) ([]model.Summary, error) {
 	where, args := s.listWhere(opts)
-	q := `SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime` + where
+	q := `SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size` + where
 	q += ` ORDER BY updated_at DESC`
 	if opts.Limit > 0 {
 		q += fmt.Sprintf(` LIMIT %d`, opts.Limit)
@@ -258,7 +504,7 @@ func (s *Store) List(opts ListOpts) ([]model.Summary, error) {
 	for rows.Next() {
 		var sm model.Summary
 		var created, updated, mtime int64
-		if err := rows.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime); err != nil {
+		if err := rows.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime, &sm.Kind, &sm.ParentID, &sm.SourceSize); err != nil {
 			return nil, err
 		}
 		sm.CreatedAt = time.Unix(created, 0)
@@ -271,55 +517,62 @@ func (s *Store) List(opts ListOpts) ([]model.Summary, error) {
 
 func (s *Store) Get(providerID, id string) (*model.Summary, error) {
 	id = strings.TrimSpace(id)
+	suffixOnly := strings.HasPrefix(id, "…") || strings.HasPrefix(id, "...")
+	id = strings.TrimPrefix(strings.TrimPrefix(id, "…"), "...")
 	if id == "" {
 		return nil, provider.ErrNotFound
 	}
-	if sm, err := s.scanSummary(`SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime
+	if suffixOnly {
+		return s.matchIDs(providerID, `id LIKE ? ESCAPE '\'`, "%"+util.EscapeLike(id), id, true)
+	}
+	if sm, err := s.scanSummary(`SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size
 FROM sessions WHERE provider = ? AND id = ? ORDER BY updated_at DESC LIMIT 1`, providerID, id); err == nil {
 		return sm, nil
 	} else if err != provider.ErrNotFound {
 		return nil, err
 	}
-	if sm, err := s.scanSummary(`SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime
-FROM sessions WHERE provider = ? AND id LIKE ? ORDER BY updated_at DESC LIMIT 1`, providerID, id+"%"); err == nil {
+	if sm, err := s.matchIDs(providerID, `id LIKE ? ESCAPE '\'`, util.EscapeLike(id)+"%", id, true); err == nil {
 		return sm, nil
 	} else if err != provider.ErrNotFound {
 		return nil, err
 	}
-	return s.matchBySuffix(providerID, "%"+id, id, true)
+	return s.matchIDs(providerID, `id LIKE ? ESCAPE '\'`, "%"+util.EscapeLike(id), id, true)
 }
 
 func (s *Store) FindByID(id string) (*model.Summary, error) {
 	id = strings.TrimSpace(id)
+	suffixOnly := strings.HasPrefix(id, "…") || strings.HasPrefix(id, "...")
+	id = strings.TrimPrefix(strings.TrimPrefix(id, "…"), "...")
 	if id == "" {
 		return nil, provider.ErrNotFound
 	}
-	if sm, err := s.scanSummary(`SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime
-FROM sessions WHERE id = ? ORDER BY updated_at DESC LIMIT 1`, id); err == nil {
+	if suffixOnly {
+		return s.matchIDs("", `id LIKE ? ESCAPE '\'`, "%"+util.EscapeLike(id), id, false)
+	}
+	if sm, err := s.matchIDs("", `id = ?`, id, id, false); err == nil {
 		return sm, nil
 	} else if err != provider.ErrNotFound {
 		return nil, err
 	}
-	if sm, err := s.scanSummary(`SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime
-FROM sessions WHERE id LIKE ? ORDER BY updated_at DESC LIMIT 1`, id+"%"); err == nil {
+	if sm, err := s.matchIDs("", `id LIKE ? ESCAPE '\'`, util.EscapeLike(id)+"%", id, false); err == nil {
 		return sm, nil
 	} else if err != provider.ErrNotFound {
 		return nil, err
 	}
-	return s.matchBySuffix("", "%"+id, id, false)
+	return s.matchIDs("", `id LIKE ? ESCAPE '\'`, "%"+util.EscapeLike(id), id, false)
 }
 
-func (s *Store) matchBySuffix(providerID, likePattern, queryID string, withProvider bool) (*model.Summary, error) {
+func (s *Store) matchIDs(providerID, predicate, value, queryID string, withProvider bool) (*model.Summary, error) {
 	var rows *sql.Rows
 	var err error
 	if withProvider {
 		rows, err = s.db.Query(`
-SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime
-FROM sessions WHERE provider = ? AND id LIKE ? ORDER BY updated_at DESC`, providerID, likePattern)
+SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size
+FROM sessions WHERE provider = ? AND `+predicate+` ORDER BY updated_at DESC`, providerID, value)
 	} else {
 		rows, err = s.db.Query(`
-SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime
-FROM sessions WHERE id LIKE ? ORDER BY updated_at DESC`, likePattern)
+SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size
+FROM sessions WHERE `+predicate+` ORDER BY updated_at DESC`, value)
 	}
 	if err != nil {
 		return nil, err
@@ -361,7 +614,7 @@ func (s *Store) scanSummary(query string, args ...any) (*model.Summary, error) {
 func (s *Store) scanSummaryRow(rows *sql.Rows) (*model.Summary, error) {
 	var sm model.Summary
 	var created, updated, mtime int64
-	if err := rows.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime); err != nil {
+	if err := rows.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime, &sm.Kind, &sm.ParentID, &sm.SourceSize); err != nil {
 		return nil, err
 	}
 	sm.CreatedAt = time.Unix(created, 0)
@@ -373,7 +626,7 @@ func (s *Store) scanSummaryRow(rows *sql.Rows) (*model.Summary, error) {
 func (s *Store) scanSummaryFromRow(row *sql.Row) (*model.Summary, error) {
 	var sm model.Summary
 	var created, updated, mtime int64
-	if err := row.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime); err != nil {
+	if err := row.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime, &sm.Kind, &sm.ParentID, &sm.SourceSize); err != nil {
 		return nil, err
 	}
 	sm.CreatedAt = time.Unix(created, 0)
@@ -427,6 +680,19 @@ func (s *Store) NeedsRefresh(providerID string, storagePath string, mtime int64)
 		return true, err
 	}
 	return existing != mtime, nil
+}
+
+func (s *Store) NeedsSourceRefresh(providerID, storagePath string, mtime, size int64) (bool, error) {
+	var existingMtime, existingSize int64
+	err := s.db.QueryRow(`SELECT source_mtime, source_size FROM session_sources
+WHERE provider = ? AND storage_path = ?`, providerID, storagePath).Scan(&existingMtime, &existingSize)
+	if err == sql.ErrNoRows {
+		return true, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	return existingMtime != mtime || existingSize != size, nil
 }
 
 // AnyInstalledUnindexed reports whether an installed provider has no sessions in the index.
@@ -520,36 +786,31 @@ func recordDiscoverMeta(store *Store, providerID string, summaries []model.Summa
 }
 
 func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, providerFilter string) (int, error) {
-	if providerFilter != "" {
-		if _, err := store.db.Exec(`DELETE FROM sessions WHERE provider = ?`, providerFilter); err != nil {
-			return 0, err
-		}
-		_, _ = store.db.Exec(`DELETE FROM source_files WHERE provider = ?`, providerFilter)
-	} else {
-		if _, err := store.db.Exec(`DELETE FROM sessions`); err != nil {
-			return 0, err
-		}
-		_, _ = store.db.Exec(`DELETE FROM source_files`)
-	}
 	total := 0
 	for _, p := range reg.All() {
 		if providerFilter != "" && p.ID() != providerFilter {
 			continue
 		}
 		if !p.Installed() {
+			if err := store.reconcileProvider(p.ID(), nil, map[string]struct{}{}); err != nil {
+				return total, err
+			}
+			_ = recordDiscoverMeta(store, p.ID(), nil)
 			continue
 		}
 		summaries, err := p.Discover(ctx, provider.DiscoverOpts{})
 		if err != nil {
 			return total, fmt.Errorf("%s: %w", p.ID(), err)
 		}
-		_ = recordDiscoverMeta(store, p.ID(), summaries)
+		seen := make(map[string]struct{}, len(summaries))
 		for _, sm := range summaries {
-			if err := store.Upsert(sm); err != nil {
-				return total, err
-			}
-			total++
+			seen[sm.StoragePath] = struct{}{}
 		}
+		if err := store.reconcileProvider(p.ID(), summaries, seen); err != nil {
+			return total, err
+		}
+		_ = recordDiscoverMeta(store, p.ID(), summaries)
+		total += len(summaries)
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_ = store.SetMeta("last_rebuild", now)
@@ -564,32 +825,109 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 			continue
 		}
 		if !p.Installed() {
+			if err := store.reconcileProvider(p.ID(), nil, map[string]struct{}{}); err != nil {
+				return total, err
+			}
+			_ = recordDiscoverMeta(store, p.ID(), nil)
 			continue
 		}
 		pid := p.ID()
+		seen := make(map[string]struct{})
 		skip := func(storagePath string, mtime int64) bool {
+			seen[storagePath] = struct{}{}
 			need, err := store.NeedsRefresh(pid, storagePath, mtime)
 			return err == nil && !need
 		}
-		summaries, err := p.Discover(ctx, provider.DiscoverOpts{SkipUnchanged: skip})
+		skipSource := func(storagePath string, mtime, size int64) bool {
+			seen[storagePath] = struct{}{}
+			need, err := store.NeedsSourceRefresh(pid, storagePath, mtime, size)
+			return err == nil && !need
+		}
+		summaries, err := p.Discover(ctx, provider.DiscoverOpts{SkipUnchanged: skip, SkipSource: skipSource})
 		if err != nil {
 			return total, fmt.Errorf("%s: %w", pid, err)
 		}
 		for _, sm := range summaries {
-			need, err := store.NeedsRefresh(sm.Provider, sm.StoragePath, sm.SourceMtime)
-			if err != nil || need {
-				if err := store.Upsert(sm); err != nil {
-					return total, err
-				}
-				total++
-			}
+			seen[sm.StoragePath] = struct{}{}
 		}
+		if err := store.reconcileProvider(pid, summaries, seen); err != nil {
+			return total, err
+		}
+		total += len(summaries)
 		// Skipped files never reach summaries, so record the indexed count
 		// rather than this scan's (partial) discover count.
-		if n, err := store.Count(ListOpts{Provider: pid}); err == nil {
+		if n, err := store.Count(ListOpts{Provider: pid, IncludeSubagents: true}); err == nil {
 			_ = store.SetMeta(discoverCountMetaKey(pid), strconv.Itoa(n))
 		}
 	}
 	_ = store.SetMeta("last_update", time.Now().UTC().Format(time.RFC3339))
 	return total, nil
+}
+
+func (s *Store) reconcileProvider(providerID string, changed []model.Summary, seen map[string]struct{}) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, sm := range changed {
+		if err := upsertSource(tx, sm); err != nil {
+			return err
+		}
+		if err := recordIndexedMigration(tx, sm); err != nil {
+			return err
+		}
+	}
+	rows, err := tx.Query(`SELECT storage_path FROM session_sources WHERE provider = ?`, providerID)
+	if err != nil {
+		return err
+	}
+	var stale []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, ok := seen[path]; !ok {
+			stale = append(stale, path)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, path := range stale {
+		if _, err := tx.Exec(`DELETE FROM session_sources WHERE provider = ? AND storage_path = ?`, providerID, path); err != nil {
+			return err
+		}
+		_, _ = tx.Exec(`DELETE FROM source_files WHERE provider = ? AND storage_path = ?`, providerID, path)
+	}
+	if err := rebuildProviderSessions(tx, providerID); err != nil {
+		return err
+	}
+	// Search rows must not survive deletion or a change of canonical source.
+	if _, err := tx.Exec(`DELETE FROM session_fts
+WHERE provider = ? AND NOT EXISTS (
+  SELECT 1 FROM sessions s JOIN content_index c
+    ON c.provider=s.provider AND c.session_id=s.id
+	  WHERE s.provider=session_fts.provider AND s.id=session_fts.session_id
+	    AND c.storage_path=s.storage_path AND c.source_mtime=s.source_mtime
+	    AND c.source_size=s.source_size AND c.session_updated=s.updated_at
+	    AND c.message_count=s.message_count AND c.status='ready'
+)`, providerID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM content_index
+WHERE provider = ? AND NOT EXISTS (
+  SELECT 1 FROM sessions s
+  WHERE s.provider=content_index.provider AND s.id=content_index.session_id
+	    AND s.storage_path=content_index.storage_path
+	    AND s.source_mtime=content_index.source_mtime
+	    AND s.source_size=content_index.source_size
+	    AND s.updated_at=content_index.session_updated
+	    AND s.message_count=content_index.message_count
+)`, providerID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

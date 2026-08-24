@@ -7,7 +7,7 @@ const defaultTitleLen = 80
 // TitlePicker picks a session title from user messages; plain text beats slash commands.
 type TitlePicker struct {
 	plain, slash string
-	max           int
+	max          int
 }
 
 func NewTitlePicker(maxLen int) *TitlePicker {
@@ -49,8 +49,8 @@ func (p *TitlePicker) TitleOr(fallback string) string {
 
 // UserTitleFromText extracts a display title from one user message.
 func UserTitleFromText(text string) (string, bool) {
-	text = strings.TrimSpace(text)
-	if text == "" || SkipUserMessage(text) {
+	text, ok := NormalizeUserText(text)
+	if !ok {
 		return "", false
 	}
 	if name := extractXMLTag(text, "command-name"); name != "" {
@@ -79,6 +79,20 @@ func UserTitleFromText(text string) (string, bool) {
 	return FirstUserSnippet(text, defaultTitleLen), true
 }
 
+// NormalizeUserText removes provider transport wrappers from a real prompt.
+func NormalizeUserText(text string) (string, bool) {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "<timestamp>") {
+		if end := strings.Index(text, "</timestamp>"); end >= 0 {
+			text = strings.TrimSpace(text[end+len("</timestamp>"):])
+		}
+	}
+	if query := extractXMLTag(text, "user_query"); query != "" {
+		text = strings.TrimSpace(query)
+	}
+	return text, text != "" && !SkipUserMessage(text)
+}
+
 // SkipUserMessage reports agent-injected user lines that are not real prompts.
 func SkipUserMessage(text string) bool {
 	text = strings.TrimSpace(text)
@@ -100,6 +114,8 @@ func SkipUserMessage(text string) bool {
 		"<permissions instructions>",
 		"<collaboration_mode>",
 		"<skills_instructions>",
+		"<manually_attached_skills>",
+		"<image name=",
 		"Read HEARTBEAT.md",
 		"You are being used as the model planner",
 		"Sender (untrusted metadata)",

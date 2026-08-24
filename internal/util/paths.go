@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -64,7 +65,21 @@ func EncodeClaudeProjectPath(absPath string) string {
 	if err != nil {
 		abs = absPath
 	}
-	return strings.ReplaceAll(abs, string(filepath.Separator), "-")
+	var b strings.Builder
+	b.Grow(len(abs))
+	for _, r := range abs {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}
+
+// ShellQuote returns one POSIX-shell argument without allowing interpolation.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 func DecodeClaudeProjectPath(encoded string) string {
@@ -100,6 +115,33 @@ func FileMtime(path string) (time.Time, error) {
 	return st.ModTime(), nil
 }
 
+// WriteFileAtomic replaces path only after a private temporary file has been
+// fully written, synced, closed, and chmodded.
+func WriteFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
+	f, err := os.CreateTemp(filepath.Dir(path), ".agenthop-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+	}()
+	if _, err = f.Write(data); err == nil {
+		err = f.Chmod(mode)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	return err
+}
+
 func ReadJSONLLines(path string, maxLines int, fn func(line []byte) error) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -107,7 +149,9 @@ func ReadJSONLLines(path string, maxLines int, fn func(line []byte) error) error
 	}
 	defer f.Close()
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	// Provider JSONL can embed images or tool payloads in one record. Keep a
+	// finite ceiling, but make it large enough for real Codex/Claude rollouts.
+	sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)
 	n := 0
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
@@ -122,7 +166,44 @@ func ReadJSONLLines(path string, maxLines int, fn func(line []byte) error) error
 			break
 		}
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	return nil
+}
+
+// ReadJSONLPrefix reads only the bounded file prefix needed by metadata scans.
+// The final callback may receive a truncated record, which JSON callers can
+// simply ignore. This avoids allocating embedded images and tool payloads.
+func ReadJSONLPrefix(path string, maxBytes int64, maxLines int, fn func(line []byte) error) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if maxBytes <= 0 {
+		return nil
+	}
+	sc := bufio.NewScanner(io.LimitReader(f, maxBytes))
+	sc.Buffer(make([]byte, 0, 64*1024), int(maxBytes)+1)
+	n := 0
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		if err := fn(line); err != nil {
+			return err
+		}
+		n++
+		if maxLines > 0 && n >= maxLines {
+			break
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("read prefix %s: %w", path, err)
+	}
+	return nil
 }
 
 // ScanJSONLEdges checks the first headLines and trailing tailChunk bytes for a matching line.

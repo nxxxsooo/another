@@ -1,7 +1,6 @@
 package codex
 
 import (
-	"strings"
 	"time"
 
 	"github.com/CyrusSE/agenthop/internal/model"
@@ -96,14 +95,8 @@ func codexV2TaskComplete(ts, turnID, lastAssistant string) (string, error) {
 func codexPrepareMessages(msgs []model.Message) []model.Message {
 	out := make([]model.Message, 0, len(msgs)+1)
 	for _, m := range msgs {
-		text := strings.TrimSpace(m.PlainText())
+		text := m.PlainText()
 		if text == "" || m.Role == model.RoleTool {
-			continue
-		}
-		if m.Role == model.RoleUser && codexSkipUserText(text) {
-			continue
-		}
-		if m.Role == model.RoleAssistant && strings.HasPrefix(text, "[CONTEXT COMPACTION") {
 			continue
 		}
 		out = append(out, m)
@@ -127,7 +120,7 @@ func codexAppendTurn(lines *[]string, turnID, project string, turnStart time.Tim
 	}
 	*lines = append(*lines, ctx)
 
-	userText := strings.TrimSpace(user.PlainText())
+	userText := user.PlainText()
 	userLines, err := codexV2UserLines(codexV2Timestamp(user.Timestamp), userText)
 	if err != nil {
 		return err
@@ -136,7 +129,7 @@ func codexAppendTurn(lines *[]string, turnID, project string, turnStart time.Tim
 
 	lastAssistant := ""
 	for _, m := range assistants {
-		text := strings.TrimSpace(m.PlainText())
+		text := m.PlainText()
 		if text == "" {
 			continue
 		}

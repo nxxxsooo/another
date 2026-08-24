@@ -10,13 +10,16 @@
 ## Codex (`codex`)
 
 - Path: `~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl`
-- Format: `session_meta` line + `event_msg` entries
+- Format: `session_meta`, durable migration marker, and native v2 turn records
+- Native thread registration: `~/.codex/state_5.sqlite` when present
 - Env: `CODEX_HOME`
 
 ## Cursor (`cursor`)
 
 - Primary: `~/.cursor/chats/<workspace-hash>/<session-id>/store.db`
+- CLI metadata: sibling `meta.json` supplies workspace, title, timestamps, and subagent state
 - Fallback: `~/.cursor/projects/<encoded>/agent-transcripts/<id>/<id>.jsonl`
+- Agenthop reads the active root graph, uses bounded recent blobs for previews, excludes unreachable historical blobs, and writes the database, CLI metadata, and transcript representations.
 
 ## OpenCode (`opencode`)
 
@@ -34,3 +37,4 @@
 - Path: `~/.hermes/state.db`
 - Tables: `sessions`, `messages`
 - Env: `HERMES_HOME`
+- Resume: `hermes --resume <session-id>`

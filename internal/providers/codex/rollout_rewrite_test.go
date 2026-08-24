@@ -42,10 +42,40 @@ func TestRolloutIsAgenthopMigration(t *testing.T) {
 	}
 }
 
+func TestRolloutMarkerRemainsDiscoverableAfterAppendedRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	body := `{"type":"session_meta","payload":{"id":"abc"}}` + "\n" +
+		`{"type":"agenthop_migration","data":{"type":"agenthop_migration","originId":"src","originSource":"claude-code","originDigest":"digest"}}` + "\n" +
+		strings.Repeat(`{"type":"response_item","payload":{}}`+"\n", 10_000)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !rolloutIsAgenthopMigration(path) {
+		t.Fatal("marker immediately after session_meta was lost behind appended rows")
+	}
+}
+
+func TestRolloutNeedsV2RewriteBoundsFirstLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Repeat("x", 128*1024)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !rolloutNeedsV2Rewrite(path) {
+		t.Fatal("oversized session_meta line must be rejected")
+	}
+}
+
 func TestRewriteRolloutFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "rollout.jsonl")
 	_ = os.WriteFile(path, []byte(`{"type":"session_meta","session_id":"abc"}`+"\n"), 0o644)
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("untouched"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, path+".agenthop.tmp"); err != nil {
+		t.Fatal(err)
+	}
 	p := &Provider{sessionsRoot: filepath.Join(dir, "sessions")}
 	conv := &model.Conversation{
 		Messages: []model.Message{
@@ -60,6 +90,9 @@ func TestRewriteRolloutFile(t *testing.T) {
 	b, _ := os.ReadFile(path)
 	if !strings.Contains(string(b), `"payload"`) {
 		t.Fatalf("expected v2 payload wrapper: %s", string(b[:min(120, len(b))]))
+	}
+	if got, _ := os.ReadFile(victim); string(got) != "untouched" {
+		t.Fatalf("predictable temp symlink was followed: %q", got)
 	}
 }
 
