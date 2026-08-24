@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,6 +87,50 @@ func TestVerifyWriteDetectsTimestampCorruptionAndAllowsUnspecifiedZero(t *testin
 }
 
 func ptrMigration(meta model.MigrationMeta) *model.MigrationMeta { return &meta }
+
+func TestResumableConversationBoundsAndNormalizesProviderHistory(t *testing.T) {
+	source := &model.Conversation{ID: "long", Provider: "cursor", Title: "Long task"}
+	source.Messages = append(source.Messages, model.Message{Role: model.RoleUser, Content: "<user_info>provider setup</user_info>"})
+	for i := 0; i < 200; i++ {
+		source.Messages = append(source.Messages,
+			model.Message{Role: model.RoleUser, Content: fmt.Sprintf("<timestamp>now</timestamp><user_query>prompt %d</user_query>", i)},
+			model.Message{Role: model.RoleAssistant, Content: strings.Repeat("answer ", 1000)},
+		)
+	}
+	source.Messages = append(source.Messages,
+		model.Message{Role: model.RoleUser, Content: "<timestamp>now</timestamp><user_query>continue correctly</user_query>"},
+		model.Message{Role: model.RoleAssistant, Content: "retry status"},
+		model.Message{Role: model.RoleUser, Content: "<timestamp>now</timestamp><user_query>continue correctly</user_query>"},
+		model.Message{Role: model.RoleUser, Content: "<dynamic_tools>provider setup</dynamic_tools>"},
+	)
+
+	projected, warning := resumableConversation(source)
+	if warning == "" || len(projected.Messages) > resumeMessageLimit+1 {
+		t.Fatalf("projection len=%d warning=%q", len(projected.Messages), warning)
+	}
+	if !strings.HasPrefix(projected.Messages[0].Content, "[Agenthop migration handoff]") {
+		t.Fatalf("missing handoff: %q", projected.Messages[0].Content)
+	}
+	last := projected.Messages[len(projected.Messages)-1]
+	if last.Content != "continue correctly" {
+		t.Fatalf("last prompt = %q", last.Content)
+	}
+	var continueCount int
+	for _, message := range projected.Messages {
+		if message.Content == "continue correctly" {
+			continueCount++
+		}
+	}
+	if continueCount != 1 {
+		t.Fatalf("duplicate prompt count = %d", continueCount)
+	}
+	meta := model.NewMigrationMeta(source)
+	projected.WriteMigration = &meta
+	writtenMeta := model.NewMigrationMeta(projected)
+	if writtenMeta.OriginDigest != model.SnapshotDigest(source) || writtenMeta.OriginMessageCount != len(source.Messages) {
+		t.Fatalf("projection lost origin identity: %+v", writtenMeta)
+	}
+}
 
 func TestImportReturnsBookkeepingWarnings(t *testing.T) {
 	root := t.TempDir()

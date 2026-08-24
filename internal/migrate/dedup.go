@@ -126,6 +126,11 @@ func migrationTargetMatches(dst provider.Provider, result provider.WriteResult, 
 	if meta.OriginID != source.ID || meta.OriginSource != source.Provider {
 		return false
 	}
+	// Older digest-bearing targets copied too much provider state into active
+	// context. Recreate them using the current resumable projection format.
+	if meta.OriginDigest != "" && (meta.TargetFormatVersion == nil || *meta.TargetFormatVersion < model.MigrationTargetFormatVersion) {
+		return false
+	}
 	if legacy && meta.OriginDigest == "" {
 		return meta.OriginMessageCount == len(source.Messages)
 	}

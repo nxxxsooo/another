@@ -96,6 +96,10 @@ agenthop migrate
 agenthop <session-id> --from claude-code --to codex -y
 agenthop migrate <session-id> --from claude-code --to codex -y
 agenthop resume <session-id> --from claude-code --to codex
+
+# Migration keeps a bounded recent context so resume stays usable.
+# Export first when you also need a complete portable archive.
+agenthop export <session-id> --provider cursor -o session.agenthop.json
 ```
 
 **3. Refresh the index** when you've created new sessions in your agents:

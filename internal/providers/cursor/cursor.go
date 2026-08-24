@@ -505,12 +505,37 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if strings.HasSuffix(path, ".jsonl") {
 		return p.loadTranscript(path, ref.ID)
 	}
+	if transcript := p.transcriptForRef(ref); transcript != "" {
+		conv, err := p.loadTranscript(transcript, ref.ID)
+		if err != nil {
+			return nil, err
+		}
+		p.enrichStoreConversationAt(conv, ref.ProjectPath, path)
+		return conv, nil
+	}
 	conv, err := p.loadStore(path, ref.ID)
 	if err != nil {
 		return nil, err
 	}
 	p.enrichStoreConversation(conv, ref.ProjectPath)
 	return conv, nil
+}
+
+func (p *Provider) transcriptForRef(ref provider.SessionRef) string {
+	if ref.ID == "" || ref.ProjectPath == "" {
+		return ""
+	}
+	encoded := strings.TrimPrefix(util.EncodeClaudeProjectPath(util.NormalizeProjectPath(ref.ProjectPath)), "-")
+	root := filepath.Join(p.projectsRoot, encoded, "agent-transcripts")
+	for _, candidate := range []string{
+		filepath.Join(root, ref.ID, ref.ID+".jsonl"),
+		filepath.Join(root, ref.ID+".jsonl"),
+	} {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func (p *Provider) LoadPreview(ctx context.Context, ref provider.SessionRef, limit int) (*model.Conversation, error) {
@@ -609,10 +634,14 @@ func (p *Provider) LoadPreview(ctx context.Context, ref provider.SessionRef, lim
 }
 
 func (p *Provider) enrichStoreConversation(conv *model.Conversation, projectFallback string) {
+	p.enrichStoreConversationAt(conv, projectFallback, conv.StoragePath)
+}
+
+func (p *Provider) enrichStoreConversationAt(conv *model.Conversation, projectFallback, storePath string) {
 	if conv.ProjectPath == "" {
 		conv.ProjectPath = projectFallback
 	}
-	if sidecar, err := readCursorSidecar(conv.StoragePath); err == nil && sidecar != nil {
+	if sidecar, err := readCursorSidecar(storePath); err == nil && sidecar != nil {
 		if sidecar.Title != "" {
 			conv.Title = sidecar.Title
 		}

@@ -55,6 +55,8 @@ type Conversation struct {
 	MessageCount int       `json:"message_count"`
 	// Migration is set when a provider loads an agenthop-created target.
 	Migration *MigrationMeta `json:"-"`
+	// WriteMigration overrides the marker written for a resumable projection.
+	WriteMigration *MigrationMeta `json:"-"`
 }
 
 type Summary struct {
@@ -156,6 +158,8 @@ type MigrationMeta struct {
 
 const MigrationType = "agenthop_migration"
 
+const MigrationTargetFormatVersion = 4
+
 // ParseMigrationMeta recognizes native agenthop markers and compatible ctxmv
 // markers, either bare or wrapped in a provider progress/data object.
 func ParseMigrationMeta(line []byte) (*MigrationMeta, bool) {
@@ -183,11 +187,16 @@ func ParseMigrationMeta(line []byte) (*MigrationMeta, bool) {
 }
 
 func NewMigrationMeta(conv *Conversation) MigrationMeta {
+	if conv.WriteMigration != nil {
+		return *conv.WriteMigration
+	}
+	version := MigrationTargetFormatVersion
 	return MigrationMeta{
-		Type:               MigrationType,
-		OriginID:           conv.ID,
-		OriginSource:       conv.Provider,
-		OriginMessageCount: len(conv.Messages),
-		OriginDigest:       SnapshotDigest(conv),
+		Type:                MigrationType,
+		OriginID:            conv.ID,
+		OriginSource:        conv.Provider,
+		OriginMessageCount:  len(conv.Messages),
+		OriginDigest:        SnapshotDigest(conv),
+		TargetFormatVersion: &version,
 	}
 }

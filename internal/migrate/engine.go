@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/CyrusSE/agenthop/internal/index"
 	"github.com/CyrusSE/agenthop/internal/model"
 	"github.com/CyrusSE/agenthop/internal/provider"
 	"github.com/CyrusSE/agenthop/internal/registry"
+	"github.com/CyrusSE/agenthop/internal/util"
 )
 
 type Options struct {
@@ -108,7 +110,10 @@ func (e *Engine) writeConversation(ctx context.Context, dst provider.Provider, c
 			Warnings:      warnings,
 		}, nil
 	}
-	write, err := dst.Write(ctx, conv, provider.WriteOpts{
+	writeConv, projectionWarning := resumableConversation(conv)
+	meta := model.NewMigrationMeta(conv)
+	writeConv.WriteMigration = &meta
+	write, err := dst.Write(ctx, writeConv, provider.WriteOpts{
 		ProjectPath: project,
 		DryRun:      dryRun,
 	})
@@ -119,7 +124,7 @@ func (e *Engine) writeConversation(ctx context.Context, dst provider.Provider, c
 		return nil, fmt.Errorf("write: provider returned no result")
 	}
 	if !dryRun {
-		if err := verifyWrite(ctx, dst, conv, *write); err != nil {
+		if err := verifyWrite(ctx, dst, writeConv, *write); err != nil {
 			cleanupErr := cleanupWrite(ctx, dst, *write)
 			if cleanupErr != nil {
 				return nil, errors.Join(err, fmt.Errorf("cleanup failed migration: %w", cleanupErr))
@@ -128,6 +133,9 @@ func (e *Engine) writeConversation(ctx context.Context, dst provider.Provider, c
 		}
 	}
 	var warnings []string
+	if projectionWarning != "" {
+		warnings = append(warnings, projectionWarning)
+	}
 	if !dryRun && e.Index != nil {
 		if err := e.Index.RecordMigrationSnapshot(dst.ID(), model.SnapshotDigest(conv), write.SessionID, write.StoragePath, conv.ID, conv.Provider, len(conv.Messages)); err != nil {
 			warnings = append(warnings, "record migration: "+err.Error())
@@ -143,6 +151,122 @@ func (e *Engine) writeConversation(ctx context.Context, dst provider.Provider, c
 		TargetName: dst.DisplayName(),
 		Warnings:   warnings,
 	}, nil
+}
+
+const (
+	resumeMessageLimit = 48
+	resumeRuneLimit    = 64000
+	resumeMessageRunes = 16000
+)
+
+func cloneConversation(source *model.Conversation) *model.Conversation {
+	cloned := *source
+	cloned.Messages = append([]model.Message(nil), source.Messages...)
+	return &cloned
+}
+
+// resumableConversation keeps provider storage/control noise and oversized
+// history from consuming the destination model's entire context window.
+func resumableConversation(source *model.Conversation) (*model.Conversation, string) {
+	projected := cloneConversation(source)
+	candidates := make([]model.Message, 0, min(len(source.Messages), resumeMessageLimit))
+	changed := false
+	for _, message := range source.Messages {
+		if message.Role != model.RoleUser && message.Role != model.RoleAssistant {
+			continue
+		}
+		text := message.PlainText()
+		if message.Role == model.RoleUser {
+			normalized, ok := util.NormalizeUserText(text)
+			if !ok {
+				changed = true
+				continue
+			}
+			if normalized != text {
+				changed = true
+			}
+			text = normalized
+		}
+		if text == "" {
+			changed = true
+			continue
+		}
+		if utf8.RuneCountInString(text) > resumeMessageRunes {
+			runes := []rune(text)
+			half := resumeMessageRunes / 2
+			text = string(runes[:half]) + "\n\n[... message shortened by Agenthop for resumable context ...]\n\n" + string(runes[len(runes)-half:])
+			changed = true
+		}
+		message.Content, message.Blocks = text, nil
+		if len(candidates) > 0 {
+			previous := candidates[len(candidates)-1]
+			if previous.Role == message.Role && previous.Content == message.Content {
+				changed = true
+				continue
+			}
+		}
+		candidates = append(candidates, message)
+	}
+	seen := make(map[string]bool, len(candidates))
+	unique := make([]model.Message, 0, len(candidates))
+	for i := len(candidates) - 1; i >= 0; i-- {
+		key := string(candidates[i].Role) + "\x00" + candidates[i].Content
+		if seen[key] {
+			changed = true
+			continue
+		}
+		seen[key] = true
+		unique = append(unique, candidates[i])
+	}
+	for left, right := 0, len(unique)-1; left < right; left, right = left+1, right-1 {
+		unique[left], unique[right] = unique[right], unique[left]
+	}
+	candidates = unique
+
+	start, runes := len(candidates), 0
+	for start > 0 && len(candidates)-start < resumeMessageLimit {
+		size := utf8.RuneCountInString(candidates[start-1].Content)
+		if runes > 0 && runes+size > resumeRuneLimit {
+			break
+		}
+		start--
+		runes += size
+	}
+	if start > 0 {
+		changed = true
+	}
+	selected := append([]model.Message(nil), candidates[start:]...)
+	firstUser := -1
+	for i := range selected {
+		if selected[i].Role == model.RoleUser {
+			firstUser = i
+			break
+		}
+	}
+	if firstUser > 0 {
+		selected = selected[firstUser:]
+		changed = true
+	} else if firstUser < 0 {
+		for i := start - 1; i >= 0; i-- {
+			if candidates[i].Role == model.RoleUser {
+				selected = append([]model.Message{candidates[i]}, selected...)
+				changed = true
+				break
+			}
+		}
+	}
+	if !changed {
+		return projected, ""
+	}
+	handoff := model.Message{
+		Role:      model.RoleUser,
+		Content:   fmt.Sprintf("[Agenthop migration handoff]\nThis is a bounded recent-context view of %s session %s (%q). Older history and provider control records remain in the source session. Continue from the recent turns below; do not restart the task.", source.Provider, source.ID, source.Title),
+		Timestamp: source.CreatedAt,
+	}
+	projected.Messages = append([]model.Message{handoff}, selected...)
+	projected.MessageCount = len(projected.Messages)
+	warning := fmt.Sprintf("resume context reduced from %d to %d messages; the source remains unchanged and can be exported as a complete archive", len(source.Messages), len(projected.Messages))
+	return projected, warning
 }
 
 func verifyWrite(ctx context.Context, dst provider.Provider, source *model.Conversation, write provider.WriteResult) error {

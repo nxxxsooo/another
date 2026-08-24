@@ -287,9 +287,12 @@ func (a *App) runMigration(cmd *cobra.Command, id, from, to, project string, dry
 	if dryRun {
 		if res.AlreadyExists {
 			fmt.Printf("Dry run OK: already migrated to %s\n   Path: %s\n", res.TargetName, res.Write.StoragePath)
-			return nil
+		} else {
+			fmt.Printf("Dry run OK: would write to %s\n", res.Write.StoragePath)
 		}
-		fmt.Printf("Dry run OK: would write to %s\n", res.Write.StoragePath)
+		for _, warning := range res.Warnings {
+			fmt.Printf("⚠️  Warning: %s\n", warning)
+		}
 		return nil
 	}
 	if res.AlreadyExists {

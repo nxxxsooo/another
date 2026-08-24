@@ -49,6 +49,9 @@ func (a *App) importCmd() *cobra.Command {
 				} else {
 					fmt.Printf("Dry run OK: would write to %s\n", res.Write.StoragePath)
 				}
+				for _, warning := range res.Warnings {
+					fmt.Printf("⚠️  Warning: %s\n", warning)
+				}
 				return nil
 			}
 			if res.AlreadyExists {

@@ -20,6 +20,9 @@ func TestUserTitleFromText(t *testing.T) {
 		{in: "<user_query>fix auth</user_query>", want: "fix auth", ok: true},
 		{in: "<timestamp>Saturday</timestamp> <user_query>repair indexing</user_query>", want: "repair indexing", ok: true},
 		{in: "<manually_attached_skills>internal setup</manually_attached_skills>", want: "", ok: false},
+		{in: "<user_info>provider setup</user_info>", want: "", ok: false},
+		{in: "<rules>provider rules</rules>", want: "", ok: false},
+		{in: "<dynamic_tools>provider tools</dynamic_tools>", want: "", ok: false},
 	}
 	for _, tc := range tests {
 		got, ok := UserTitleFromText(tc.in)

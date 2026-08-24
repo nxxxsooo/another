@@ -319,6 +319,31 @@ func TestLoadPreviewUsesBoundedRecentMessagesAndSidecar(t *testing.T) {
 	}
 }
 
+func TestLoadStoreRefPrefersMatchingProjectTranscript(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	p := &Provider{chatsRoot: filepath.Join(root, "chats"), projectsRoot: filepath.Join(root, "projects")}
+	id := "session-id"
+	encoded := strings.TrimPrefix(util.EncodeClaudeProjectPath(project), "-")
+	path := filepath.Join(p.projectsRoot, encoded, "agent-transcripts", id, id+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	line := `{"role":"user","message":{"content":"from transcript"}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	conv, err := p.Load(context.Background(), provider.SessionRef{
+		ID: id, ProjectPath: project, StoragePath: filepath.Join(root, "missing", "store.db"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conv.Messages) != 1 || conv.Messages[0].Content != "from transcript" {
+		t.Fatalf("conversation = %+v", conv)
+	}
+}
+
 func TestStoredMessageRawHexAndProtobuf(t *testing.T) {
 	raw := []byte(`{"role":"assistant","content":[{"type":"text","text":"one"},{"type":"tool_use"},{"type":"text","text":"two"}]}`)
 	for name, data := range map[string][]byte{
