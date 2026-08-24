@@ -97,8 +97,16 @@ agenthop <session-id> --from claude-code --to codex -y
 agenthop migrate <session-id> --from claude-code --to codex -y
 agenthop resume <session-id> --from claude-code --to codex
 
-# Migration keeps a bounded recent context so resume stays usable.
-# Export first when you also need a complete portable archive.
+# Auto keeps every cleaned message when it fits, otherwise uses recent context.
+agenthop migrate <session-id> --to codex --context auto -y
+
+# Force ctxmv-style full history, even when the destination may compact/reject it.
+agenthop migrate <session-id> --to codex --context full -y
+
+# Always prefer a bounded recent working context.
+agenthop migrate <session-id> --to codex --context recent -y
+
+# The unchanged source remains searchable/exportable in every mode.
 agenthop export <session-id> --provider cursor -o session.agenthop.json
 ```
 
@@ -189,13 +197,13 @@ agenthop [<id> --to provider] [--migrate]
 agenthop list [--cwd] [--provider ID] [--include-subagents] [--limit N] [--refresh]
 agenthop search <keywords> [--cwd] [--provider ID] [--include-subagents] [--no-wait]
 agenthop show <id> [--provider ID] [--limit N]
-agenthop migrate [<id>] [--to provider] [--from ID] [--dry-run] [-y]
+agenthop migrate [<id>] [--to provider] [--from ID] [--context auto|full|recent] [--dry-run] [-y]
 agenthop resume <id> --to <provider> [--from ID]
 agenthop index {status|rebuild|update} [--provider ID] [--metadata-only]
 agenthop export <id> -o session.agenthop.json
-agenthop import session.agenthop.json --to <provider> [-y]
+agenthop import session.agenthop.json --to <provider> [--context auto|full|recent] [-y]
 agenthop providers [doctor]
-agenthop tui                    # explicit TUI (default when no subcommand)
+agenthop tui [--context auto|full|recent] # explicit TUI (default when no subcommand)
 ```
 
 **Portable bundles** — export a session to JSON, import on another machine:
@@ -225,6 +233,7 @@ Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Provider guide: [docs/adding
 
 - Cursor formats evolve frequently; Agenthop writes the native `store.db` graph, CLI `meta.json`, and transcript fallback, then verifies the conversation it can reload.
 - The portable fidelity contract covers ordered user/assistant text and timestamps. Tool, reasoning, image, and system structures are best-effort because providers do not share equivalent formats.
+- `--context full` preserves every cleaned user/assistant message in destination storage, but no migration tool can make a transcript larger than the destination model's context window simultaneously active. Codex may compact or reject oversized history.
 - **Claude Code** resume may require `cd` to the original project directory.
 
 ---
