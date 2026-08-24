@@ -716,22 +716,20 @@ func (p *Provider) loadTranscript(path, id string) (*model.Conversation, error) 
 func extractCursorMessage(row map[string]any) string {
 	if msg, ok := row["message"].(map[string]any); ok {
 		if text, _ := msg["content"].(string); text != "" {
-			return text
+			return cursorVisibleText(text)
 		}
 		if c, ok := msg["content"].([]any); ok {
 			var parts []string
 			for _, item := range c {
 				if part, ok := item.(map[string]any); ok {
 					if t, _ := part["text"].(string); t != "" {
-						parts = append(parts, t)
+						if visible := cursorVisibleText(t); visible != "" {
+							parts = append(parts, visible)
+						}
 					}
 				}
 			}
-			text := strings.Join(parts, "\n")
-			if strings.TrimSpace(text) == "[REDACTED]" {
-				return ""
-			}
-			return text
+			return strings.Join(parts, "\n")
 		}
 	}
 	return ""
@@ -1060,18 +1058,34 @@ func cursorStoredMessage(data []byte) (string, string, time.Time) {
 
 func cursorContent(value any) string {
 	if text, _ := value.(string); text != "" {
-		return text
+		return cursorVisibleText(text)
 	}
 	blocks, _ := value.([]any)
 	parts := make([]string, 0, len(blocks))
 	for _, block := range blocks {
 		if item, ok := block.(map[string]any); ok {
 			if text, _ := item["text"].(string); text != "" {
-				parts = append(parts, text)
+				if visible := cursorVisibleText(text); visible != "" {
+					parts = append(parts, visible)
+				}
 			}
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+func cursorVisibleText(text string) string {
+	if !strings.Contains(text, "[REDACTED]") {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	visible := lines[:0]
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "[REDACTED]" {
+			visible = append(visible, line)
+		}
+	}
+	return strings.TrimSpace(strings.Join(visible, "\n"))
 }
 
 func embeddedJSONObject(data []byte) []byte {

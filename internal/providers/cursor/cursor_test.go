@@ -345,7 +345,7 @@ func TestLoadStoreRefPrefersMatchingProjectTranscript(t *testing.T) {
 }
 
 func TestStoredMessageRawHexAndProtobuf(t *testing.T) {
-	raw := []byte(`{"role":"assistant","content":[{"type":"text","text":"one"},{"type":"tool_use"},{"type":"text","text":"two"}]}`)
+	raw := []byte(`{"role":"assistant","content":[{"type":"text","text":"one"},{"type":"tool_use"},{"type":"text","text":"[REDACTED]"},{"type":"text","text":"two"}]}`)
 	for name, data := range map[string][]byte{
 		"raw":      raw,
 		"hex":      []byte(hex.EncodeToString(raw)),
@@ -367,6 +367,25 @@ func TestExtractCursorMessageDropsRedactedToolPlaceholder(t *testing.T) {
 	}}}
 	if got := extractCursorMessage(row); got != "" {
 		t.Fatalf("redacted placeholder = %q", got)
+	}
+}
+
+func TestExtractCursorMessageKeepsAnswerButDropsRedactedBlock(t *testing.T) {
+	row := map[string]any{"message": map[string]any{"content": []any{
+		map[string]any{"type": "text", "text": "real answer"},
+		map[string]any{"type": "text", "text": "[REDACTED]"},
+		map[string]any{"type": "tool_use", "name": "shell"},
+	}}}
+	if got := extractCursorMessage(row); got != "real answer" {
+		t.Fatalf("message = %q", got)
+	}
+	row = map[string]any{"message": map[string]any{"content": " [REDACTED] "}}
+	if got := extractCursorMessage(row); got != "" {
+		t.Fatalf("string placeholder = %q", got)
+	}
+	row = map[string]any{"message": map[string]any{"content": "real answer\n\n[REDACTED]"}}
+	if got := extractCursorMessage(row); got != "real answer" {
+		t.Fatalf("inline placeholder = %q", got)
 	}
 }
 
