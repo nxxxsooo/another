@@ -45,7 +45,7 @@ func NewApp() (*App, error) {
 }
 
 func (a *App) Root() *cobra.Command {
-	var to, from, project string
+	var to, from, project, contextMode string
 	var guided, dryRun, yes, refresh bool
 	root := &cobra.Command{
 		Use:           "agenthop",
@@ -56,6 +56,10 @@ func (a *App) Root() *cobra.Command {
 		Version:       version,
 		Args:          cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			mode, err := migrate.ParseContextMode(contextMode)
+			if err != nil {
+				return err
+			}
 			if guided {
 				if !stdinIsTerminal() {
 					return fmt.Errorf("guided migration requires a terminal")
@@ -67,15 +71,15 @@ func (a *App) Root() *cobra.Command {
 						return err
 					}
 				}
-				return tui.RunMigrate(a.Registry, a.Index, a.Migrate, id, from)
+				return tui.RunMigrate(a.Registry, a.Index, a.Migrate, id, from, mode)
 			}
 			if len(args) == 0 {
-				return tui.Run(a.Registry, a.Index, a.Migrate)
+				return tui.Run(a.Registry, a.Index, a.Migrate, mode)
 			}
 			if to == "" {
 				return fmt.Errorf("--to is required for session %s (or use 'agenthop migrate %s' in a terminal)", args[0], args[0])
 			}
-			return a.runMigration(cmd, args[0], from, to, project, dryRun, yes, refresh)
+			return a.runMigration(cmd, args[0], from, to, project, mode, dryRun, yes, refresh)
 		},
 	}
 	root.PersistentFlags().BoolVarP(&a.Verbose, "verbose", "v", false, "verbose output")
@@ -83,6 +87,7 @@ func (a *App) Root() *cobra.Command {
 	root.Flags().StringVar(&to, "to", "", "target provider")
 	root.Flags().StringVar(&from, "from", "", "source provider")
 	root.Flags().StringVar(&project, "project", "", "target project path")
+	root.Flags().StringVar(&contextMode, "context", "auto", "context mode: auto, full, or recent")
 	root.Flags().BoolVar(&dryRun, "dry-run", false, "validate without writing")
 	root.Flags().BoolVarP(&yes, "yes", "y", false, "skip confirmation")
 	root.Flags().BoolVar(&refresh, "refresh", false, "refresh index before migrate")
@@ -229,18 +234,22 @@ func (a *App) showCmd() *cobra.Command {
 }
 
 func (a *App) migrateCmd() *cobra.Command {
-	var to, from, project string
+	var to, from, project, contextMode string
 	var dryRun, yes, refresh bool
 	cmd := &cobra.Command{
 		Use:   "migrate [session-id]",
 		Short: "Migrate a session to another provider",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			mode, err := migrate.ParseContextMode(contextMode)
+			if err != nil {
+				return err
+			}
 			if len(args) == 0 {
 				if !stdinIsTerminal() {
 					return fmt.Errorf("guided migration requires a terminal")
 				}
-				return tui.RunMigrate(a.Registry, a.Index, a.Migrate, "", from)
+				return tui.RunMigrate(a.Registry, a.Index, a.Migrate, "", from, mode)
 			}
 			if to == "" {
 				if !stdinIsTerminal() {
@@ -249,21 +258,22 @@ func (a *App) migrateCmd() *cobra.Command {
 				if err := a.ensureIndex(cmd.Context(), from, refresh); err != nil {
 					return err
 				}
-				return tui.RunMigrate(a.Registry, a.Index, a.Migrate, args[0], from)
+				return tui.RunMigrate(a.Registry, a.Index, a.Migrate, args[0], from, mode)
 			}
-			return a.runMigration(cmd, args[0], from, to, project, dryRun, yes, refresh)
+			return a.runMigration(cmd, args[0], from, to, project, mode, dryRun, yes, refresh)
 		},
 	}
 	cmd.Flags().StringVar(&to, "to", "", "target provider")
 	cmd.Flags().StringVar(&from, "from", "", "source provider")
 	cmd.Flags().StringVar(&project, "project", "", "target project path")
+	cmd.Flags().StringVar(&contextMode, "context", "auto", "context mode: auto, full, or recent")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate without writing")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "skip confirmation")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before migrate")
 	return cmd
 }
 
-func (a *App) runMigration(cmd *cobra.Command, id, from, to, project string, dryRun, yes, refresh bool) error {
+func (a *App) runMigration(cmd *cobra.Command, id, from, to, project string, contextMode migrate.ContextMode, dryRun, yes, refresh bool) error {
 	ctx := cmd.Context()
 	if err := a.ensureIndex(ctx, from, refresh); err != nil {
 		return err
@@ -279,12 +289,13 @@ func (a *App) runMigration(cmd *cobra.Command, id, from, to, project string, dry
 	}
 	res, err := a.Migrate.Run(ctx, migrate.Options{
 		SessionID: id, FromProvider: from, ToProvider: to,
-		ProjectPath: project, DryRun: dryRun,
+		ProjectPath: project, DryRun: dryRun, ContextMode: contextMode,
 	})
 	if err != nil {
 		return err
 	}
 	if dryRun {
+		printProjectionSummary(res)
 		if res.AlreadyExists {
 			fmt.Printf("Dry run OK: already migrated to %s\n   Path: %s\n", res.TargetName, res.Write.StoragePath)
 		} else {
@@ -303,10 +314,15 @@ func (a *App) runMigration(cmd *cobra.Command, id, from, to, project string, dry
 	fmt.Printf("   Session: %s\n", res.Write.SessionID)
 	fmt.Printf("   Path:    %s\n", res.Write.StoragePath)
 	fmt.Printf("   Resume:  %s\n", res.Resume)
+	printProjectionSummary(res)
 	for _, warning := range res.Warnings {
 		fmt.Printf("⚠️  Warning: %s\n", warning)
 	}
 	return nil
+}
+
+func printProjectionSummary(res *migrate.Result) {
+	fmt.Printf("   Context: %s (%d source → %d cleaned → %d migrated)\n", res.ContextMode, res.SourceCount, res.CleanedCount, res.ProjectedCount)
 }
 
 func (a *App) indexCmd() *cobra.Command {
@@ -483,13 +499,20 @@ func (a *App) exportCmd() *cobra.Command {
 }
 
 func (a *App) tuiCmd() *cobra.Command {
-	return &cobra.Command{
+	var contextMode string
+	cmd := &cobra.Command{
 		Use:   "tui",
 		Short: "Interactive terminal UI",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return tui.Run(a.Registry, a.Index, a.Migrate)
+			mode, err := migrate.ParseContextMode(contextMode)
+			if err != nil {
+				return err
+			}
+			return tui.Run(a.Registry, a.Index, a.Migrate, mode)
 		},
 	}
+	cmd.Flags().StringVar(&contextMode, "context", "auto", "context mode: auto, full, or recent")
+	return cmd
 }
 
 func (a *App) searchCmd() *cobra.Command {

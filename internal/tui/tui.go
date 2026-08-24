@@ -223,6 +223,7 @@ type modelState struct {
 	cwd              string
 	pageGen          uint64
 	lastResume       string
+	contextMode      migrate.ContextMode
 	err              string
 	status           string
 	width            int
@@ -232,12 +233,12 @@ type modelState struct {
 	previewContent   string
 }
 
-func Run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine) error {
-	return run(reg, idx, engine, nil, false)
+func Run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, contextMode migrate.ContextMode) error {
+	return run(reg, idx, engine, nil, false, contextMode)
 }
 
 // RunMigrate opens the migration picker, optionally preselecting a session.
-func RunMigrate(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, sessionID, from string) error {
+func RunMigrate(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, sessionID, from string, contextMode migrate.ContextMode) error {
 	var selected *model.Summary
 	if sessionID != "" {
 		sm, _, err := migrate.ResolveSession(context.Background(), reg, idx, sessionID, from)
@@ -246,10 +247,10 @@ func RunMigrate(reg *registry.Registry, idx *index.Store, engine *migrate.Engine
 		}
 		selected = sm
 	}
-	return run(reg, idx, engine, selected, true)
+	return run(reg, idx, engine, selected, true, contextMode)
 }
 
-func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initial *model.Summary, guided bool) error {
+func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initial *model.Summary, guided bool, contextMode migrate.ContextMode) error {
 	cwd, err := os.Getwd()
 	cwdMode := true
 	if err != nil {
@@ -299,6 +300,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		stage: stageSessions, cwdMode: cwdMode, cwd: cwd,
 		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
 		pageSize: 200, guided: guided, ctx: ctx, cancel: cancel,
+		contextMode: contextMode,
 	}
 	m.contentIndexing = !m.indexing
 	if initial != nil {
@@ -505,10 +507,11 @@ func loadPreviewCmd(ctx context.Context, reg *registry.Registry, sm model.Summar
 	}
 }
 
-func migrateCmd(ctx context.Context, engine *migrate.Engine, sm model.Summary, to string) tea.Cmd {
+func migrateCmd(ctx context.Context, engine *migrate.Engine, sm model.Summary, to string, contextMode migrate.ContextMode) tea.Cmd {
 	return func() tea.Msg {
 		res, err := engine.Run(ctx, migrate.Options{
 			SessionID: sm.ID, FromProvider: sm.Provider, ToProvider: to,
+			ContextMode: contextMode,
 		})
 		return migrateDoneMsg{res: res, err: err}
 	}
@@ -828,7 +831,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.stage == stageConfirm && m.selected != nil && m.confirmTarget != "" {
 				m.loading = true
 				m.err = ""
-				return m, tea.Batch(m.spinner.Tick, migrateCmd(m.ctx, m.engine, m.selected.summary, m.confirmTarget))
+				return m, tea.Batch(m.spinner.Tick, migrateCmd(m.ctx, m.engine, m.selected.summary, m.confirmTarget, m.contextMode))
 			}
 			return m, nil
 		case "n":

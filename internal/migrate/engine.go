@@ -138,6 +138,9 @@ func (e *Engine) writeConversationMode(ctx context.Context, dst provider.Provide
 	}
 	if duplicate {
 		var warnings []string
+		if projection.Warning != "" {
+			warnings = append(warnings, projection.Warning)
+		}
 		if ens, ok := dst.(provider.ResumeEnsurer); ok && !dryRun {
 			if err := ens.EnsureResumable(writeConv, *existing); err != nil {
 				return nil, fmt.Errorf("ensure resumable: %w", err)
@@ -230,7 +233,7 @@ func projectConversation(source *model.Conversation, mode ContextMode) (*model.C
 	if mode == ContextFull || (mode == ContextAuto && !info.ExceedsSafeLimits) {
 		info.ProjectedCount = len(cleaned.Messages)
 		if mode == ContextFull && info.ExceedsSafeLimits {
-			info.Warning = fmt.Sprintf("full context has %d messages and exceeds safe resume limits; %s may compact or reject it", len(cleaned.Messages), source.Provider)
+			info.Warning = fmt.Sprintf("full context has %d messages and exceeds safe resume limits; the destination may compact or reject it", len(cleaned.Messages))
 		}
 		return cleaned, info
 	}

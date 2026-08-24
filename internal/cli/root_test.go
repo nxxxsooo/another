@@ -8,7 +8,7 @@ import (
 func TestCommandSurface(t *testing.T) {
 	a := &App{}
 	root := a.Root()
-	for _, flag := range []string{"migrate", "to", "from", "project", "dry-run", "yes"} {
+	for _, flag := range []string{"migrate", "to", "from", "project", "context", "dry-run", "yes"} {
 		if root.Flags().Lookup(flag) == nil {
 			t.Errorf("missing root --%s", flag)
 		}
@@ -44,6 +44,23 @@ func TestCommandSurface(t *testing.T) {
 	if err := migrate.Args(migrate, []string{"a", "b"}); err == nil {
 		t.Fatal("migrate accepted two session IDs")
 	}
+	if flag := migrate.Flags().Lookup("context"); flag == nil || flag.DefValue != "auto" {
+		t.Fatalf("migrate --context default = %#v", flag)
+	}
+	importCmd, _, err := root.Find([]string{"import"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flag := importCmd.Flags().Lookup("context"); flag == nil || flag.DefValue != "auto" {
+		t.Fatalf("import --context default = %#v", flag)
+	}
+	tuiCmd, _, err := root.Find([]string{"tui"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flag := tuiCmd.Flags().Lookup("context"); flag == nil || flag.DefValue != "auto" {
+		t.Fatalf("tui --context default = %#v", flag)
+	}
 }
 
 func TestProviderCLIStatusUnknown(t *testing.T) {
@@ -57,6 +74,15 @@ func TestRootSessionShortcutRequiresTarget(t *testing.T) {
 	root.SetArgs([]string{"abc123"})
 	err := root.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--to is required") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestMigrationRejectsInvalidContextBeforeUsingApp(t *testing.T) {
+	root := (&App{}).Root()
+	root.SetArgs([]string{"session", "--to", "codex", "--context", "everything", "--yes"})
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "invalid context mode") {
 		t.Fatalf("error = %v", err)
 	}
 }
