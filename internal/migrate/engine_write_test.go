@@ -125,7 +125,7 @@ func TestResumableConversationBoundsAndNormalizesProviderHistory(t *testing.T) {
 			continueCount++
 		}
 	}
-	if continueCount != 1 {
+	if continueCount != 2 {
 		t.Fatalf("duplicate prompt count = %d", continueCount)
 	}
 	meta := model.NewMigrationMeta(source)
@@ -133,6 +133,53 @@ func TestResumableConversationBoundsAndNormalizesProviderHistory(t *testing.T) {
 	writtenMeta := model.NewMigrationMeta(projected)
 	if writtenMeta.OriginDigest != model.SnapshotDigest(source) || writtenMeta.OriginMessageCount != len(source.Messages) {
 		t.Fatalf("projection lost origin identity: %+v", writtenMeta)
+	}
+}
+
+func TestProjectConversationModes(t *testing.T) {
+	small := &model.Conversation{ID: "small", Provider: "cursor", Messages: []model.Message{
+		{Role: model.RoleSystem, Content: "control"},
+		{Role: model.RoleUser, Content: "<user_query>same</user_query>"},
+		{Role: model.RoleAssistant, Content: "answer"},
+		{Role: model.RoleUser, Content: "<user_query>same</user_query>"},
+		{Role: model.RoleAssistant, Content: "[REDACTED]"},
+		{Role: model.RoleTool, Content: "tool output"},
+	}}
+	auto, autoInfo := projectConversation(small, ContextAuto)
+	if autoInfo.ExceedsSafeLimits || len(auto.Messages) != 3 || auto.Messages[0].Content != "same" || auto.Messages[2].Content != "same" {
+		t.Fatalf("safe auto projection = %#v info=%+v", auto.Messages, autoInfo)
+	}
+
+	largeText := strings.Repeat("x", resumeMessageRunes+100)
+	large := &model.Conversation{ID: "large", Provider: "cursor"}
+	for i := 0; i < resumeMessageLimit+10; i++ {
+		large.Messages = append(large.Messages, model.Message{Role: model.RoleUser, Content: fmt.Sprintf("prompt %d", i)})
+	}
+	large.Messages = append(large.Messages, model.Message{Role: model.RoleAssistant, Content: largeText})
+
+	full, fullInfo := projectConversation(large, ContextFull)
+	if !fullInfo.ExceedsSafeLimits || len(full.Messages) != len(large.Messages) || full.Messages[len(full.Messages)-1].Content != largeText {
+		t.Fatalf("full projection changed content: len=%d info=%+v", len(full.Messages), fullInfo)
+	}
+	bounded, boundedInfo := projectConversation(large, ContextAuto)
+	if !boundedInfo.ExceedsSafeLimits || len(bounded.Messages) > resumeMessageLimit+1 || !strings.HasPrefix(bounded.Messages[0].Content, "[Agenthop migration handoff]") {
+		t.Fatalf("oversized auto projection len=%d info=%+v", len(bounded.Messages), boundedInfo)
+	}
+	recent, recentInfo := projectConversation(large, ContextRecent)
+	if recentInfo.Warning == "" || len(recent.Messages) > resumeMessageLimit+1 || strings.Contains(recent.Messages[len(recent.Messages)-1].Content, largeText) {
+		t.Fatalf("recent projection len=%d info=%+v", len(recent.Messages), recentInfo)
+	}
+}
+
+func TestParseContextMode(t *testing.T) {
+	for input, want := range map[string]ContextMode{"": ContextAuto, "AUTO": ContextAuto, "full": ContextFull, " recent ": ContextRecent} {
+		got, err := ParseContextMode(input)
+		if err != nil || got != want {
+			t.Fatalf("ParseContextMode(%q) = %q, %v; want %q", input, got, err, want)
+		}
+	}
+	if _, err := ParseContextMode("everything"); err == nil {
+		t.Fatal("invalid context mode accepted")
 	}
 }
 

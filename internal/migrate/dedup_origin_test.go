@@ -88,3 +88,38 @@ func TestLegacyOriginFallbackRequiresMatchingMessageCount(t *testing.T) {
 		t.Fatal("legacy marker with changed message count must create a new snapshot")
 	}
 }
+
+func TestFindDuplicateDistinguishesContextMode(t *testing.T) {
+	dir := t.TempDir()
+	store, err := index.Open(filepath.Join(dir, "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	t.Setenv("CODEX_HOME", dir)
+	p := codex.New()
+	origin := &model.Conversation{ID: "mode-source", Provider: "cursor", Messages: []model.Message{{Role: model.RoleUser, Content: "hello"}}}
+	recentMeta := model.NewMigrationMeta(origin)
+	recentMeta.ContextMode = string(migrate.ContextRecent)
+	recentMeta.OriginDigest = model.MigrationContextDigest(origin, string(migrate.ContextRecent))
+	recent := *origin
+	recent.WriteMigration = &recentMeta
+	write, err := p.Write(context.Background(), &recent, provider.WriteOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordMigrationSnapshot(p.ID(), recentMeta.OriginDigest, write.SessionID, write.StoragePath, origin.ID, origin.Provider, len(origin.Messages)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := migrate.FindDuplicate(store, p, &recent); !ok {
+		t.Fatal("same context mode did not deduplicate")
+	}
+	fullMeta := model.NewMigrationMeta(origin)
+	fullMeta.ContextMode = string(migrate.ContextFull)
+	fullMeta.OriginDigest = model.MigrationContextDigest(origin, string(migrate.ContextFull))
+	full := *origin
+	full.WriteMigration = &fullMeta
+	if _, ok := migrate.FindDuplicate(store, p, &full); ok {
+		t.Fatal("full migration reused recent target")
+	}
+}

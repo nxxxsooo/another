@@ -128,6 +128,16 @@ func SnapshotDigest(conv *Conversation) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// MigrationContextDigest keeps migrations of the same source snapshot but
+// different active-context policies from deduplicating each other.
+func MigrationContextDigest(conv *Conversation, contextMode string) string {
+	if contextMode == "" {
+		return SnapshotDigest(conv)
+	}
+	sum := sha256.Sum256([]byte(SnapshotDigest(conv) + "\x1f" + contextMode))
+	return hex.EncodeToString(sum[:])
+}
+
 // OriginDigest is kept for callers compiled against the Phase 1 API.
 // Deprecated: use SnapshotDigest for dedup or ContentDigest for round trips.
 func OriginDigest(conv *Conversation) string { return SnapshotDigest(conv) }
@@ -153,12 +163,13 @@ type MigrationMeta struct {
 	OriginSource        string `json:"originSource"`
 	OriginMessageCount  int    `json:"originMessageCount"`
 	OriginDigest        string `json:"originDigest,omitempty"`
+	ContextMode         string `json:"contextMode,omitempty"`
 	TargetFormatVersion *int   `json:"targetFormatVersion,omitempty"`
 }
 
 const MigrationType = "agenthop_migration"
 
-const MigrationTargetFormatVersion = 5
+const MigrationTargetFormatVersion = 6
 
 // ParseMigrationMeta recognizes native agenthop markers and compatible ctxmv
 // markers, either bare or wrapped in a provider progress/data object.

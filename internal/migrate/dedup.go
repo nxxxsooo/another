@@ -67,7 +67,7 @@ func FindDuplicateE(idx DedupIndex, dst provider.Provider, conv *model.Conversat
 	if conv.ID == "" || conv.Provider == "" {
 		return nil, false, nil
 	}
-	digest := model.SnapshotDigest(conv)
+	digest := model.NewMigrationMeta(conv).OriginDigest
 	if idx != nil {
 		digests := []string{digest}
 		if legacy := model.LegacyOriginDigest(conv); legacy != digest {
