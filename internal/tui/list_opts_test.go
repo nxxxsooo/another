@@ -6,45 +6,33 @@ import (
 	"github.com/CyrusSE/agenthop/internal/index"
 )
 
-func TestListOptsForHereFilter(t *testing.T) {
-	m := modelState{
-		cwdMode:       true,
-		cwd:           "/home/user/proj",
-		showAllOnPage: true,
-		pageSize:      55,
-		providerFilter: "codex",
-	}
-	opts := listOptsFor(m)
-	if opts.ProjectCWD != "/home/user/proj" {
-		t.Fatalf("ProjectCWD = %q, want exact cwd", opts.ProjectCWD)
-	}
-	if opts.Limit != maxShowAllPage {
-		t.Fatalf("Limit = %d, want maxShowAllPage %d when showAllOnPage", opts.Limit, maxShowAllPage)
-	}
-	if opts.Provider != "codex" {
-		t.Fatalf("Provider = %q", opts.Provider)
-	}
-}
-
-func TestListOptsForEverywhere(t *testing.T) {
-	m := modelState{cwdMode: false, cwd: "/home/user", showAllOnPage: true}
+// The browser lists everywhere. Scoping to the working directory is a CLI
+// concern; in the TUI it silently hid the sessions people came to find.
+func TestListOptsBrowsesEverywhere(t *testing.T) {
+	m := modelState{cwd: "/home/user/proj"}
 	opts := listOptsFor(m)
 	if opts.ProjectCWD != "" {
-		t.Fatalf("ProjectCWD should be empty when cwdMode false, got %q", opts.ProjectCWD)
+		t.Fatalf("ProjectCWD = %q, want empty so the browser spans every project", opts.ProjectCWD)
 	}
-}
-
-func TestListOptsPaginationWhenNotShowAll(t *testing.T) {
-	m := modelState{
-		cwdMode:       true,
-		cwd:           "/tmp",
-		showAllOnPage: false,
-		pageSize:      50,
-		pageOffset:    100,
+	if opts.IncludeSubagents {
+		t.Fatal("subagent sessions must stay out of the browser")
 	}
-	opts := listOptsFor(m)
-	if opts.Limit != 50 || opts.Offset != 100 {
-		t.Fatalf("got limit=%d offset=%d, want 50/100", opts.Limit, opts.Offset)
+	if opts.Limit != maxShowAllPage {
+		t.Fatalf("Limit = %d, want the single-fetch cap %d", opts.Limit, maxShowAllPage)
 	}
 	var _ index.ListOpts = opts
+}
+
+func TestListOptsFollowsSelectedSource(t *testing.T) {
+	m := modelState{
+		sources:   []sourceChip{{id: "", name: "all"}, {id: "codex", name: "Codex"}},
+		sourceIdx: 1,
+	}
+	if got := listOptsFor(m).Provider; got != "codex" {
+		t.Fatalf("Provider = %q, want the selected source chip", got)
+	}
+	m.sourceIdx = 0
+	if got := listOptsFor(m).Provider; got != "" {
+		t.Fatalf("Provider = %q, want empty for the all chip", got)
+	}
 }

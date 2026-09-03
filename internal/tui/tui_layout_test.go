@@ -14,32 +14,34 @@ import (
 )
 
 func layoutTestModel() modelState {
-	delegate := list.NewDefaultDelegate()
-	sm := model.Summary{ID: "session", Provider: "codex", Title: "A useful title", ProjectPath: "/tmp/project"}
+	sm := model.Summary{ID: "session", Provider: "codex", Title: "A useful title", ProjectPath: "/tmp/project", MessageCount: 12}
 	item := sessionItem{summary: sm, providerLbl: "Codex"}
-	m := modelState{
-		reg: registry.New(), sessions: list.New([]list.Item{item}, delegate, 1, 1),
-		providers: list.New([]list.Item{providerItem{name: "All agents"}}, delegate, 1, 1),
-		actions:   list.New(actionItems(registry.New(), sm), delegate, 1, 1),
-		targets:   list.New([]list.Item{targetItem{id: "claude-code", name: "Claude Code"}}, delegate, 1, 1),
-		preview:   viewport.New(1, 1), searchInput: textinput.New(), selected: &item,
+	return modelState{
+		reg:      registry.New(),
+		sessions: newSessionList([]list.Item{item}),
+		targets:  newTargetList([]list.Item{targetItem{id: "claude-code", name: "Claude Code"}}),
+		sources: []sourceChip{
+			{id: "", name: "all", count: 3},
+			{id: "codex", name: "Codex", count: 2},
+			{id: "pi", name: "pi", count: 1},
+		},
+		preview: viewport.New(1, 1), searchInput: textinput.New(), selected: &item,
 		previewContent: strings.Repeat("full preview content ", 100), status: "ready",
 	}
-	return m
 }
 
 func TestViewsFitTerminal(t *testing.T) {
 	for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
-		for _, stage := range []int{stageSessions, stageProviders, stageActions, stageMigrate, stagePreview, stageConfirm} {
+		for _, ov := range []int{overlayNone, overlayTarget, overlayPreview} {
 			m := layoutTestModel()
-			m.stage, m.confirmTarget = stage, "claude-code"
+			m.overlay = ov
 			updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 			view := updated.(modelState).View()
 			if got := lipgloss.Width(view); got > size[0] {
-				t.Errorf("%dx%d stage %d width = %d", size[0], size[1], stage, got)
+				t.Errorf("%dx%d overlay %d width = %d", size[0], size[1], ov, got)
 			}
 			if got := lipgloss.Height(view); got > size[1] {
-				t.Errorf("%dx%d stage %d height = %d", size[0], size[1], stage, got)
+				t.Errorf("%dx%d overlay %d height = %d", size[0], size[1], ov, got)
 			}
 		}
 	}
@@ -47,7 +49,7 @@ func TestViewsFitTerminal(t *testing.T) {
 
 func TestNarrowPreviewAndResizePreserveContent(t *testing.T) {
 	m := layoutTestModel()
-	m.stage = stagePreview
+	m.overlay = overlayPreview
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 16})
 	m = updated.(modelState)
 	if !strings.Contains(m.preview.View(), "full preview content") {
@@ -68,26 +70,62 @@ func TestTooSmallView(t *testing.T) {
 	}
 }
 
-func TestSearchAndSubagentKeys(t *testing.T) {
+// The session list is the whole screen, so a row must stay on one line however
+// long the title is — otherwise the visible session count halves.
+func TestSessionRowStaysOneLine(t *testing.T) {
 	m := layoutTestModel()
-	m.width, m.height, m.stage = 80, 24, stageSessions
+	long := strings.Repeat("很长的中文标题", 20)
+	m.sessions.SetItems([]list.Item{sessionItem{
+		summary:     model.Summary{ID: "x", Provider: "pi", Title: long},
+		providerLbl: "pi",
+	}})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updated.(modelState)
+	for _, line := range strings.Split(m.sessions.View(), "\n") {
+		if lipgloss.Width(line) > 80 {
+			t.Fatalf("row wider than terminal: %d", lipgloss.Width(line))
+		}
+	}
+	if n := len(strings.Split(strings.TrimRight(m.sessions.View(), "\n"), "\n")); n > m.sessions.Height() {
+		t.Fatalf("one item rendered %d lines", n)
+	}
+}
+
+func TestLeftRightCyclesSource(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
+	m.layout()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(modelState)
+	if m.sourceIdx != 1 || cmd == nil {
+		t.Fatalf("right did not move to the next source: idx=%d cmd=%v", m.sourceIdx, cmd)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if got := updated.(modelState).sourceIdx; got != 0 {
+		t.Fatalf("left did not move back: idx=%d", got)
+	}
+	// Wrapping keeps the row navigable without an extra home/end key.
+	m.sourceIdx = 0
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if got := updated.(modelState).sourceIdx; got != len(m.sources)-1 {
+		t.Fatalf("left at the first chip should wrap, got %d", got)
+	}
+}
+
+func TestSearchKeyFocusesInput(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
 	m.layout()
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = updated.(modelState)
 	if !m.searching || !m.searchInput.Focused() {
-		t.Fatal("/ did not focus global search")
-	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = updated.(modelState)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	if !updated.(modelState).includeSubagents {
-		t.Fatal("s did not include subagents")
+		t.Fatal("/ did not focus search")
 	}
 }
 
 func TestEscapeClearsAppliedSearch(t *testing.T) {
 	m := layoutTestModel()
-	m.width, m.height, m.stage = 80, 24, stageSessions
+	m.width, m.height = 80, 24
 	m.searchQuery = "needle"
 	m.searchInput.SetValue("needle")
 	m.layout()
@@ -98,13 +136,43 @@ func TestEscapeClearsAppliedSearch(t *testing.T) {
 	}
 }
 
-func TestMigrationRequiresConfirmation(t *testing.T) {
+func TestEnterOpensTargetOverlayAndEscapeReturns(t *testing.T) {
 	m := layoutTestModel()
-	m.width, m.height, m.stage = 80, 24, stageMigrate
+	m.width, m.height = 80, 24
+	m.layout()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(modelState)
+	if m.overlay != overlayTarget {
+		t.Fatalf("enter did not open the target overlay: overlay=%d", m.overlay)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if got := updated.(modelState).overlay; got != overlayNone {
+		t.Fatalf("escape did not close the overlay: overlay=%d", got)
+	}
+}
+
+// Picking a target runs the migration directly. The engine verifies its own
+// write and rolls back, so a second confirmation only added a keystroke.
+func TestEnterOnTargetStartsMigration(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
+	m.overlay = overlayTarget
 	m.layout()
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(modelState)
-	if cmd != nil || m.stage != stageConfirm || m.confirmTarget != "claude-code" {
-		t.Fatalf("enter migrated without confirmation: stage=%d target=%q", m.stage, m.confirmTarget)
+	if cmd == nil {
+		t.Fatal("enter on a target did not start a migration")
+	}
+	if !updated.(modelState).loading {
+		t.Fatal("migration did not enter the loading state")
+	}
+}
+
+func TestResumeLineReplacesSummaryAfterMigration(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
+	m.layout()
+	m.lastResume = "cd '/tmp/project' && codex resume 'abc'"
+	if !strings.Contains(m.footerView(), "codex resume") {
+		t.Fatal("footer did not surface the resume command")
 	}
 }

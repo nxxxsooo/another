@@ -1,6 +1,6 @@
 module github.com/CyrusSE/agenthop
 
-go 1.22
+go 1.24.0
 
 require (
 	github.com/atotto/clipboard v0.1.4
@@ -16,6 +16,7 @@ require (
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
+	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260902165432-6f6ad8b37b0a // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

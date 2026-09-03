@@ -29,14 +29,6 @@ func New() *Registry {
 		commandcode.New(),
 		hermes.New(),
 		pi.New(),
-		provider.NewStub("devin", "Devin", "docs/providers/stub.md",
-			provider.PathSpec{Label: "config", Path: "~/.config/devin", Env: "DEVIN_HOME"}),
-		provider.NewStub("windsurf", "Windsurf", "docs/providers/stub.md",
-			provider.PathSpec{Label: "data", Path: "~/.codeium/windsurf", Env: "WINDSURF_HOME"}),
-		provider.NewStub("gemini-cli", "Gemini CLI", "docs/providers/stub.md",
-			provider.PathSpec{Label: "config", Path: "~/.config/gemini", Env: "GEMINI_CLI_HOME"}),
-		provider.NewStub("aider", "Aider", "docs/providers/stub.md",
-			provider.PathSpec{Label: "history", Path: "~/.aider", Env: "AIDER_HOME"}),
 	}
 	byID := make(map[string]provider.Provider, len(providers))
 	for _, p := range providers {

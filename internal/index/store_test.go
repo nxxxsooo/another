@@ -505,7 +505,7 @@ func TestOpenRefusesDefaultCacheSymlink(t *testing.T) {
 	if err := os.Chmod(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, filepath.Join(root, "agenthop")); err != nil {
+	if err := os.Symlink(target, config.CacheDir()); err != nil {
 		t.Fatal(err)
 	}
 	if store, err := index.Open(""); err == nil {

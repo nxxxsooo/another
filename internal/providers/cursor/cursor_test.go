@@ -148,14 +148,21 @@ func TestDiscoverUsesCursorCLISidecarsForWorkspaceTimeAndKind(t *testing.T) {
 			stores[summary.ID] = summary
 		}
 	}
+	// Summaries report the canonical project path. On macOS the temp dir sits
+	// under /var, a symlink to /private/var, so the raw fixture path and the
+	// resolved one differ; every summary must still land on the same string.
+	wantProject := util.NormalizeProjectPath(project)
 	rootSummary := stores[rootWrite.SessionID]
-	if rootSummary.ProjectPath != project || rootSummary.Title != "SSH Tunnel Helper" ||
+	if rootSummary.ProjectPath != wantProject || rootSummary.Title != "SSH Tunnel Helper" ||
 		!rootSummary.CreatedAt.Equal(created) || !rootSummary.UpdatedAt.Equal(updated) || rootSummary.Kind != model.SessionKindRoot {
 		t.Fatalf("root summary: %+v", rootSummary)
 	}
 	subSummary := stores[subWrite.SessionID]
-	if subSummary.ProjectPath != project || subSummary.Kind != model.SessionKindSubagent {
+	if subSummary.ProjectPath != wantProject || subSummary.Kind != model.SessionKindSubagent {
 		t.Fatalf("subagent summary: %+v", subSummary)
+	}
+	if rootSummary.ProjectPath != subSummary.ProjectPath {
+		t.Fatalf("one project rendered two ways: root %q vs subagent %q", rootSummary.ProjectPath, subSummary.ProjectPath)
 	}
 }
 

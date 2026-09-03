@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CyrusSE/agenthop/internal/config"
 	"github.com/CyrusSE/agenthop/internal/index"
 	"github.com/CyrusSE/agenthop/internal/model"
 )
@@ -87,7 +88,8 @@ func TestOpenSecuresOwnedAndCreatedDirectories(t *testing.T) {
 	t.Run("app cache", func(t *testing.T) {
 		root := t.TempDir()
 		t.Setenv("XDG_CACHE_HOME", root)
-		dir := filepath.Join(root, "agenthop")
+		// Derived, not spelled: a hardcoded name silently breaks on a rename.
+		dir := config.CacheDir()
 		if err := os.Mkdir(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}

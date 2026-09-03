@@ -377,6 +377,7 @@ func (p *Provider) summarizeStore(path, workspaceProject string) (model.Summary,
 	if project == filepath.Base(filepath.Dir(filepath.Dir(path))) {
 		project = workspaceProject
 	}
+	project = canonicalProject(project)
 	return model.Summary{
 		ID: id, Provider: ProviderID, ProjectPath: project, Title: title,
 		UpdatedAt: updated, CreatedAt: created,
@@ -472,7 +473,7 @@ func (p *Provider) summarizeTranscript(path string) (model.Summary, error) {
 		title = "(transcript)"
 	}
 	return model.Summary{
-		ID: id, Provider: ProviderID, ProjectPath: project, Title: title,
+		ID: id, Provider: ProviderID, ProjectPath: canonicalProject(project), Title: title,
 		UpdatedAt: st.ModTime(), CreatedAt: st.ModTime(), MessageCount: msgCount,
 		StoragePath: path, SourceMtime: st.ModTime().UnixNano(), SourceSize: st.Size(),
 		Kind: cursorSessionKind(id), Migration: migration,
@@ -657,10 +658,23 @@ func (p *Provider) enrichStoreConversationAt(conv *model.Conversation, projectFa
 	}
 }
 
+// canonicalProject gives every cursor summary one representation of the same
+// directory. Workspace-derived paths already run through NormalizeProjectPath,
+// while sidecar CWDs do not; on macOS that produced both /var/... and
+// /private/var/... for one project, splitting it across --cwd filters and
+// project grouping. Bare workspace names are left alone: they are not paths, so
+// resolving them would anchor them to the process working directory.
+func canonicalProject(project string) string {
+	if project == "" || !filepath.IsAbs(project) {
+		return project
+	}
+	return util.NormalizeProjectPath(project)
+}
+
 func (p *Provider) loadTranscript(path, id string) (*model.Conversation, error) {
 	conv := &model.Conversation{
 		ID: id, Provider: ProviderID, StoragePath: path,
-		ProjectPath: util.DecodeCursorProjectPath(transcriptProjectDir(path)),
+		ProjectPath: canonicalProject(util.DecodeCursorProjectPath(transcriptProjectDir(path))),
 	}
 	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
 		if meta, ok := model.ParseMigrationMeta(line); ok {
