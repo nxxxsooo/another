@@ -1,238 +1,182 @@
+<h1 align="center">another</h1>
+
 <p align="center">
-  <a href="https://github.com/nxxxsooo/another">
-    <img src="https://github.com/nxxxsooo/another/raw/main/docs/assets/banner.svg" alt="another — hop AI coding sessions between agents" width="100%" />
-  </a>
+  <a href="https://github.com/nxxxsooo/another/releases"><img src="https://img.shields.io/github/v/release/nxxxsooo/another?style=flat-square&color=6B50FF" alt="Latest release"></a>
+  <a href="https://github.com/nxxxsooo/another/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nxxxsooo/another/ci.yml?branch=main&style=flat-square&label=build&color=29D398" alt="Build status"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/nxxxsooo/another/actions/workflows/ci.yml"><img src="https://github.com/nxxxsooo/another/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/nxxxsooo/another/releases"><img src="https://img.shields.io/github/v/release/nxxxsooo/another?label=release" alt="Release" /></a>
-  <a href="https://goreportcard.com/report/github.com/nxxxsooo/another"><img src="https://goreportcard.com/badge/github.com/nxxxsooo/another" alt="Go Report Card" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License" /></a>
+  Keep the session. Change the agent.<br>
+  在多个 coding agent 之间浏览、管理、迁移并继续真实会话。
 </p>
 
 <p align="center">
-  <strong>Hop AI coding sessions between agents</strong> — browse, preview, migrate, and resume across Claude Code, Codex, Cursor, OpenCode, and more.
+  <img src="docs/assets/tui-preview.svg" width="100%" alt="another TUI showing sessions from several coding agents and the target picker">
 </p>
 
-<p align="center">
-  <a href="#install">Install</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#tui">TUI</a> ·
-  <a href="#providers">Providers</a> ·
-  <a href="#cli">CLI</a>
-</p>
+## Features
 
----
-
-## Why another?
-
-You hit a rate limit mid-task, or you want a different model for the next step. **another** keeps your context: it reads sessions from one coding agent and writes them in another agent's native format so you can resume where you left off.
-
-| | What you get |
-|---|---|
-| **Browse** | Unified, paginated session list across agents, filtered by **here** or **everywhere** |
-| **Search** | Find words in titles and normalized user/assistant messages |
-| **Preview** | Read the complete wrapped conversation before you migrate |
-| **Migrate** | One command (or TUI flow) to hop a session to another provider |
-| **Resume** | Copy or print the exact resume command for the target agent |
-| **Fast** | Source-aware SQLite index at `~/.cache/another/index.db` — unchanged sessions are not reparsed |
-| **Safe** | Snapshot dedup, atomic writes, destination verification, and exact rollback |
-
----
+- **Native sessions:** resumes in the target agent's own format — not a pasted summary.
+- **Eight agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, and Hermes.
+- **One keyboard:** `Enter` resumes, `→` migrates, `Space` previews, `Ctrl+R` renames, `A` archives, and `Ctrl+D` deletes.
+- **Verified migration:** reloads every write, compares a content digest, and rolls back on mismatch.
+- **Real session management:** search, rename, archive, delete, export, and import from one local browser.
+- **Local by default:** reads native local stores; the private search index stays under `~/.cache/another/`.
+- **Fast after first scan:** SQLite metadata and FTS indexes avoid reparsing unchanged sessions.
 
 ## Install
 
+macOS and Linux:
+
 ```bash
-# Recommended: install script (linux / macOS)
 curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash
-
-# From source
-go install github.com/nxxxsooo/another/cmd/another@latest
-
-# ...or clone and build
-git clone https://github.com/nxxxsooo/another.git
-cd another && make install
 ```
 
-Requires **Go 1.22+** for building from source. The install script places `another` on your `PATH` (typically `~/.local/bin`).
+Or install from source with Go 1.24+:
 
----
+```bash
+go install github.com/nxxxsooo/another/cmd/another@latest
+```
 
-## Quick start
-
-**1. Open the TUI** (shows cached sessions instantly and refreshes metadata only when the index is stale):
+Make sure `~/.local/bin` or your Go bin directory is on `PATH`, then run:
 
 ```bash
 another
 ```
 
-**2. Or use the CLI:**
+The first run opens a Charmtone setup screen. Use `↑↓` to move, `Space` to select the agents you use, and `Enter` to save. Run `another setup` any time to change the selection.
+
+### Update
+
+Re-run the install command:
 
 ```bash
-# Sessions for the current directory only (--cwd uses exact path match)
-another list --cwd
-
-# At ~, --cwd lists sessions under home projects (~/Documents/..., not global)
-
-# All indexed sessions (default: no limit)
-another list
-
-# Cap output if you prefer
-another list --limit 20
-
-# Preview a session
-another show <session-id> --limit 15
-
-# Search titles and conversation text
-another search "database timeout" --cwd
-
-# Guided migration (both forms are equivalent)
-another --migrate
-another migrate
-
-# Direct ctxmv-style migration and resume command
-another <session-id> --from claude-code --to codex -y
-another migrate <session-id> --from claude-code --to codex -y
-another resume <session-id> --from claude-code --to codex
-
-# Auto keeps every cleaned message when it fits, otherwise uses recent context.
-another migrate <session-id> --to codex --context auto -y
-
-# Force ctxmv-style full history, even when the destination may compact/reject it.
-another migrate <session-id> --to codex --context full -y
-
-# Always prefer a bounded recent working context.
-another migrate <session-id> --to codex --context recent -y
-
-# The unchanged source remains searchable/exportable in every mode.
-another export <session-id> --provider cursor -o session.another.json
+curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash
 ```
 
-**3. Refresh the index** when you've created new sessions in your agents:
+Source installs update with:
 
 ```bash
-another index update          # incremental metadata + changed full text
-another index rebuild         # transactional metadata rebuild + full text
-another index update --metadata-only
-another list --refresh        # rescan then list
+go install github.com/nxxxsooo/another/cmd/another@latest
 ```
 
-> Full-text search stores normalized user/assistant conversation text locally in the private index. The cache directory is mode `0700` and SQLite files are mode `0600`.
+Updates are manual; installed binaries do not follow the repository automatically.
 
----
+## Use the TUI
 
-## TUI
-
-The default interface is a Codex-style **session browser**: one list for all agents, scoped to **here** by default.
-
-```
-   ╭──────◆──────╮
-   │  another   │     here  everywhere
-   ╰─────────────╯
-  session browser    ~/projects/my-app
-
-  3d ago  Fix auth bug          Claude Code · 67417609 · …/my-app
-  1h ago  Refactor API           Codex · 8a2f1c3e · …/my-app
-  …
-
-  ↑↓ navigate · enter preview · / search · m migrate · w here · a everywhere
+```text
+Enter     resume the selected session in its native agent
+→         migrate the selected session to another agent
+←         choose a source agent
+↑ / ↓     move through sessions or picker items
+Space     preview the conversation
+Ctrl+R    rename in the source agent's native title store
+A         archive; press A again for one-step undo
+Ctrl+D    permanently delete after an explicit confirmation
+/         search titles and normalized conversation text
+r         refresh the local index
+Esc       close a picker or dismiss transient state
+q         quit
 ```
 
-### Here vs everywhere
+Migration shows the exact resume command first. Press `Enter` to hand the terminal to the target agent, `c` to copy the command, or `Esc` to keep browsing.
 
-| Where you run `another` | **Here** (`w`) shows |
-|--------------------------|----------------------|
-| A project directory (e.g. `~/projects/my-app`) | Sessions whose `project_path` is **exactly** that folder — not subfolders like `my-app/web` |
-| Home (`~`) | Sessions in projects **under** home (`~/Documents/...`, etc.) — excludes loose `~`-only tags |
-| **Everywhere** (`a`) | All indexed sessions, any path |
+## Agents
 
-`list --cwd` follows the same rules as **here** in the TUI.
+OpenCode and OpenCode 2 are deliberately separate. They use different commands, databases, schemas, and service lifecycles.
 
-| Key | Action |
-|-----|--------|
-| `Enter` | Preview the selected session |
-| `/` | Search titles and user/assistant messages |
-| `s` | Toggle subagent sessions |
-| `w` / `a` | Toggle **here** (this folder) vs **everywhere** |
-| `[` / `]` | Previous / next page (status shows `page N/M` when more sessions exist) |
-| `p` | Filter by agent provider |
-| `m` | Migrate selected session |
-| `r` | Refresh index |
-| `c` | Copy resume command (after migrate) |
-| `Esc` | Back |
-| `q` | Quit |
+| Agent | Provider ID | Native resume | Rename | Archive | Delete |
+|---|---|---|:---:|:---:|:---:|
+| Pi | `pi` | `pi --session <file>` | ✓ | — | ✓ |
+| Codex | `codex` | `codex resume <id>` | ✓ | ✓ | ✓ |
+| Claude Code | `claude-code` | `claude --resume <id>` | ✓ | — | ✓ |
+| Cursor | `cursor` | `cursor-agent --resume <id>` | — | — | ✓ |
+| OpenCode | `opencode` | `opencode --session <id>` | ✓ | ✓ | ✓ |
+| OpenCode 2 | `opencode2` | `opencode2 --session <id>` | ✓ | — | ✓ |
+| CommandCode | `commandcode` | `commandcode --resume <id>` | — | — | ✓ |
+| Hermes | `hermes` | `hermes --resume <id>` | — | ✓ | ✓ |
 
-At 100 columns or wider, detail and migration views use split panes. Narrow terminals use a full-width drilldown; previews rewrap when the terminal is resized.
+A dash means that agent has no verified native contract for the operation. `another` reports the limitation instead of storing a private state that disappears on refresh.
 
----
-
-## Providers
-
-| Agent | ID | Resume command |
-|-------|-----|----------------|
-| Claude Code | `claude-code` | `claude --resume <id>` |
-| Codex | `codex` | `codex resume <id>` |
-| Pi | `pi` | `pi --session <absolute-session-file>` |
-| Cursor CLI | `cursor` | `cursor-agent --resume <id>` |
-| OpenCode | `opencode` | `opencode --session <id>` |
-| CommandCode | `commandcode` | `commandcode --resume <id>` |
-| Hermes | `hermes` | `hermes --resume <id>` |
-
-Check that agent data paths are discoverable:
+Check the local installation:
 
 ```bash
 another providers
 another providers doctor
 ```
 
----
-
 ## CLI
 
 ```bash
-another [<id> --to provider] [--migrate]
-another list [--cwd] [--provider ID] [--include-subagents] [--limit N] [--refresh]
-another search <keywords> [--cwd] [--provider ID] [--include-subagents] [--no-wait]
-another show <id> [--provider ID] [--limit N]
-another migrate [<id>] [--to provider] [--from ID] [--context auto|full|recent] [--dry-run] [-y]
-another resume <id> --to <provider> [--from ID]
-another index {status|rebuild|update} [--provider ID] [--metadata-only]
-another export <id> -o session.another.json
-another import session.another.json --to <provider> [--context auto|full|recent] [-y]
-another providers [doctor]
-another tui [--context auto|full|recent] # explicit TUI (default when no subcommand)
+# Browse and search
+another list [--provider ID] [--cwd] [--limit N] [--refresh]
+another search "query" [--provider ID] [--cwd]
+another show <session-id> [--provider ID] [--limit N]
+
+# Move a session
+another migrate <session-id> --to <provider> [--from ID] [-y]
+another migrate <session-id> --to codex --context full -y
+another resume <session-id> --to <provider> [--from ID]
+
+# Portable backup
+another export <session-id> -o session.another.json
+another import session.another.json --to <provider> -y
+
+# Configuration and index
+another setup
+another index update
+another index rebuild
 ```
 
-**Portable bundles** — export a session to JSON, import on another machine:
+Context modes:
 
-```bash
-another export abc123 -o backup.another.json
-another import backup.another.json --to codex -y
-```
+- `auto` keeps all cleaned turns when they fit and otherwise selects recent working context;
+- `full` preserves every cleaned user/assistant turn even when the destination may compact or reject it;
+- `recent` always creates a bounded recent-context view.
 
----
+## What crosses the boundary
+
+`another` preserves ordered user and assistant text, timestamps when the target supports them, the project directory, title, and a migration marker used for deduplication and verification.
+
+Provider-specific reasoning signatures, tool calls, tool results, images, and system records do not have portable equivalents and are excluded. The original source session is untouched by migration.
+
+OpenCode and OpenCode 2 writes use their official import/API surfaces. Codex Desktop titles come from its GUI title index rather than guessed injected messages. Pi writes complete assistant records with explicit transport metadata and zero-valued usage for reconstructed history.
+
+## Safety
+
+- Every migrated target is reloaded and content-verified before success is reported.
+- Failed verification removes only the artifact created by that migration.
+- `Ctrl+D` defaults to **Cancel** and shows the provider, title, project, and full session ID.
+- Exactly identified active sessions are protected from rename, archive, and delete.
+- The configuration directory is mode `0700`; configuration and SQLite index files are mode `0600`.
+- Disabling an agent in setup removes only its local index rows, never its native sessions.
 
 ## Development
 
 ```bash
 git clone https://github.com/nxxxsooo/another.git
 cd another
-make build test      # compile + unit tests
-./scripts/smoke.sh   # integration smoke test
-make install         # go install + copy to ~/.local/bin (on PATH)
+make build
+go test ./...
+go test -race ./...
+go vet ./...
 ```
 
----
+Regenerate README artwork:
 
-## Limitations
+```bash
+./scripts/render-readme-assets.py
+```
 
-- Cursor formats evolve frequently; another writes the native `store.db` graph, CLI `meta.json`, and transcript fallback, then verifies the conversation it can reload.
-- The portable fidelity contract covers ordered user/assistant text and timestamps. Tool, reasoning, image, and system structures are best-effort because providers do not share equivalent formats.
-- `--context full` preserves every cleaned user/assistant message in destination storage, but no migration tool can make a transcript larger than the destination model's context window simultaneously active. Codex may compact or reject oversized history.
-- **Claude Code** resume may require `cd` to the original project directory.
+## The name
 
----
+The literal meaning comes first: keep the session, continue in **another** agent.
+
+The name is also a quiet nod to [*Another*](https://www.pa-works.jp/works/another/), the 2012 mystery-horror anime from P.A.WORKS based on Yukito Ayatsuji's novel. Its idea of an extra presence whose identity is hard to distinguish became a secondary metaphor for migrated sessions: the same conversational identity appears somewhere else, in another native form. This is conceptual inspiration, not an affiliation or a visual adaptation; the project does not reuse the series' logo, characters, or artwork.
+
+## Acknowledgements
+
+`another` began as a fork of [CyrusSE/agenthop](https://github.com/CyrusSE/agenthop) and is distributed under the MIT License. It now has its own module path, provider contracts, TUI, setup flow, and release surface.
 
 ## License
 
