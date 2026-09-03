@@ -29,20 +29,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-var (
-	accentStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("141"))
-	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	mutedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	okStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	paneStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1)
-	modalStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("141")).Padding(0, 1)
-	footerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	chipActive  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Background(lipgloss.Color("236")).Padding(0, 1)
-	chipMuted   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
-	selectedRow = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-)
-
 // maxShowAllPage caps one fetch. The list scrolls, so there is no user-facing
 // pagination; this only keeps a pathological index from being loaded whole.
 const maxShowAllPage = 200
@@ -55,16 +41,6 @@ const (
 	overlayTarget
 	overlayPreview
 )
-
-var providerColors = map[string]lipgloss.Color{
-	"claude-code": lipgloss.Color("203"),
-	"codex":       lipgloss.Color("42"),
-	"cursor":      lipgloss.Color("39"),
-	"opencode":    lipgloss.Color("141"),
-	"commandcode": lipgloss.Color("214"),
-	"hermes":      lipgloss.Color("177"),
-	"pi":          lipgloss.Color("213"),
-}
 
 type sessionItem struct {
 	summary     model.Summary
@@ -147,11 +123,11 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 	row := cursor +
 		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + " " +
-		title + " "
+		provText + " " + title + " "
 	if projW > 0 {
 		row += mutedStyle.Render(padRight(truncateLeft(util.TildePath(it.summary.ProjectPath), projW), projW)) + " "
 	}
-	row += provText + " " + mutedStyle.Render(padLeft(msgs, msgW))
+	row += mutedStyle.Render(padLeft(msgs, msgW))
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
 }
 
@@ -981,9 +957,10 @@ func (m *modelState) layout() {
 	contentH := max(1, paneOuterH-frameH)
 	m.sessions.SetSize(max(1, m.width-frameW), contentH)
 
-	drawerInnerW := max(14, min(28, m.width/3)-modalStyle.GetHorizontalFrameSize())
-	m.sourceList.SetSize(drawerInnerW, max(1, min(len(m.sourceList.Items()), max(1, contentH-4))))
-	m.targets.SetSize(drawerInnerW, max(1, min(len(m.targets.Items()), max(1, contentH-4))))
+	modalInnerW := max(24, min(56, m.width-12)-modalStyle.GetHorizontalFrameSize())
+	modalListH := max(1, min(10, max(1, contentH-8)))
+	m.sourceList.SetSize(modalInnerW, min(len(m.sourceList.Items()), modalListH))
+	m.targets.SetSize(modalInnerW, min(len(m.targets.Items()), modalListH))
 
 	previewH := max(3, contentH-4)
 	m.preview.Width = max(10, m.width-modalStyle.GetHorizontalFrameSize())
@@ -1013,11 +990,11 @@ func (m modelState) View() string {
 
 	switch m.overlay {
 	case overlaySource:
-		box := modalStyle.Render(titleStyle.Render("← 来源") + "\n" + m.sourceList.View())
-		pane = sideOverlay(pane, box, m.width, true)
+		box := modalStyle.Render(titleStyle.Render("选择来源") + "\n" + mutedStyle.Render("会话来自哪个 agent？") + "\n\n" + m.sourceList.View())
+		pane = overlay(pane, box, m.width)
 	case overlayTarget:
-		box := modalStyle.Render(titleStyle.Render("去向 →") + "\n" + m.targets.View())
-		pane = sideOverlay(pane, box, m.width, false)
+		box := modalStyle.Render(titleStyle.Render("选择去向") + "\n" + mutedStyle.Render("把这条会话带到哪个 agent？") + "\n\n" + m.targets.View())
+		pane = overlay(pane, box, m.width)
 	case overlayPreview:
 		box := modalStyle.Render(m.preview.View())
 		pane = overlay(pane, box, m.width)
@@ -1057,40 +1034,6 @@ func overlay(background, box string, width int) string {
 		boxLine += strings.Repeat(" ", max(0, boxW-ansi.StringWidth(boxLine)))
 		bgLines[row] = edge + strings.Repeat(" ", leftPad) + boxLine +
 			strings.Repeat(" ", rightPad) + edge
-	}
-	return strings.Join(bgLines, "\n")
-}
-
-// sideOverlay pins a drawer to the left or right edge inside the pane while
-// preserving the visible session rows on the other side. ansi.Cut keeps styled
-// text and double-width Chinese characters intact.
-func sideOverlay(background, box string, width int, left bool) string {
-	bgLines := strings.Split(background, "\n")
-	boxLines := strings.Split(box, "\n")
-	if len(boxLines) >= len(bgLines) {
-		return overlay(background, box, width)
-	}
-	boxW := 0
-	for _, line := range boxLines {
-		boxW = max(boxW, ansi.StringWidth(line))
-	}
-	inner := max(0, width-paneStyle.GetHorizontalBorderSize())
-	boxW = min(boxW, inner)
-	y := max(0, (len(bgLines)-len(boxLines))/2)
-	for i, boxLine := range boxLines {
-		row := y + i
-		if row >= len(bgLines) {
-			break
-		}
-		bg := bgLines[row]
-		boxLine = padRight(ansi.Truncate(boxLine, boxW, ""), boxW)
-		if left {
-			right := ansi.Cut(bg, 1+boxW, width)
-			bgLines[row] = ansi.Cut(bg, 0, 1) + boxLine + right
-		} else {
-			x := max(1, width-1-boxW)
-			bgLines[row] = ansi.Cut(bg, 0, x) + boxLine + ansi.Cut(bg, width-1, width)
-		}
 	}
 	return strings.Join(bgLines, "\n")
 }

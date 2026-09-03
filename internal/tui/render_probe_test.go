@@ -50,10 +50,10 @@ func TestRenderProbe(t *testing.T) {
 	fmt.Println(shown.View())
 	shown.overlay = overlaySource
 	shown.layout()
-	fmt.Println("======== source drawer")
+	fmt.Println("======== source picker")
 	fmt.Println(shown.View())
 	shown.overlay = overlayTarget
 	shown.layout()
-	fmt.Println("======== target drawer")
+	fmt.Println("======== target picker")
 	fmt.Println(shown.View())
 }

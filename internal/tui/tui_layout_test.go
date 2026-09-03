@@ -154,37 +154,42 @@ func TestRightAndEnterOpenTargetOverlay(t *testing.T) {
 	}
 }
 
-func TestDrawersOccupyTheirSemanticSides(t *testing.T) {
+func TestPickersUseStableCenteredModals(t *testing.T) {
 	m := layoutTestModel()
-	m.width, m.height = 80, 24
+	m.width, m.height = 100, 30
 	m.layout()
 	base := m.View()
 
 	m.overlay = overlaySource
-	left := m.View()
+	source := m.View()
 	m.overlay = overlayTarget
-	right := m.View()
-	if !strings.Contains(left, "← 来源") || !strings.Contains(right, "去向 →") {
-		t.Fatal("drawers lost their directional labels")
+	target := m.View()
+	if !strings.Contains(source, "选择来源") || !strings.Contains(target, "选择去向") {
+		t.Fatal("pickers lost their purpose labels")
 	}
-	if left == base || right == base || left == right {
-		t.Fatal("source and target drawers must be distinct overlays")
+	if source == base || target == base || source == target {
+		t.Fatal("source and target pickers must be distinct overlays")
 	}
-	leftLine, rightLine := "", ""
-	for _, line := range strings.Split(left, "\n") {
-		if strings.Contains(line, "← 来源") {
-			leftLine = line
-			break
+	for _, view := range []string{source, target} {
+		var modalLine string
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, "选择来源") || strings.Contains(line, "选择去向") {
+				modalLine = line
+				break
+			}
+		}
+		if lipgloss.Width(modalLine) < 40 {
+			t.Fatalf("picker is still a tiny drifting tooltip: %q", modalLine)
 		}
 	}
-	for _, line := range strings.Split(right, "\n") {
-		if strings.Contains(line, "去向 →") {
-			rightLine = line
-			break
-		}
-	}
-	if strings.Index(leftLine, "← 来源") >= strings.Index(rightLine, "去向 →") {
-		t.Fatalf("source drawer is not left of target drawer:\n%s\n%s", leftLine, rightLine)
+}
+
+func TestProviderColumnPrecedesTitle(t *testing.T) {
+	m := layoutTestModel()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	view := updated.(modelState).sessions.View()
+	if strings.Index(view, "Codex") >= strings.Index(view, "A useful title") {
+		t.Fatalf("source provider still trails the title: %q", view)
 	}
 }
 
