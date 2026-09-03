@@ -145,15 +145,27 @@ func TestEscapeClearsAppliedSearch(t *testing.T) {
 	}
 }
 
-func TestRightAndEnterOpenTargetOverlay(t *testing.T) {
-	for _, key := range []tea.KeyType{tea.KeyRight, tea.KeyEnter} {
-		m := layoutTestModel()
-		m.width, m.height = 80, 24
-		m.layout()
-		updated, _ := m.Update(tea.KeyMsg{Type: key})
-		if got := updated.(modelState).overlay; got != overlayTarget {
-			t.Fatalf("key %v did not open target overlay: overlay=%d", key, got)
-		}
+func TestRightOpensTargetOverlay(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
+	m.layout()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if got := updated.(modelState).overlay; got != overlayTarget {
+		t.Fatalf("right did not open target overlay: overlay=%d", got)
+	}
+}
+
+func TestEnterDirectlyResumesSourceSession(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
+	m.layout()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(modelState)
+	if cmd == nil || got.launchTarget != "codex" || !strings.Contains(got.launch, "codex resume") {
+		t.Fatalf("enter did not launch source session: target=%q launch=%q cmd=%v", got.launchTarget, got.launch, cmd)
+	}
+	if got.overlay != overlayNone {
+		t.Fatalf("enter opened an overlay instead of resuming: %d", got.overlay)
 	}
 }
 
@@ -205,11 +217,11 @@ func TestMessageCountHasUnit(t *testing.T) {
 	}
 }
 
-func TestEnterOpensTargetOverlayAndEscapeReturns(t *testing.T) {
+func TestTargetOverlayEscapeReturns(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 80, 24
 	m.layout()
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	m = updated.(modelState)
 	if m.overlay != overlayTarget {
 		t.Fatalf("enter did not open the target overlay: overlay=%d", m.overlay)

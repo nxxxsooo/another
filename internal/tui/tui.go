@@ -881,6 +881,36 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m modelState) openCurrentSession() (tea.Model, tea.Cmd) {
+	it, ok := m.sessions.SelectedItem().(sessionItem)
+	if !ok {
+		return m, nil
+	}
+	p, err := m.reg.Get(it.summary.Provider)
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	if !p.SupportsResume() {
+		m.err = p.DisplayName() + " 不支持直接进入"
+		return m, nil
+	}
+	command := p.ResumeCommand(provider.WriteResult{
+		SessionID: it.summary.ID, StoragePath: it.summary.StoragePath, ProjectPath: it.summary.ProjectPath,
+	})
+	if command == "" {
+		m.err = p.DisplayName() + " 没有可用的 resume 命令"
+		return m, nil
+	}
+	m.launch = command
+	m.launchTarget = it.summary.Provider
+	m.launchProject = it.summary.ProjectPath
+	if m.cancel != nil {
+		m.cancel()
+	}
+	return m, tea.Quit
+}
+
 func (m modelState) openTargetDrawer() (tea.Model, tea.Cmd) {
 	if m.lastResume != "" {
 		m.launch = m.lastResume
@@ -961,8 +991,8 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m, nil
 	case "enter":
-		// A finished migration owns enter: the point of the tool is to land in
-		// the other agent, not to hand back a command to paste.
+		// Enter is the default action on the current object: resume it in its
+		// native agent. Crossing to another agent is spatially mapped to right.
 		if m.lastResume != "" {
 			m.launch = m.lastResume
 			if m.cancel != nil {
@@ -970,7 +1000,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		}
-		return m.openTargetDrawer()
+		return m.openCurrentSession()
 	case " ":
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			sel := it
@@ -1221,7 +1251,7 @@ func (m modelState) help() string {
 	if m.lastResume != "" {
 		return " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出"
 	}
-	return " ← 来源 · ↑↓ 选会话 · →/enter 去向 · space 预览 · ctrl+d 删除 · / 搜索 · r 刷新 · q 退出"
+	return " ← 来源 · ↑↓ 选会话 · enter 直接进入 · → 跨 agent · space 预览 · ctrl+d 删除 · / 搜索 · r 刷新 · q 退出"
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across
