@@ -12,6 +12,7 @@ import (
 	"github.com/CyrusSE/agenthop/internal/providers/cursor"
 	"github.com/CyrusSE/agenthop/internal/providers/hermes"
 	"github.com/CyrusSE/agenthop/internal/providers/opencode"
+	"github.com/CyrusSE/agenthop/internal/providers/pi"
 )
 
 type Registry struct {
@@ -27,6 +28,7 @@ func New() *Registry {
 		opencode.New(),
 		commandcode.New(),
 		hermes.New(),
+		pi.New(),
 		provider.NewStub("devin", "Devin", "docs/providers/stub.md",
 			provider.PathSpec{Label: "config", Path: "~/.config/devin", Env: "DEVIN_HOME"}),
 		provider.NewStub("windsurf", "Windsurf", "docs/providers/stub.md",
@@ -90,11 +92,12 @@ func NormalizeID(id string) string {
 	id = strings.ToLower(strings.TrimSpace(id))
 	replacements := map[string]string{
 		"claude": "claude-code", "claude_code": "claude-code", "claude-code": "claude-code",
-		"codex": "codex",
+		"codex":  "codex",
 		"cursor": "cursor", "cursor-agent": "cursor",
 		"opencode": "opencode", "open-code": "opencode",
 		"commandcode": "commandcode", "command-code": "commandcode",
 		"hermes": "hermes", "hermes-agent": "hermes",
+		"pi": "pi", "pi-coding-agent": "pi",
 	}
 	if v, ok := replacements[id]; ok {
 		return v

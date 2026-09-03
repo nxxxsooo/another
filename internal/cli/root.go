@@ -448,6 +448,7 @@ func providerCLIStatus(id string) string {
 		"opencode":    "opencode",
 		"commandcode": "commandcode",
 		"hermes":      "hermes",
+		"pi":          "pi",
 	}
 	name, ok := commands[id]
 	if !ok {
