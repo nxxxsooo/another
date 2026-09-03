@@ -7,16 +7,6 @@ import (
 	"github.com/nxxxsooo/another/internal/model"
 )
 
-func TestParseMigrationMetaKeepsPublishedLegacyMarkers(t *testing.T) {
-	for _, typ := range []string{"another_migration", "agenthop_migration", "ctxmv_migration"} {
-		line := []byte(`{"type":"` + typ + `","originId":"old","originSource":"pi"}`)
-		meta, ok := model.ParseMigrationMeta(line)
-		if !ok || meta.OriginID != "old" {
-			t.Fatalf("legacy marker %q no longer readable: meta=%+v ok=%v", typ, meta, ok)
-		}
-	}
-}
-
 func TestSnapshotAndContentDigestsStable(t *testing.T) {
 	conv := &model.Conversation{
 		ID: "session-1", Provider: "codex",

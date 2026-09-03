@@ -169,15 +169,9 @@ type MigrationMeta struct {
 
 const MigrationType = "another_migration"
 
-// Legacy marker values already exist in local and published migrations. New
-// writes use MigrationType; reads keep recognizing both old generations so
-// deduplication, rollback, and imported-session detection remain stable.
-const legacyMigrationType = "agenthop_migration"
-const legacyMigrationTypeCtxmv = "ctxmv_migration"
-
 const MigrationTargetFormatVersion = 6
 
-// ParseMigrationMeta recognizes current and legacy markers, either bare or
+// ParseMigrationMeta recognizes another's migration marker, either bare or
 // wrapped in a provider progress/data object.
 func ParseMigrationMeta(line []byte) (*MigrationMeta, bool) {
 	var row map[string]any
@@ -189,7 +183,7 @@ func ParseMigrationMeta(line []byte) (*MigrationMeta, bool) {
 		data = nested
 	}
 	typ, _ := data["type"].(string)
-	if typ != MigrationType && typ != legacyMigrationType && typ != legacyMigrationTypeCtxmv {
+	if typ != MigrationType {
 		return nil, false
 	}
 	b, err := json.Marshal(data)

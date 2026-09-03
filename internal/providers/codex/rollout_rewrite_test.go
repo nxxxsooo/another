@@ -101,7 +101,7 @@ func TestEnsureResumableDoesNotRewriteV2(t *testing.T) {
 	path := filepath.Join(dir, "rollout.jsonl")
 	body := `{"type":"session_meta","payload":{"id":"abc"}}` + "\n" +
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"appended by codex after resume"}]}}` + "\n" +
-		`{"type":"agenthop_migration","data":{"originId":"src-1"}}` + "\n"
+		`{"type":"another_migration","data":{"originId":"src-1"}}` + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

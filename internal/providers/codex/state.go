@@ -122,9 +122,7 @@ func rolloutIsAgenthopMigration(path string) bool {
 	return util.ScanJSONLEdges(path, 3, 8*1024, func(line []byte) bool {
 		_, ok := model.ParseMigrationMeta(line)
 		return ok || strings.Contains(string(line), `"type":"another_migration"`) ||
-			strings.Contains(string(line), `"type": "another_migration"`) ||
-			strings.Contains(string(line), `"type":"agenthop_migration"`) ||
-			strings.Contains(string(line), `"type": "agenthop_migration"`)
+			strings.Contains(string(line), `"type": "another_migration"`)
 	})
 }
 

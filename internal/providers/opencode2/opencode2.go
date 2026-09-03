@@ -162,14 +162,10 @@ func (p *Provider) migration(db *sql.DB, sessionID string) *model.MigrationMeta 
 		return nil
 	}
 	var wrapped struct {
-		Migration    *model.MigrationMeta `json:"another_migration"`
-		MigrationOld *model.MigrationMeta `json:"agenthop_migration"`
+		Migration *model.MigrationMeta `json:"another_migration"`
 	}
 	if json.Unmarshal([]byte(raw.String), &wrapped) != nil {
 		return nil
-	}
-	if wrapped.Migration == nil {
-		wrapped.Migration = wrapped.MigrationOld
 	}
 	return wrapped.Migration
 }
