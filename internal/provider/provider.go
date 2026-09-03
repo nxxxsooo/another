@@ -89,3 +89,11 @@ type ResumeEnsurer interface {
 type WriteCleaner interface {
 	CleanupWrite(context.Context, WriteResult) error
 }
+
+// SessionDeleter is an explicit user-facing destructive capability. It is
+// separate from WriteCleaner: rollback owns only an artifact just written by a
+// failed migration, while deleting an existing session requires confirmation
+// and may need to clean provider indexes as well as files.
+type SessionDeleter interface {
+	DeleteSession(context.Context, SessionRef) error
+}

@@ -1,14 +1,17 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/CyrusSE/agenthop/internal/index"
 	"github.com/CyrusSE/agenthop/internal/migrate"
 	"github.com/CyrusSE/agenthop/internal/model"
 	"github.com/CyrusSE/agenthop/internal/provider"
+	"github.com/CyrusSE/agenthop/internal/providers/pi"
 	"github.com/CyrusSE/agenthop/internal/registry"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -41,7 +44,7 @@ func layoutTestModel() modelState {
 
 func TestViewsFitTerminal(t *testing.T) {
 	for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
-		for _, ov := range []int{overlayNone, overlaySource, overlayTarget, overlayPreview} {
+		for _, ov := range []int{overlayNone, overlaySource, overlayTarget, overlayPreview, overlayDelete} {
 			m := layoutTestModel()
 			m.overlay = ov
 			updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
@@ -106,8 +109,8 @@ func TestLeftOpensSourceDrawerAndAppliesSelection(t *testing.T) {
 	m.layout()
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	m = updated.(modelState)
-	if m.overlay != overlaySource || cmd != nil {
-		t.Fatalf("left did not open source drawer: overlay=%d cmd=%v", m.overlay, cmd)
+	if m.overlay != overlaySource || cmd == nil {
+		t.Fatalf("left did not open source drawer and hide the cursor: overlay=%d cmd=%v", m.overlay, cmd)
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = updated.(modelState)
@@ -230,6 +233,96 @@ func TestEnterOnTargetStartsMigration(t *testing.T) {
 	}
 	if !updated.(modelState).loading {
 		t.Fatal("migration did not enter the loading state")
+	}
+}
+
+func TestCtrlDOpensDeleteWithCancelSelected(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	got := updated.(modelState)
+	if got.overlay != overlayDelete || got.deleteChoice != 0 {
+		t.Fatalf("ctrl+d did not open safe delete state: overlay=%d choice=%d", got.overlay, got.deleteChoice)
+	}
+	if !strings.Contains(got.View(), "删除会话？") || !strings.Contains(got.View(), "默认") && !strings.Contains(got.View(), "取消") {
+		t.Fatal("delete confirmation does not make cancellation visible")
+	}
+	updated, cmd := got.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if updated.(modelState).overlay != overlayNone || cmd != nil {
+		t.Fatal("enter on the default cancel choice must not delete")
+	}
+}
+
+func TestDeleteRequiresExplicitChoice(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.overlay = overlayDelete
+	m.deleteChoice = 0
+	m.layout()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	got := updated.(modelState)
+	if got.deleteChoice != 1 {
+		t.Fatal("right did not move focus to delete")
+	}
+	updated, cmd := got.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil || !updated.(modelState).loading {
+		t.Fatal("explicit delete choice did not start deletion")
+	}
+}
+
+func TestDeleteRemovesPiSourceAndIndexRecord(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PI_AGENT_DIR", root)
+	p := pi.New()
+	write, err := p.Write(context.Background(), &model.Conversation{
+		ID: "source", Provider: "codex", ProjectPath: "/tmp/delete-fixture", Title: "delete me",
+		Messages: []model.Message{{Role: model.RoleUser, Content: "temporary"}},
+	}, provider.WriteOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := registry.New()
+	idx, err := index.Open(filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+	if _, err := index.UpdateIncremental(context.Background(), reg, idx, "pi"); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := idx.Count(index.ListOpts{Provider: "pi"}); n != 1 {
+		t.Fatalf("fixture was not indexed: count=%d", n)
+	}
+
+	cmd := deleteSessionCmd(context.Background(), reg, idx, model.Summary{
+		ID: write.SessionID, Provider: "pi", ProjectPath: write.ProjectPath, StoragePath: write.StoragePath, Title: "delete me",
+	})
+	msg := cmd().(deleteDoneMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	if _, err := os.Stat(write.StoragePath); !os.IsNotExist(err) {
+		t.Fatalf("source file still exists: %v", err)
+	}
+	if n, _ := idx.Count(index.ListOpts{Provider: "pi"}); n != 0 {
+		t.Fatalf("index still contains deleted session: count=%d", n)
+	}
+}
+
+func TestCurrentPiSessionCannotBeDeleted(t *testing.T) {
+	m := layoutTestModel()
+	item := m.sessions.SelectedItem().(sessionItem)
+	item.summary.Provider = "pi"
+	item.summary.ID = "live-pi"
+	item.summary.StoragePath = "/tmp/live-pi.jsonl"
+	m.sessions.SetItems([]list.Item{item})
+	t.Setenv("PI_SESSION_ID", "live-pi")
+	t.Setenv("PI_SESSION_FILE", "/tmp/live-pi.jsonl")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	got := updated.(modelState)
+	if got.overlay == overlayDelete || !strings.Contains(got.err, "当前") {
+		t.Fatalf("current session was not protected: overlay=%d err=%q", got.overlay, got.err)
 	}
 }
 

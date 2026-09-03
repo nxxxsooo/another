@@ -40,6 +40,7 @@ const (
 	overlaySource
 	overlayTarget
 	overlayPreview
+	overlayDelete
 )
 
 type sessionItem struct {
@@ -206,6 +207,12 @@ type migrateDoneMsg struct {
 	targetID string
 	err      error
 }
+type deleteDoneMsg struct {
+	providerID string
+	title      string
+	counts     map[string]int
+	err        error
+}
 type indexRefreshedMsg struct {
 	counts     map[string]int
 	err        error
@@ -235,9 +242,10 @@ type modelState struct {
 	searchInput textinput.Model
 	spinner     spinner.Model
 
-	sources   []sourceChip
-	sourceIdx int
-	overlay   int
+	sources      []sourceChip
+	sourceIdx    int
+	overlay      int
+	deleteChoice int // 0 cancel, 1 delete
 
 	selected        *sessionItem
 	loading         bool
@@ -454,7 +462,7 @@ func targetItems(reg *registry.Registry, exclude string) []list.Item {
 }
 
 func (m modelState) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen)}
+	cmds := []tea.Cmd{tea.HideCursor, m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen)}
 	if m.indexing {
 		cmds = append(cmds, backgroundIndexCmd(m.ctx, m.reg, m.idx))
 	} else {
@@ -581,6 +589,29 @@ func loadPreviewCmd(ctx context.Context, reg *registry.Registry, sm model.Summar
 	}
 }
 
+func deleteSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sm model.Summary) tea.Cmd {
+	return func() tea.Msg {
+		p, err := reg.Get(sm.Provider)
+		if err != nil {
+			return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, err: err}
+		}
+		deleter, ok := p.(provider.SessionDeleter)
+		if !ok {
+			return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, err: fmt.Errorf("%s does not support deletion", p.DisplayName())}
+		}
+		ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+		if err := deleter.DeleteSession(ctx, ref); err != nil {
+			return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, err: err}
+		}
+		_, err = index.UpdateIncremental(ctx, reg, idx, sm.Provider)
+		counts, _ := idx.CountByProvider()
+		if err != nil {
+			err = fmt.Errorf("session deleted, but index refresh failed: %w", err)
+		}
+		return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, counts: counts, err: err}
+	}
+}
+
 func migrateCmd(ctx context.Context, engine *migrate.Engine, sm model.Summary, to string, contextMode migrate.ContextMode) tea.Cmd {
 	return func() tea.Msg {
 		res, err := engine.Run(ctx, migrate.Options{
@@ -621,6 +652,26 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.preview.GotoTop()
 		m.layout()
 		return m, nil
+	case deleteDoneMsg:
+		m.loading = false
+		m.overlay = overlayNone
+		m.deleteChoice = 0
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.selected = nil
+		m.lastResume = ""
+		m.status = okStyle.Render("已删除 " + truncateDisplay(msg.title, 48))
+		m.sources = sourceChips(m.reg, msg.counts)
+		if m.sourceIdx >= len(m.sources) {
+			m.sourceIdx = 0
+		}
+		m.sourceList.SetItems(sourceItems(m.sources))
+		m.sourceList.Select(m.sourceIdx)
+		var cmd tea.Cmd
+		m, cmd = dispatchPageLoad(m)
+		return m, cmd
 	case migrateDoneMsg:
 		m.loading = false
 		m.overlay = overlayNone
@@ -778,14 +829,17 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.layout()
 		return m, nil
-	case "left":
-		if m.overlay == overlaySource {
+	case "left", "right":
+		if m.overlay == overlayDelete {
+			m.deleteChoice = 1 - m.deleteChoice
+			return m, nil
+		}
+		if msg.String() == "left" && m.overlay == overlaySource {
 			m.overlay = overlayNone
 			m.layout()
 			return m, nil
 		}
-	case "right":
-		if m.overlay == overlaySource {
+		if msg.String() == "right" && m.overlay == overlaySource {
 			return m.applySource()
 		}
 	case "enter":
@@ -800,6 +854,17 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, tea.Batch(m.spinner.Tick,
 						migrateCmd(m.ctx, m.engine, m.selected.summary, tgt.id, m.contextMode))
 				}
+			}
+		case overlayDelete:
+			if m.deleteChoice == 0 {
+				m.overlay = overlayNone
+				return m, nil
+			}
+			if m.selected != nil {
+				m.loading = true
+				m.err = ""
+				return m, tea.Batch(m.spinner.Tick,
+					deleteSessionCmd(m.ctx, m.reg, m.idx, m.selected.summary))
 			}
 		}
 		return m, nil
@@ -834,7 +899,7 @@ func (m modelState) openTargetDrawer() (tea.Model, tea.Cmd) {
 	m.targets.Select(0)
 	m.overlay = overlayTarget
 	m.layout()
-	return m, nil
+	return m, tea.HideCursor
 }
 
 func (m modelState) applySource() (tea.Model, tea.Cmd) {
@@ -871,7 +936,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sourceList.Select(m.sourceIdx)
 		m.overlay = overlaySource
 		m.layout()
-		return m, nil
+		return m, tea.HideCursor
 	case "right":
 		return m.openTargetDrawer()
 	case "/":
@@ -918,6 +983,28 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.lastResume != "" {
 			_ = clipboard.WriteAll(m.lastResume)
 			m.status = okStyle.Render("已复制 resume 命令")
+		}
+		return m, nil
+	case "ctrl+d":
+		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
+			if isCurrentSession(it.summary) {
+				m.err = "不能删除当前正在运行的会话"
+				return m, nil
+			}
+			p, err := m.reg.Get(it.summary.Provider)
+			if err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			if _, ok := p.(provider.SessionDeleter); !ok {
+				m.err = p.DisplayName() + " 不支持删除"
+				return m, nil
+			}
+			sel := it
+			m.selected = &sel
+			m.deleteChoice = 0
+			m.overlay = overlayDelete
+			m.layout()
 		}
 		return m, nil
 	case "r":
@@ -998,6 +1085,9 @@ func (m modelState) View() string {
 	case overlayPreview:
 		box := modalStyle.Render(m.preview.View())
 		pane = overlay(pane, box, m.width)
+	case overlayDelete:
+		box := modalStyle.Render(m.deleteView())
+		pane = overlay(pane, box, m.width)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, pane, footer)
 }
@@ -1036,6 +1126,32 @@ func overlay(background, box string, width int) string {
 			strings.Repeat(" ", rightPad) + edge
 	}
 	return strings.Join(bgLines, "\n")
+}
+
+func (m modelState) deleteView() string {
+	if m.selected == nil {
+		return errStyle.Render("没有选中的会话")
+	}
+	sm := m.selected.summary
+	title := truncateDisplay(sm.Title, 64)
+	project := truncateLeft(util.TildePath(sm.ProjectPath), 64)
+	cancel := chipActive.Render("取消")
+	remove := chipMuted.Render("删除")
+	if m.deleteChoice == 1 {
+		cancel = chipMuted.Render("取消")
+		remove = dangerChoice.Render("删除")
+	}
+	if m.height < 18 {
+		return errStyle.Render("删除会话？") + "\n" +
+			title + "\n" + mutedStyle.Render(sm.ID) + "\n" + cancel + "   " + remove
+	}
+	return errStyle.Render("删除会话？") + "\n" +
+		mutedStyle.Render("该操作会删除来源 agent 中的原始会话，无法撤销。") + "\n\n" +
+		mutedStyle.Render("来源  ") + registry.DisplayName(m.reg, sm.Provider) + "\n" +
+		mutedStyle.Render("标题  ") + title + "\n" +
+		mutedStyle.Render("目录  ") + project + "\n" +
+		mutedStyle.Render("ID    ") + sm.ID + "\n\n" +
+		cancel + "   " + remove
 }
 
 func (m modelState) headerView() string {
@@ -1096,6 +1212,8 @@ func (m modelState) help() string {
 		return " ↑↓ 选去向 · enter 迁移 · esc 取消"
 	case overlayPreview:
 		return " ↑↓ 滚动 · esc 关闭"
+	case overlayDelete:
+		return " ←→ 选择 · enter 确认 · esc 取消"
 	}
 	if m.searching {
 		return " enter 搜索 · esc 取消"
@@ -1103,11 +1221,34 @@ func (m modelState) help() string {
 	if m.lastResume != "" {
 		return " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出"
 	}
-	return " ← 来源 · ↑↓ 选会话 · →/enter 去向 · space 预览 · / 搜索 · r 刷新 · q 退出"
+	return " ← 来源 · ↑↓ 选会话 · →/enter 去向 · space 预览 · ctrl+d 删除 · / 搜索 · r 刷新 · q 退出"
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across
 // projects; the last segments are what identify one.
+func isCurrentSession(sm model.Summary) bool {
+	ids := []string{
+		os.Getenv("PI_SESSION_ID"),
+		os.Getenv("CLAUDE_SESSION_ID"),
+		os.Getenv("CODEX_THREAD_ID"),
+		os.Getenv("OPENCODE_SESSION_ID"),
+	}
+	for _, id := range ids {
+		if id != "" && sm.ID == id {
+			return true
+		}
+	}
+	return sm.StoragePath != "" && os.Getenv("PI_SESSION_FILE") == sm.StoragePath
+}
+
+func truncateDisplay(s string, n int) string {
+	s = strings.ReplaceAll(strings.TrimSpace(s), "\n", " ")
+	if s == "" {
+		return "(untitled)"
+	}
+	return ansi.Truncate(s, n, "…")
+}
+
 func truncateLeft(s string, n int) string {
 	if ansi.StringWidth(s) <= n {
 		return s

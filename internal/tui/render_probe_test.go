@@ -56,4 +56,12 @@ func TestRenderProbe(t *testing.T) {
 	shown.layout()
 	fmt.Println("======== target picker")
 	fmt.Println(shown.View())
+	if item, ok := shown.sessions.SelectedItem().(sessionItem); ok {
+		shown.selected = &item
+	}
+	shown.overlay = overlayDelete
+	shown.deleteChoice = 0
+	shown.layout()
+	fmt.Println("======== delete confirmation")
+	fmt.Println(shown.View())
 }

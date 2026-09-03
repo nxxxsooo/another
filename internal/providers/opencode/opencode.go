@@ -426,6 +426,12 @@ func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	return cmd
 }
 
+func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {
+	return p.CleanupWrite(ctx, provider.WriteResult{
+		SessionID: ref.ID, StoragePath: ref.StoragePath, ProjectPath: ref.ProjectPath,
+	})
+}
+
 func (p *Provider) CleanupWrite(ctx context.Context, r provider.WriteResult) error {
 	db, err := sql.Open("sqlite", p.dbPath+"?_pragma=busy_timeout(5000)")
 	if err != nil {
