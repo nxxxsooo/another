@@ -116,7 +116,17 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		provW = 12
 		msgW  = 5
 	)
-	titleW := width - 2 - timeW - provW - msgW - 3
+	// The project column is what tells two similarly named sessions apart, but
+	// the title matters more; it only appears once the title still has room.
+	projW := 0
+	if width >= 92 {
+		projW = min(28, width/4)
+	}
+	fixed := 2 + timeW + provW + msgW + 3
+	if projW > 0 {
+		fixed += projW + 1
+	}
+	titleW := width - fixed
 	if titleW < 8 {
 		titleW = 8
 	}
@@ -131,9 +141,11 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 	row := cursor +
 		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + " " +
-		title + " " +
-		provText + " " +
-		mutedStyle.Render(padLeft(msgs, msgW))
+		title + " "
+	if projW > 0 {
+		row += mutedStyle.Render(padRight(truncateLeft(util.TildePath(it.summary.ProjectPath), projW), projW)) + " "
+	}
+	row += provText + " " + mutedStyle.Render(padLeft(msgs, msgW))
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
 }
 
@@ -926,6 +938,22 @@ func (m modelState) help() string {
 		return " enter 搜索 · esc 取消"
 	}
 	return " ←→ 切来源 · ↑↓ 选会话 · enter 选去向 · space 预览 · / 搜索 · r 刷新 · q 退出"
+}
+
+// truncateLeft keeps the tail of a path. The leading directories repeat across
+// projects; the last segments are what identify one.
+func truncateLeft(s string, n int) string {
+	if ansi.StringWidth(s) <= n {
+		return s
+	}
+	runes := []rune(s)
+	for i := range runes {
+		candidate := "…" + string(runes[i+1:])
+		if ansi.StringWidth(candidate) <= n {
+			return candidate
+		}
+	}
+	return ansi.Truncate(s, n, "")
 }
 
 func padRight(s string, n int) string {

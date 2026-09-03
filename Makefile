@@ -16,7 +16,12 @@ INSTALL_BIN := $(if $(GOBIN_PATH),$(GOBIN_PATH),$(GOPATH_BIN))/$(BINARY)
 install:
 	go install -buildvcs=false -ldflags "-X github.com/CyrusSE/agenthop/internal/cli.version=$(VERSION)" ./cmd/another
 	@mkdir -p $(HOME)/.local/bin
-	@cp -f $(INSTALL_BIN) $(HOME)/.local/bin/$(BINARY)
+# Replace by rename, never in place: overwriting a Mach-O that has already been
+# executed invalidates its code signature and macOS then SIGKILLs it (exit 137,
+# "Killed: 9") on the next run.
+	@cp -f $(INSTALL_BIN) $(HOME)/.local/bin/.$(BINARY).new
+	@chmod 0755 $(HOME)/.local/bin/.$(BINARY).new
+	@mv -f $(HOME)/.local/bin/.$(BINARY).new $(HOME)/.local/bin/$(BINARY)
 	@echo "Installed $(VERSION) -> $(HOME)/.local/bin/$(BINARY)"
 
 clean:
