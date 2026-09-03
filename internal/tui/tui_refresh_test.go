@@ -7,7 +7,7 @@ import (
 )
 
 func TestCompletedRefreshClearsIndexing(t *testing.T) {
-	m := modelState{indexing: true, reg: registry.New()}
+	m := modelState{indexing: true, reg: registry.New(), sourceList: newSourceList(nil)}
 	res, _ := m.Update(indexRefreshedMsg{counts: map[string]int{}, updated: 3})
 	if res.(modelState).indexing {
 		t.Fatal("completed refresh msg must clear indexing")
@@ -18,9 +18,10 @@ func TestCompletedRefreshClearsIndexing(t *testing.T) {
 // past the end of the new chips.
 func TestRefreshKeepsSourceSelectionInRange(t *testing.T) {
 	m := modelState{
-		reg:       registry.New(),
-		sources:   []sourceChip{{id: ""}, {id: "codex"}, {id: "pi"}},
-		sourceIdx: 2,
+		reg:        registry.New(),
+		sources:    []sourceChip{{id: ""}, {id: "codex"}, {id: "pi"}},
+		sourceList: newSourceList(nil),
+		sourceIdx:  2,
 	}
 	res, _ := m.Update(indexRefreshedMsg{counts: map[string]int{}, updated: 1})
 	got := res.(modelState)

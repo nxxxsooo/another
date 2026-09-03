@@ -35,18 +35,25 @@ func TestRenderProbe(t *testing.T) {
 	for _, s := range summaries {
 		items = append(items, sessionItem{summary: s, providerLbl: registry.DisplayName(reg, s.Provider)})
 	}
+	sources := sourceChips(reg, counts)
 	m := modelState{
 		reg: reg, idx: idx,
-		sessions: newSessionList(items),
-		targets:  newTargetList(targetItems(reg, "pi")),
-		sources:  sourceChips(reg, counts),
+		sessions:      newSessionList(items),
+		sourceList:    newSourceList(sourceItems(sources)),
+		targets:       newTargetList(targetItems(reg, "pi")),
+		sources:       sources,
+		totalSessions: sources[0].count,
 	}
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
 	shown := updated.(modelState)
 	fmt.Println("======== list")
 	fmt.Println(shown.View())
+	shown.overlay = overlaySource
+	shown.layout()
+	fmt.Println("======== source drawer")
+	fmt.Println(shown.View())
 	shown.overlay = overlayTarget
 	shown.layout()
-	fmt.Println("======== target overlay")
+	fmt.Println("======== target drawer")
 	fmt.Println(shown.View())
 }

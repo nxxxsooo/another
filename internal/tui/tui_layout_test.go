@@ -25,6 +25,11 @@ func layoutTestModel() modelState {
 			{id: "codex", name: "Codex", count: 2},
 			{id: "pi", name: "pi", count: 1},
 		},
+		sourceList: newSourceList([]list.Item{
+			sourceChip{id: "", name: "all", count: 3},
+			sourceChip{id: "codex", name: "Codex", count: 2},
+			sourceChip{id: "pi", name: "pi", count: 1},
+		}),
 		preview: viewport.New(1, 1), searchInput: textinput.New(), selected: &item,
 		previewContent: strings.Repeat("full preview content ", 100), status: "ready",
 	}
@@ -32,7 +37,7 @@ func layoutTestModel() modelState {
 
 func TestViewsFitTerminal(t *testing.T) {
 	for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
-		for _, ov := range []int{overlayNone, overlayTarget, overlayPreview} {
+		for _, ov := range []int{overlayNone, overlaySource, overlayTarget, overlayPreview} {
 			m := layoutTestModel()
 			m.overlay = ov
 			updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
@@ -91,24 +96,21 @@ func TestSessionRowStaysOneLine(t *testing.T) {
 	}
 }
 
-func TestLeftRightCyclesSource(t *testing.T) {
+func TestLeftOpensSourceDrawerAndAppliesSelection(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 80, 24
 	m.layout()
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	m = updated.(modelState)
-	if m.sourceIdx != 1 || cmd == nil {
-		t.Fatalf("right did not move to the next source: idx=%d cmd=%v", m.sourceIdx, cmd)
+	if m.overlay != overlaySource || cmd != nil {
+		t.Fatalf("left did not open source drawer: overlay=%d cmd=%v", m.overlay, cmd)
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	if got := updated.(modelState).sourceIdx; got != 0 {
-		t.Fatalf("left did not move back: idx=%d", got)
-	}
-	// Wrapping keeps the row navigable without an extra home/end key.
-	m.sourceIdx = 0
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	if got := updated.(modelState).sourceIdx; got != len(m.sources)-1 {
-		t.Fatalf("left at the first chip should wrap, got %d", got)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(modelState)
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(modelState)
+	if m.overlay != overlayNone || m.sourceIdx != 1 || cmd == nil {
+		t.Fatalf("right did not apply source: overlay=%d idx=%d cmd=%v", m.overlay, m.sourceIdx, cmd)
 	}
 }
 
@@ -133,6 +135,61 @@ func TestEscapeClearsAppliedSearch(t *testing.T) {
 	m = updated.(modelState)
 	if m.searchQuery != "" || m.searchInput.Value() != "" || cmd == nil {
 		t.Fatalf("escape did not clear search: query=%q input=%q cmd=%v", m.searchQuery, m.searchInput.Value(), cmd)
+	}
+}
+
+func TestRightAndEnterOpenTargetOverlay(t *testing.T) {
+	for _, key := range []tea.KeyType{tea.KeyRight, tea.KeyEnter} {
+		m := layoutTestModel()
+		m.width, m.height = 80, 24
+		m.layout()
+		updated, _ := m.Update(tea.KeyMsg{Type: key})
+		if got := updated.(modelState).overlay; got != overlayTarget {
+			t.Fatalf("key %v did not open target overlay: overlay=%d", key, got)
+		}
+	}
+}
+
+func TestDrawersOccupyTheirSemanticSides(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
+	m.layout()
+	base := m.View()
+
+	m.overlay = overlaySource
+	left := m.View()
+	m.overlay = overlayTarget
+	right := m.View()
+	if !strings.Contains(left, "← 来源") || !strings.Contains(right, "去向 →") {
+		t.Fatal("drawers lost their directional labels")
+	}
+	if left == base || right == base || left == right {
+		t.Fatal("source and target drawers must be distinct overlays")
+	}
+	leftLine, rightLine := "", ""
+	for _, line := range strings.Split(left, "\n") {
+		if strings.Contains(line, "← 来源") {
+			leftLine = line
+			break
+		}
+	}
+	for _, line := range strings.Split(right, "\n") {
+		if strings.Contains(line, "去向 →") {
+			rightLine = line
+			break
+		}
+	}
+	if strings.Index(leftLine, "← 来源") >= strings.Index(rightLine, "去向 →") {
+		t.Fatalf("source drawer is not left of target drawer:\n%s\n%s", leftLine, rightLine)
+	}
+}
+
+func TestMessageCountHasUnit(t *testing.T) {
+	m := layoutTestModel()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	view := updated.(modelState).sessions.View()
+	if !strings.Contains(view, "12条") {
+		t.Fatalf("message count is still a bare number: %q", view)
 	}
 }
 

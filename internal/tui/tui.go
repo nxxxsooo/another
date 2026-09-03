@@ -47,6 +47,7 @@ const maxShowAllPage = 200
 // stages: closing one returns to exactly the row the user was on.
 const (
 	overlayNone = iota
+	overlaySource
 	overlayTarget
 	overlayPreview
 )
@@ -109,13 +110,13 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	}
 	msgs := ""
 	if it.summary.MessageCount > 0 {
-		msgs = fmt.Sprintf("%d", it.summary.MessageCount)
+		msgs = fmt.Sprintf("%d条", it.summary.MessageCount)
 	}
 
 	const (
 		timeW = 10
 		provW = 12
-		msgW  = 5
+		msgW  = 7
 	)
 	// The project column is what tells two similarly named sessions apart, but
 	// the title matters more; it only appears once the title still has room.
@@ -177,10 +178,36 @@ func (targetDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, ansi.Truncate(cursor+name, max(4, m.Width()), ""))
 }
 
-// sourceChip is one entry in the top row: "all" plus every installed provider.
+// sourceChip is one choice in the left source drawer: "all" plus every
+// installed provider.
 type sourceChip struct {
 	id, name string
 	count    int
+}
+
+func (i sourceChip) FilterValue() string { return i.id + " " + i.name }
+
+type sourceDelegate struct{}
+
+func (sourceDelegate) Height() int                         { return 1 }
+func (sourceDelegate) Spacing() int                        { return 0 }
+func (sourceDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
+func (sourceDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	it, ok := listItem.(sourceChip)
+	if !ok {
+		return
+	}
+	cursor := "  "
+	name := it.name
+	if index == m.Index() {
+		cursor = "› "
+		name = selectedRow.Render(name)
+	} else if color, ok := providerColors[it.id]; ok {
+		name = lipgloss.NewStyle().Foreground(color).Render(name)
+	}
+	count := mutedStyle.Render(fmt.Sprintf("%d", it.count))
+	line := cursor + padRight(name, max(4, m.Width()-ansi.StringWidth(count)-3)) + " " + count
+	fmt.Fprint(w, ansi.Truncate(line, max(4, m.Width()), ""))
 }
 
 type sessionsPageMsg struct {
@@ -221,6 +248,7 @@ type modelState struct {
 	engine *migrate.Engine
 
 	sessions    list.Model
+	sourceList  list.Model
 	targets     list.Model
 	preview     viewport.Model
 	searchInput textinput.Model
@@ -280,6 +308,8 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	counts, _ := idx.CountByProvider()
 
 	sessList := newSessionList(nil)
+	sources := sourceChips(reg, counts)
+	sourceList := newSourceList(sourceItems(sources))
 	targetList := newTargetList(nil)
 
 	vp := viewport.New(64, 20)
@@ -294,9 +324,9 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	defer cancel()
 	m := modelState{
 		reg: reg, idx: idx, engine: engine,
-		sessions: sessList, targets: targetList,
+		sessions: sessList, sourceList: sourceList, targets: targetList,
 		preview: vp, searchInput: search, spinner: sp,
-		sources: sourceChips(reg, counts), cwd: cwd,
+		sources: sources, cwd: cwd,
 		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
 	}
@@ -349,8 +379,20 @@ func newSessionList(items []list.Item) list.Model {
 	return newBareList(items, sessionDelegate{}, 72, 20)
 }
 
+func newSourceList(items []list.Item) list.Model {
+	return newBareList(items, sourceDelegate{}, 28, 8)
+}
+
 func newTargetList(items []list.Item) list.Model {
 	return newBareList(items, targetDelegate{}, 30, 8)
+}
+
+func sourceItems(chips []sourceChip) []list.Item {
+	items := make([]list.Item, len(chips))
+	for i := range chips {
+		items[i] = chips[i]
+	}
+	return items
 }
 
 func sourceChips(reg *registry.Registry, counts map[string]int) []sourceChip {
@@ -373,6 +415,13 @@ func (m modelState) sourceID() string {
 		return ""
 	}
 	return m.sources[m.sourceIdx].id
+}
+
+func (m modelState) currentSource() sourceChip {
+	if m.sourceIdx < 0 || m.sourceIdx >= len(m.sources) {
+		return sourceChip{name: "all", count: m.totalSessions}
+	}
+	return m.sources[m.sourceIdx]
 }
 
 func targetItems(reg *registry.Registry, exclude string) []list.Item {
@@ -588,6 +637,8 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.sourceIdx >= len(m.sources) {
 			m.sourceIdx = 0
 		}
+		m.sourceList.SetItems(sourceItems(m.sources))
+		m.sourceList.Select(m.sourceIdx)
 		if msg.reloadPage {
 			m.contentIndexing = true
 			var cmd tea.Cmd
@@ -654,6 +705,8 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	switch m.overlay {
+	case overlaySource:
+		m.sourceList, cmd = m.sourceList.Update(msg)
 	case overlayTarget:
 		m.targets, cmd = m.targets.Update(msg)
 	case overlayPreview:
@@ -703,24 +756,82 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.layout()
 		return m, nil
+	case "left":
+		if m.overlay == overlaySource {
+			m.overlay = overlayNone
+			m.layout()
+			return m, nil
+		}
+	case "right":
+		if m.overlay == overlaySource {
+			return m.applySource()
+		}
 	case "enter":
-		if m.overlay == overlayTarget && m.selected != nil {
-			if tgt, ok := m.targets.SelectedItem().(targetItem); ok {
-				m.loading = true
-				m.err = ""
-				return m, tea.Batch(m.spinner.Tick,
-					migrateCmd(m.ctx, m.engine, m.selected.summary, tgt.id, m.contextMode))
+		switch m.overlay {
+		case overlaySource:
+			return m.applySource()
+		case overlayTarget:
+			if m.selected != nil {
+				if tgt, ok := m.targets.SelectedItem().(targetItem); ok {
+					m.loading = true
+					m.err = ""
+					return m, tea.Batch(m.spinner.Tick,
+						migrateCmd(m.ctx, m.engine, m.selected.summary, tgt.id, m.contextMode))
+				}
 			}
 		}
 		return m, nil
 	}
 	var cmd tea.Cmd
-	if m.overlay == overlayTarget {
+	switch m.overlay {
+	case overlaySource:
+		m.sourceList, cmd = m.sourceList.Update(msg)
+	case overlayTarget:
 		m.targets, cmd = m.targets.Update(msg)
-	} else {
+	default:
 		m.preview, cmd = m.preview.Update(msg)
 	}
 	return m, cmd
+}
+
+func (m modelState) openTargetDrawer() (tea.Model, tea.Cmd) {
+	if m.lastResume != "" {
+		m.launch = m.lastResume
+		if m.cancel != nil {
+			m.cancel()
+		}
+		return m, tea.Quit
+	}
+	it, ok := m.sessions.SelectedItem().(sessionItem)
+	if !ok {
+		return m, nil
+	}
+	sel := it
+	m.selected = &sel
+	m.targets.SetItems(targetItems(m.reg, it.summary.Provider))
+	m.targets.Select(0)
+	m.overlay = overlayTarget
+	m.layout()
+	return m, nil
+}
+
+func (m modelState) applySource() (tea.Model, tea.Cmd) {
+	chip, ok := m.sourceList.SelectedItem().(sourceChip)
+	if !ok {
+		return m, nil
+	}
+	for i := range m.sources {
+		if m.sources[i].id == chip.id {
+			m.sourceIdx = i
+			break
+		}
+	}
+	m.overlay = overlayNone
+	m.searchQuery = ""
+	m.searchInput.SetValue("")
+	m.lastResume = ""
+	m.status = ""
+	return dispatchPageLoadModel(m)
 }
 
 func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -730,20 +841,17 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancel()
 		}
 		return m, tea.Quit
-	case "left", "right":
-		if len(m.sources) < 2 {
+	case "left":
+		if len(m.sources) == 0 {
 			return m, nil
 		}
-		if msg.String() == "left" {
-			m.sourceIdx = (m.sourceIdx - 1 + len(m.sources)) % len(m.sources)
-		} else {
-			m.sourceIdx = (m.sourceIdx + 1) % len(m.sources)
-		}
-		if m.searchQuery != "" {
-			m.loading = true
-			return m, tea.Batch(m.spinner.Tick, searchCmd(m.ctx, m.reg, m.idx, m.searchQuery, m.sourceID()))
-		}
-		return dispatchPageLoadModel(m)
+		m.sourceList.SetItems(sourceItems(m.sources))
+		m.sourceList.Select(m.sourceIdx)
+		m.overlay = overlaySource
+		m.layout()
+		return m, nil
+	case "right":
+		return m.openTargetDrawer()
 	case "/":
 		m.searching = true
 		m.searchInput.Focus()
@@ -773,15 +881,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		}
-		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
-			sel := it
-			m.selected = &sel
-			m.targets.SetItems(targetItems(m.reg, it.summary.Provider))
-			m.targets.Select(0)
-			m.overlay = overlayTarget
-			m.layout()
-		}
-		return m, nil
+		return m.openTargetDrawer()
 	case " ":
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			sel := it
@@ -833,11 +933,12 @@ func (m *modelState) layout() {
 	contentH := max(1, paneOuterH-frameH)
 	m.sessions.SetSize(max(1, m.width-frameW), contentH)
 
-	modalInnerW := max(10, m.width-modalStyle.GetHorizontalFrameSize())
-	m.targets.SetSize(modalInnerW, max(1, min(len(m.targets.Items()), max(1, contentH-4))))
+	drawerInnerW := max(14, min(28, m.width/3)-modalStyle.GetHorizontalFrameSize())
+	m.sourceList.SetSize(drawerInnerW, max(1, min(len(m.sourceList.Items()), max(1, contentH-4))))
+	m.targets.SetSize(drawerInnerW, max(1, min(len(m.targets.Items()), max(1, contentH-4))))
 
 	previewH := max(3, contentH-4)
-	m.preview.Width = modalInnerW
+	m.preview.Width = max(10, m.width-modalStyle.GetHorizontalFrameSize())
 	m.preview.Height = previewH
 	y := m.preview.YOffset
 	m.preview.SetContent(ansi.Hardwrap(m.previewContent, max(1, m.preview.Width), false))
@@ -863,9 +964,12 @@ func (m modelState) View() string {
 		Render(m.sessions.View())
 
 	switch m.overlay {
+	case overlaySource:
+		box := modalStyle.Render(titleStyle.Render("← 来源") + "\n" + m.sourceList.View())
+		pane = sideOverlay(pane, box, m.width, true)
 	case overlayTarget:
-		box := modalStyle.Render(titleStyle.Render("迁移到") + "\n" + m.targets.View())
-		pane = overlay(pane, box, m.width)
+		box := modalStyle.Render(titleStyle.Render("去向 →") + "\n" + m.targets.View())
+		pane = sideOverlay(pane, box, m.width, false)
 	case overlayPreview:
 		box := modalStyle.Render(m.preview.View())
 		pane = overlay(pane, box, m.width)
@@ -909,21 +1013,51 @@ func overlay(background, box string, width int) string {
 	return strings.Join(bgLines, "\n")
 }
 
-func (m modelState) headerView() string {
-	brand := accentStyle.Render(" another ")
-	var chips []string
-	for i, c := range m.sources {
-		label := c.name
-		if c.count > 0 {
-			label = fmt.Sprintf("%s %d", c.name, c.count)
+// sideOverlay pins a drawer to the left or right edge inside the pane while
+// preserving the visible session rows on the other side. ansi.Cut keeps styled
+// text and double-width Chinese characters intact.
+func sideOverlay(background, box string, width int, left bool) string {
+	bgLines := strings.Split(background, "\n")
+	boxLines := strings.Split(box, "\n")
+	if len(boxLines) >= len(bgLines) {
+		return overlay(background, box, width)
+	}
+	boxW := 0
+	for _, line := range boxLines {
+		boxW = max(boxW, ansi.StringWidth(line))
+	}
+	inner := max(0, width-paneStyle.GetHorizontalBorderSize())
+	boxW = min(boxW, inner)
+	y := max(0, (len(bgLines)-len(boxLines))/2)
+	for i, boxLine := range boxLines {
+		row := y + i
+		if row >= len(bgLines) {
+			break
 		}
-		if i == m.sourceIdx {
-			chips = append(chips, chipActive.Render(label))
+		bg := bgLines[row]
+		boxLine = padRight(ansi.Truncate(boxLine, boxW, ""), boxW)
+		if left {
+			right := ansi.Cut(bg, 1+boxW, width)
+			bgLines[row] = ansi.Cut(bg, 0, 1) + boxLine + right
 		} else {
-			chips = append(chips, chipMuted.Render(label))
+			x := max(1, width-1-boxW)
+			bgLines[row] = ansi.Cut(bg, 0, x) + boxLine + ansi.Cut(bg, width-1, width)
 		}
 	}
-	lines := []string{ansi.Truncate(brand+strings.Join(chips, ""), m.width, "…")}
+	return strings.Join(bgLines, "\n")
+}
+
+func (m modelState) headerView() string {
+	brand := accentStyle.Render(" another ")
+	source := m.currentSource()
+	sourceName := source.name
+	if sourceName == "all" {
+		sourceName = "全部"
+	}
+	flow := mutedStyle.Render("← 来源 ") + chipActive.Render(sourceName) +
+		mutedStyle.Render("   │   ") + fmt.Sprintf("%d 个会话", m.totalSessions) +
+		mutedStyle.Render("   │   去向 →")
+	lines := []string{ansi.Truncate(brand+"  "+flow, m.width, "…")}
 	if m.searching {
 		lines = append(lines, m.searchInput.View())
 	}
@@ -965,6 +1099,8 @@ func (m modelState) selectionSummary() string {
 
 func (m modelState) help() string {
 	switch m.overlay {
+	case overlaySource:
+		return " ↑↓ 选来源 · →/enter 应用 · esc 取消"
 	case overlayTarget:
 		return " ↑↓ 选去向 · enter 迁移 · esc 取消"
 	case overlayPreview:
@@ -976,7 +1112,7 @@ func (m modelState) help() string {
 	if m.lastResume != "" {
 		return " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出"
 	}
-	return " ←→ 切来源 · ↑↓ 选会话 · enter 选去向 · space 预览 · / 搜索 · r 刷新 · q 退出"
+	return " ← 来源 · ↑↓ 选会话 · →/enter 去向 · space 预览 · / 搜索 · r 刷新 · q 退出"
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across
