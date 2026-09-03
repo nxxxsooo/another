@@ -577,6 +577,50 @@ func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	return cmd
 }
 
+func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("pi: title must not be empty")
+	}
+	path := ref.StoragePath
+	if path == "" {
+		var err error
+		path, err = p.findSessionFile(ref)
+		if err != nil {
+			return err
+		}
+	}
+	rel, err := filepath.Rel(p.sessionsRoot(), path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) || !strings.HasSuffix(rel, ".jsonl") {
+		return fmt.Errorf("pi: refusing rename outside sessions root: %s", path)
+	}
+	var parent any
+	if tail, err := util.TailJSONLLines(path, 1); err == nil && len(tail) == 1 {
+		var last struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(tail[0], &last) == nil && last.ID != "" {
+			parent = last.ID
+		}
+	}
+	row, err := json.Marshal(map[string]any{
+		"type": "session_info", "id": uuid.New().String()[:8], "parentId": parent,
+		"timestamp": nowISO(), "name": title,
+	})
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Write(append(row, '\n')); err != nil {
+		return err
+	}
+	return f.Sync()
+}
+
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {
 	return p.CleanupWrite(ctx, provider.WriteResult{
 		SessionID: ref.ID, StoragePath: ref.StoragePath, ProjectPath: ref.ProjectPath,

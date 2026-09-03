@@ -37,7 +37,7 @@ func layoutTestModel() modelState {
 			sourceChip{id: "codex", name: "Codex", count: 2},
 			sourceChip{id: "pi", name: "pi", count: 1},
 		}),
-		preview: viewport.New(1, 1), searchInput: textinput.New(), selected: &item,
+		preview: viewport.New(1, 1), searchInput: textinput.New(), renameInput: textinput.New(), selected: &item,
 		previewContent: strings.Repeat("full preview content ", 100), status: "ready",
 	}
 }
@@ -245,6 +245,17 @@ func TestEnterOnTargetStartsMigration(t *testing.T) {
 	}
 	if !updated.(modelState).loading {
 		t.Fatal("migration did not enter the loading state")
+	}
+}
+
+func TestCtrlROpensPrefilledNativeRename(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	got := updated.(modelState)
+	if got.overlay != overlayRename || got.renameInput.Value() != "A useful title" || !got.renameInput.Focused() || cmd == nil {
+		t.Fatalf("ctrl+r did not open prefilled rename: overlay=%d value=%q focused=%v cmd=%v", got.overlay, got.renameInput.Value(), got.renameInput.Focused(), cmd)
 	}
 }
 

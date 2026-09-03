@@ -95,6 +95,7 @@ type claudeLine struct {
 	CWD         string `json:"cwd"`
 	IsSidechain bool   `json:"isSidechain"`
 	IsMeta      bool   `json:"isMeta"`
+	CustomTitle string `json:"customTitle"`
 	Message     *struct {
 		Role    string `json:"role"`
 		Content any    `json:"content"`
@@ -119,6 +120,7 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 	var migration *model.MigrationMeta
 	var msgCount int
 	var first, last time.Time
+	var customTitle string
 	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
 		if meta, ok := model.ParseMigrationMeta(line); ok {
 			migration = meta
@@ -135,6 +137,9 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 		}
 		if kind == model.SessionKindSubagent && parentID == "" && row.SessionID != "" && row.SessionID != id {
 			parentID = row.SessionID
+		}
+		if row.Type == "custom-title" && strings.TrimSpace(row.CustomTitle) != "" {
+			customTitle = strings.TrimSpace(row.CustomTitle)
 		}
 		if row.Type != "user" && row.Type != "assistant" {
 			if kind == model.SessionKindRoot && row.SessionID != "" {
@@ -167,7 +172,10 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 	if last.IsZero() {
 		last = st.ModTime()
 	}
-	title := picker.TitleOr("(no title)")
+	title := customTitle
+	if title == "" {
+		title = picker.TitleOr("(no title)")
+	}
 	return model.Summary{
 		ID: id, Provider: ProviderID, ProjectPath: project, Title: title,
 		CreatedAt: first, UpdatedAt: last, MessageCount: msgCount,
@@ -233,6 +241,9 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		}
 		if row.CWD != "" {
 			conv.ProjectPath = row.CWD
+		}
+		if row.Type == "custom-title" && strings.TrimSpace(row.CustomTitle) != "" {
+			conv.Title = strings.TrimSpace(row.CustomTitle)
 		}
 		if row.Type != "user" && row.Type != "assistant" {
 			return nil
@@ -362,6 +373,34 @@ func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 		return "cd " + util.ShellQuote(r.ProjectPath) + " && claude --resume " + util.ShellQuote(r.SessionID)
 	}
 	return "claude --resume " + util.ShellQuote(r.SessionID)
+}
+
+func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("claude: title must not be empty")
+	}
+	path := ref.StoragePath
+	if path == "" {
+		path = filepath.Join(p.projectsRoot(), util.EncodeClaudeProjectPath(ref.ProjectPath), ref.ID+".jsonl")
+	}
+	rel, err := filepath.Rel(p.projectsRoot(), path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) || !strings.HasSuffix(rel, ".jsonl") {
+		return fmt.Errorf("claude: refusing rename outside projects root: %s", path)
+	}
+	row, err := json.Marshal(map[string]any{"type": "custom-title", "customTitle": title, "sessionId": ref.ID})
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Write(append(row, '\n')); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {

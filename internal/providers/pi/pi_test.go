@@ -123,6 +123,37 @@ func TestDiscoverFallsBackToFirstUserMessageTitle(t *testing.T) {
 	}
 }
 
+func TestRenameAppendsSessionInfoOnParentChain(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PI_AGENT_DIR", root)
+	p := pi.New()
+	res, err := p.Write(context.Background(), &model.Conversation{
+		ID: "source", Provider: "codex", ProjectPath: "/home/user/proj", Title: "old",
+		Messages: []model.Message{{Role: model.RoleUser, Content: "q"}},
+	}, provider.WriteOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(res.StoragePath)
+	var last map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(before)), "\n") {
+		_ = json.Unmarshal([]byte(line), &last)
+	}
+	if err := p.RenameSession(context.Background(), provider.SessionRef{ID: res.SessionID, StoragePath: res.StoragePath}, "new name"); err != nil {
+		t.Fatal(err)
+	}
+	conv, err := p.Load(context.Background(), provider.SessionRef{ID: res.SessionID, StoragePath: res.StoragePath})
+	if err != nil || conv.Title != "new name" {
+		t.Fatalf("renamed title=%q err=%v", conv.Title, err)
+	}
+	after, _ := os.ReadFile(res.StoragePath)
+	lines := strings.Split(strings.TrimSpace(string(after)), "\n")
+	var rename map[string]any
+	if json.Unmarshal([]byte(lines[len(lines)-1]), &rename) != nil || rename["type"] != "session_info" || rename["parentId"] != last["id"] {
+		t.Fatalf("rename is not on parent chain: last=%v rename=%v", last, rename)
+	}
+}
+
 func TestWriteMatchesPiResumeContract(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("PI_AGENT_DIR", root)

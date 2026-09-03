@@ -210,6 +210,22 @@ ON CONFLICT(id) DO UPDATE SET
 	return err
 }
 
+func (p *Provider) renameThread(sessionID, title string) error {
+	dbPath, err := p.resolveStateDB()
+	if err != nil || dbPath == "" {
+		return err
+	}
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	now := time.Now().UTC()
+	_, err = db.Exec(`UPDATE threads SET title = ?, preview = ?, updated_at = ?, updated_at_ms = ?, recency_at = ?, recency_at_ms = ? WHERE id = ?`,
+		title, truncateRunes(title, 120), now.Unix(), now.UnixMilli(), now.Unix(), now.UnixMilli(), sessionID)
+	return err
+}
+
 func (p *Provider) deleteThread(sessionID string) error {
 	dbPath, err := p.resolveStateDB()
 	if err != nil || dbPath == "" {

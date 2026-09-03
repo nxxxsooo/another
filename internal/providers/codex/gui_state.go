@@ -3,8 +3,11 @@ package codex
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // guiTitles is Codex Desktop's own session-title catalog. A title here is also
@@ -69,6 +72,29 @@ func (g *guiTitles) noteFile(path string) {
 		}
 		g.size += st.Size()
 	}
+}
+
+func (p *Provider) appendGUITitle(sessionID, title string) error {
+	title = strings.TrimSpace(title)
+	if sessionID == "" || title == "" {
+		return fmt.Errorf("codex: session id and title are required")
+	}
+	path := filepath.Join(filepath.Dir(p.sessionsRoot), "session_index.jsonl")
+	row, err := json.Marshal(map[string]any{
+		"id": sessionID, "thread_name": title, "updated_at": time.Now().UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Write(append(row, '\n')); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 func (g guiTitles) fingerprint(st os.FileInfo) (int64, int64) {

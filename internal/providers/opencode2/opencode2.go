@@ -377,6 +377,19 @@ func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	return cmd
 }
 
+func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("opencode2: title must not be empty")
+	}
+	data, _ := json.Marshal(map[string]string{"title": title})
+	cmd := exec.CommandContext(ctx, p.command, "api", "POST", "/api/session/"+ref.ID+"/rename", "--data", string(data))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("opencode2 rename: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {
 	return p.delete(ctx, ref.ID)
 }

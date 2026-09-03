@@ -46,6 +46,31 @@ func TestLoadSkipsMetaAndEmptyRows(t *testing.T) {
 	}
 }
 
+func TestRenameAppendsNativeCustomTitle(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	dir := filepath.Join(root, "projects", "-home-user-proj")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "s1.jsonl")
+	if err := os.WriteFile(path, []byte(`{"type":"user","sessionId":"s1","cwd":"/home/user/proj","message":{"role":"user","content":"old prompt"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := claude.New()
+	if err := p.RenameSession(context.Background(), provider.SessionRef{ID: "s1", StoragePath: path}, "native name"); err != nil {
+		t.Fatal(err)
+	}
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 1 || sums[0].Title != "native name" {
+		t.Fatalf("renamed summary=%+v err=%v", sums, err)
+	}
+	conv, err := p.Load(context.Background(), provider.SessionRef{ID: "s1", StoragePath: path})
+	if err != nil || conv.Title != "native name" {
+		t.Fatalf("renamed load title=%q err=%v", conv.Title, err)
+	}
+}
+
 func TestWriteMatchesClaudeResumeContract(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", root)

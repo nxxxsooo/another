@@ -523,6 +523,14 @@ func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	return cmd
 }
 
+func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("codex: title must not be empty")
+	}
+	return errors.Join(p.renameThread(ref.ID, title), p.appendGUITitle(ref.ID, title))
+}
+
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {
 	return p.CleanupWrite(ctx, provider.WriteResult{
 		SessionID: ref.ID, StoragePath: ref.StoragePath, ProjectPath: ref.ProjectPath,

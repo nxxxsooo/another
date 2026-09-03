@@ -464,6 +464,26 @@ func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	return cmd
 }
 
+func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("opencode: title must not be empty")
+	}
+	db, err := sql.Open("sqlite", p.dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	result, err := db.ExecContext(ctx, `UPDATE session SET title = ?, time_updated = ? WHERE id = ?`, title, time.Now().UnixMilli(), ref.ID)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return provider.ErrNotFound
+	}
+	return nil
+}
+
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {
 	return p.deleteWithCLI(ctx, ref.ID)
 }

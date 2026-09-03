@@ -139,6 +139,28 @@ INSERT INTO session VALUES ('native','/','native','9.8.7','build','{"id":"model-
 	}
 }
 
+func TestRenameUpdatesNativeSessionTitle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "opencode.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT, time_updated INTEGER); INSERT INTO session VALUES ('s1','old',1)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	p := &Provider{dbPath: path}
+	if err := p.RenameSession(context.Background(), provider.SessionRef{ID: "s1"}, "new title"); err != nil {
+		t.Fatal(err)
+	}
+	db, _ = sql.Open("sqlite", path)
+	defer db.Close()
+	var title string
+	if err := db.QueryRow(`SELECT title FROM session WHERE id='s1'`).Scan(&title); err != nil || title != "new title" {
+		t.Fatalf("title=%q err=%v", title, err)
+	}
+}
+
 func TestResumeCommandQuotesSession(t *testing.T) {
 	p := &Provider{}
 	if got := p.ResumeCommand(provider.WriteResult{SessionID: "id; echo bad"}); !strings.HasSuffix(got, "'id; echo bad'") {

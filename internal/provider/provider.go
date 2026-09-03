@@ -97,3 +97,9 @@ type WriteCleaner interface {
 type SessionDeleter interface {
 	DeleteSession(context.Context, SessionRef) error
 }
+
+// SessionRenamer updates the title in the provider's native source of truth.
+// another never stores private display aliases that disappear on refresh.
+type SessionRenamer interface {
+	RenameSession(context.Context, SessionRef, string) error
+}

@@ -108,6 +108,32 @@ func TestDiscoverUsesDesktopTitleAndTreatsItAsUserVisible(t *testing.T) {
 	}
 }
 
+func TestRenameWritesDesktopSessionIndex(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	sessions := filepath.Join(home, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const id = "0197f8a1-2b3c-7d4e-8f90-abcdef123456"
+	path := writeRollout(t, sessions, "rollout-2025-06-01T10-00-00-"+id+".jsonl")
+	p := codex.New()
+	if err := p.RenameSession(context.Background(), provider.SessionRef{ID: id, StoragePath: path}, "renamed in GUI"); err != nil {
+		t.Fatal(err)
+	}
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 1 {
+		t.Fatalf("discover after rename: summaries=%v err=%v", sums, err)
+	}
+	if sums[0].Title != "renamed in GUI" {
+		t.Fatalf("title = %q", sums[0].Title)
+	}
+	data, _ := os.ReadFile(filepath.Join(home, "session_index.jsonl"))
+	if !strings.Contains(string(data), `"thread_name":"renamed in GUI"`) {
+		t.Fatalf("Desktop title index not updated: %s", data)
+	}
+}
+
 func TestDiscoverSkipUnchanged(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)

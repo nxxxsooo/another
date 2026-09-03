@@ -41,6 +41,7 @@ const (
 	overlayTarget
 	overlayPreview
 	overlayDelete
+	overlayRename
 )
 
 type sessionItem struct {
@@ -213,6 +214,11 @@ type deleteDoneMsg struct {
 	counts     map[string]int
 	err        error
 }
+type renameDoneMsg struct {
+	providerID string
+	title      string
+	err        error
+}
 type indexRefreshedMsg struct {
 	counts     map[string]int
 	err        error
@@ -240,6 +246,7 @@ type modelState struct {
 	targets     list.Model
 	preview     viewport.Model
 	searchInput textinput.Model
+	renameInput textinput.Model
 	spinner     spinner.Model
 
 	sources      []sourceChip
@@ -307,6 +314,10 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	search := textinput.New()
 	search.Prompt = "/ "
 	search.Placeholder = "search titles and messages"
+	rename := textinput.New()
+	rename.Prompt = ""
+	rename.Placeholder = "新的会话标题"
+	rename.CharLimit = 200
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = accentStyle
@@ -316,7 +327,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	m := modelState{
 		reg: reg, idx: idx, engine: engine,
 		sessions: sessList, sourceList: sourceList, targets: targetList,
-		preview: vp, searchInput: search, spinner: sp,
+		preview: vp, searchInput: search, renameInput: rename, spinner: sp,
 		sources: sources, cwd: cwd,
 		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
@@ -589,6 +600,28 @@ func loadPreviewCmd(ctx context.Context, reg *registry.Registry, sm model.Summar
 	}
 }
 
+func renameSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sm model.Summary, title string) tea.Cmd {
+	return func() tea.Msg {
+		p, err := reg.Get(sm.Provider)
+		if err != nil {
+			return renameDoneMsg{providerID: sm.Provider, title: title, err: err}
+		}
+		renamer, ok := p.(provider.SessionRenamer)
+		if !ok {
+			return renameDoneMsg{providerID: sm.Provider, title: title, err: fmt.Errorf("%s does not support rename", p.DisplayName())}
+		}
+		ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+		if err := renamer.RenameSession(ctx, ref, title); err != nil {
+			return renameDoneMsg{providerID: sm.Provider, title: title, err: err}
+		}
+		_, err = index.UpdateIncremental(ctx, reg, idx, sm.Provider)
+		if err != nil {
+			err = fmt.Errorf("session renamed, but index refresh failed: %w", err)
+		}
+		return renameDoneMsg{providerID: sm.Provider, title: title, err: err}
+	}
+}
+
 func deleteSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sm model.Summary) tea.Cmd {
 	return func() tea.Msg {
 		p, err := reg.Get(sm.Provider)
@@ -652,6 +685,18 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.preview.GotoTop()
 		m.layout()
 		return m, nil
+	case renameDoneMsg:
+		m.loading = false
+		m.overlay = overlayNone
+		m.renameInput.Blur()
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.status = okStyle.Render("已重命名为 " + truncateDisplay(msg.title, 56))
+		var cmd tea.Cmd
+		m, cmd = dispatchPageLoad(m)
+		return m, cmd
 	case deleteDoneMsg:
 		m.loading = false
 		m.overlay = overlayNone
@@ -784,6 +829,8 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.targets, cmd = m.targets.Update(msg)
 	case overlayPreview:
 		m.preview, cmd = m.preview.Update(msg)
+	case overlayRename:
+		m.renameInput, cmd = m.renameInput.Update(msg)
 	default:
 		m.sessions, cmd = m.sessions.Update(msg)
 	}
@@ -818,6 +865,41 @@ func (m modelState) updateSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.overlay == overlayRename {
+		switch msg.String() {
+		case "ctrl+c", "q":
+			if m.cancel != nil {
+				m.cancel()
+			}
+			return m, tea.Quit
+		case "esc":
+			m.overlay = overlayNone
+			m.renameInput.Blur()
+			return m, tea.HideCursor
+		case "enter":
+			title := strings.TrimSpace(m.renameInput.Value())
+			if title == "" {
+				m.err = "标题不能为空"
+				return m, nil
+			}
+			if m.selected == nil {
+				m.err = "没有选中的会话"
+				return m, nil
+			}
+			if title == strings.TrimSpace(m.selected.summary.Title) {
+				m.overlay = overlayNone
+				m.renameInput.Blur()
+				return m, tea.HideCursor
+			}
+			m.loading = true
+			m.err = ""
+			return m, tea.Batch(m.spinner.Tick,
+				renameSessionCmd(m.ctx, m.reg, m.idx, m.selected.summary, title))
+		}
+		var cmd tea.Cmd
+		m.renameInput, cmd = m.renameInput.Update(msg)
+		return m, cmd
+	}
 	switch msg.String() {
 	case "ctrl+c", "q":
 		if m.cancel != nil {
@@ -1015,6 +1097,31 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = okStyle.Render("已复制 resume 命令")
 		}
 		return m, nil
+	case "ctrl+r":
+		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
+			if isCurrentSession(it.summary) {
+				m.err = "不能重命名当前正在运行的会话"
+				return m, nil
+			}
+			p, err := m.reg.Get(it.summary.Provider)
+			if err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			if _, ok := p.(provider.SessionRenamer); !ok {
+				m.err = p.DisplayName() + " 不支持重命名"
+				return m, nil
+			}
+			sel := it
+			m.selected = &sel
+			m.renameInput.SetValue(it.summary.Title)
+			m.renameInput.CursorEnd()
+			m.renameInput.Focus()
+			m.overlay = overlayRename
+			m.layout()
+			return m, textinput.Blink
+		}
+		return m, nil
 	case "ctrl+d":
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
@@ -1067,6 +1174,7 @@ func (m *modelState) layout() {
 		return
 	}
 	m.searchInput.Width = max(8, m.width-4)
+	m.renameInput.Width = max(18, min(60, m.width-20))
 	frameW, frameH := paneStyle.GetHorizontalFrameSize(), paneStyle.GetVerticalFrameSize()
 	headerH := lipgloss.Height(m.headerView())
 	footerH := lipgloss.Height(m.footerView())
@@ -1117,6 +1225,10 @@ func (m modelState) View() string {
 		pane = overlay(pane, box, m.width)
 	case overlayDelete:
 		box := modalStyle.Render(m.deleteView())
+		pane = overlay(pane, box, m.width)
+	case overlayRename:
+		box := modalStyle.Render(titleStyle.Render("重命名会话") + "\n" +
+			mutedStyle.Render("写回来源 agent 的原生标题") + "\n\n" + m.renameInput.View())
 		pane = overlay(pane, box, m.width)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, pane, footer)
@@ -1244,6 +1356,8 @@ func (m modelState) help() string {
 		return " ↑↓ 滚动 · esc 关闭"
 	case overlayDelete:
 		return " ←→ 选择 · enter 确认 · esc 取消"
+	case overlayRename:
+		return " 输入新标题 · enter 保存 · esc 取消"
 	}
 	if m.searching {
 		return " enter 搜索 · esc 取消"
@@ -1251,7 +1365,7 @@ func (m modelState) help() string {
 	if m.lastResume != "" {
 		return " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出"
 	}
-	return " ← 来源 · ↑↓ 选会话 · enter 直接进入 · → 跨 agent · space 预览 · ctrl+d 删除 · / 搜索 · r 刷新 · q 退出"
+	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · ctrl+d 删除 · / 搜索 · r 刷新"
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across

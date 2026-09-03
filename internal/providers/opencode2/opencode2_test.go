@@ -129,6 +129,27 @@ func TestWriteUsesOfficialImportContract(t *testing.T) {
 	}
 }
 
+func TestRenameUsesOfficialAPI(t *testing.T) {
+	path := fixtureDB(t)
+	capture := filepath.Join(t.TempDir(), "args")
+	script := filepath.Join(t.TempDir(), "opencode2")
+	body := "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$CAPTURE\"\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	t.Setenv("OPENCODE2_COMMAND", script)
+	t.Setenv("CAPTURE", capture)
+	if err := opencode2.New().RenameSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}, "new title"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(capture)
+	text := strings.TrimSpace(string(got))
+	if !strings.Contains(text, "api POST /api/session/ses_fixture/rename --data") || !strings.Contains(text, `new title`) {
+		t.Fatalf("rename command = %q", got)
+	}
+}
+
 func TestDeleteUsesOfficialAPI(t *testing.T) {
 	path := fixtureDB(t)
 	capture := filepath.Join(t.TempDir(), "args")
