@@ -1,18 +1,22 @@
 <p align="center">
-  <a href="https://github.com/CyrusSE/agenthop">
-    <img src="https://github.com/CyrusSE/agenthop/raw/main/docs/assets/banner.svg" alt="agenthop — hop AI coding sessions between agents" width="100%" />
+  <a href="https://github.com/nxxxsooo/another">
+    <img src="https://github.com/nxxxsooo/another/raw/main/docs/assets/banner.svg" alt="another — hop AI coding sessions between agents" width="100%" />
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/CyrusSE/agenthop/actions/workflows/ci.yml"><img src="https://github.com/CyrusSE/agenthop/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/CyrusSE/agenthop/releases"><img src="https://img.shields.io/github/v/release/CyrusSE/agenthop?label=release" alt="Release" /></a>
-  <a href="https://goreportcard.com/report/github.com/CyrusSE/agenthop"><img src="https://goreportcard.com/badge/github.com/CyrusSE/agenthop" alt="Go Report Card" /></a>
+  <a href="https://github.com/nxxxsooo/another/actions/workflows/ci.yml"><img src="https://github.com/nxxxsooo/another/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/nxxxsooo/another/releases"><img src="https://img.shields.io/github/v/release/nxxxsooo/another?label=release" alt="Release" /></a>
+  <a href="https://goreportcard.com/report/github.com/nxxxsooo/another"><img src="https://goreportcard.com/badge/github.com/nxxxsooo/another" alt="Go Report Card" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License" /></a>
 </p>
 
 <p align="center">
   <strong>Hop AI coding sessions between agents</strong> — browse, preview, migrate, and resume across Claude Code, Codex, Cursor, OpenCode, and more.
+</p>
+
+<p align="center">
+  <sub>A fork of <a href="https://github.com/CyrusSE/agenthop">CyrusSE/agenthop</a> (MIT), adding a <code>pi</code> provider.</sub>
 </p>
 
 <p align="center">
@@ -26,9 +30,9 @@
 
 ---
 
-## Why agenthop?
+## Why another?
 
-You hit a rate limit mid-task, or you want a different model for the next step. **agenthop** keeps your context: it reads sessions from one coding agent and writes them in another agent's native format so you can resume where you left off.
+You hit a rate limit mid-task, or you want a different model for the next step. **another** keeps your context: it reads sessions from one coding agent and writes them in another agent's native format so you can resume where you left off.
 
 | | What you get |
 |---|---|
@@ -37,7 +41,7 @@ You hit a rate limit mid-task, or you want a different model for the next step. 
 | **Preview** | Read the complete wrapped conversation before you migrate |
 | **Migrate** | One command (or TUI flow) to hop a session to another provider |
 | **Resume** | Copy or print the exact resume command for the target agent |
-| **Fast** | Source-aware SQLite index at `~/.cache/agenthop/index.db` — unchanged sessions are not reparsed |
+| **Fast** | Source-aware SQLite index at `~/.cache/another/index.db` — unchanged sessions are not reparsed |
 | **Safe** | Snapshot dedup, atomic writes, destination verification, and exact rollback |
 
 ---
@@ -46,17 +50,14 @@ You hit a rate limit mid-task, or you want a different model for the next step. 
 
 ```bash
 # Recommended: install script (linux / macOS)
-curl -fsSL https://raw.githubusercontent.com/CyrusSE/agenthop/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash
 
-# Go toolchain
-go install github.com/CyrusSE/agenthop/cmd/agenthop@latest
-
-# From source
-git clone https://github.com/CyrusSE/agenthop.git
-cd agenthop && make install
+# From source (no `go install`: the Go module path still points at upstream)
+git clone https://github.com/nxxxsooo/another.git
+cd another && make install
 ```
 
-Requires **Go 1.22+** for building from source. The install script places `agenthop` on your `PATH` (typically `~/.local/bin`).
+Requires **Go 1.22+** for building from source. The install script places `another` on your `PATH` (typically `~/.local/bin`).
 
 ---
 
@@ -65,58 +66,58 @@ Requires **Go 1.22+** for building from source. The install script places `agent
 **1. Open the TUI** (shows cached sessions instantly and refreshes metadata only when the index is stale):
 
 ```bash
-agenthop
+another
 ```
 
 **2. Or use the CLI:**
 
 ```bash
 # Sessions for the current directory only (--cwd uses exact path match)
-agenthop list --cwd
+another list --cwd
 
 # At ~, --cwd lists sessions under home projects (~/Documents/..., not global)
 
 # All indexed sessions (default: no limit)
-agenthop list
+another list
 
 # Cap output if you prefer
-agenthop list --limit 20
+another list --limit 20
 
 # Preview a session
-agenthop show <session-id> --limit 15
+another show <session-id> --limit 15
 
 # Search titles and conversation text
-agenthop search "database timeout" --cwd
+another search "database timeout" --cwd
 
 # Guided migration (both forms are equivalent)
-agenthop --migrate
-agenthop migrate
+another --migrate
+another migrate
 
 # Direct ctxmv-style migration and resume command
-agenthop <session-id> --from claude-code --to codex -y
-agenthop migrate <session-id> --from claude-code --to codex -y
-agenthop resume <session-id> --from claude-code --to codex
+another <session-id> --from claude-code --to codex -y
+another migrate <session-id> --from claude-code --to codex -y
+another resume <session-id> --from claude-code --to codex
 
 # Auto keeps every cleaned message when it fits, otherwise uses recent context.
-agenthop migrate <session-id> --to codex --context auto -y
+another migrate <session-id> --to codex --context auto -y
 
 # Force ctxmv-style full history, even when the destination may compact/reject it.
-agenthop migrate <session-id> --to codex --context full -y
+another migrate <session-id> --to codex --context full -y
 
 # Always prefer a bounded recent working context.
-agenthop migrate <session-id> --to codex --context recent -y
+another migrate <session-id> --to codex --context recent -y
 
 # The unchanged source remains searchable/exportable in every mode.
-agenthop export <session-id> --provider cursor -o session.agenthop.json
+another export <session-id> --provider cursor -o session.another.json
 ```
 
 **3. Refresh the index** when you've created new sessions in your agents:
 
 ```bash
-agenthop index update          # incremental metadata + changed full text
-agenthop index rebuild         # transactional metadata rebuild + full text
-agenthop index update --metadata-only
-agenthop list --refresh        # rescan then list
+another index update          # incremental metadata + changed full text
+another index rebuild         # transactional metadata rebuild + full text
+another index update --metadata-only
+another list --refresh        # rescan then list
 ```
 
 > Full-text search stores normalized user/assistant conversation text locally in the private index. The cache directory is mode `0700` and SQLite files are mode `0600`.
@@ -129,7 +130,7 @@ The default interface is a Codex-style **session browser**: one list for all age
 
 ```
    ╭──────◆──────╮
-   │  agenthop   │     here  everywhere
+   │  another   │     here  everywhere
    ╰─────────────╯
   session browser    ~/projects/my-app
 
@@ -142,7 +143,7 @@ The default interface is a Codex-style **session browser**: one list for all age
 
 ### Here vs everywhere
 
-| Where you run `agenthop` | **Here** (`w`) shows |
+| Where you run `another` | **Here** (`w`) shows |
 |--------------------------|----------------------|
 | A project directory (e.g. `~/projects/my-app`) | Sessions whose `project_path` is **exactly** that folder — not subfolders like `my-app/web` |
 | Home (`~`) | Sessions in projects **under** home (`~/Documents/...`, etc.) — excludes loose `~`-only tags |
@@ -182,8 +183,8 @@ At 100 columns or wider, detail and migration views use split panes. Narrow term
 Check that agent data paths are discoverable:
 
 ```bash
-agenthop providers
-agenthop providers doctor
+another providers
+another providers doctor
 ```
 
 Add a new provider: [docs/adding-a-provider.md](docs/adding-a-provider.md)
@@ -193,24 +194,24 @@ Add a new provider: [docs/adding-a-provider.md](docs/adding-a-provider.md)
 ## CLI
 
 ```bash
-agenthop [<id> --to provider] [--migrate]
-agenthop list [--cwd] [--provider ID] [--include-subagents] [--limit N] [--refresh]
-agenthop search <keywords> [--cwd] [--provider ID] [--include-subagents] [--no-wait]
-agenthop show <id> [--provider ID] [--limit N]
-agenthop migrate [<id>] [--to provider] [--from ID] [--context auto|full|recent] [--dry-run] [-y]
-agenthop resume <id> --to <provider> [--from ID]
-agenthop index {status|rebuild|update} [--provider ID] [--metadata-only]
-agenthop export <id> -o session.agenthop.json
-agenthop import session.agenthop.json --to <provider> [--context auto|full|recent] [-y]
-agenthop providers [doctor]
-agenthop tui [--context auto|full|recent] # explicit TUI (default when no subcommand)
+another [<id> --to provider] [--migrate]
+another list [--cwd] [--provider ID] [--include-subagents] [--limit N] [--refresh]
+another search <keywords> [--cwd] [--provider ID] [--include-subagents] [--no-wait]
+another show <id> [--provider ID] [--limit N]
+another migrate [<id>] [--to provider] [--from ID] [--context auto|full|recent] [--dry-run] [-y]
+another resume <id> --to <provider> [--from ID]
+another index {status|rebuild|update} [--provider ID] [--metadata-only]
+another export <id> -o session.another.json
+another import session.another.json --to <provider> [--context auto|full|recent] [-y]
+another providers [doctor]
+another tui [--context auto|full|recent] # explicit TUI (default when no subcommand)
 ```
 
 **Portable bundles** — export a session to JSON, import on another machine:
 
 ```bash
-agenthop export abc123 -o backup.agenthop.json
-agenthop import backup.agenthop.json --to codex -y
+another export abc123 -o backup.another.json
+another import backup.another.json --to codex -y
 ```
 
 ---
@@ -218,8 +219,8 @@ agenthop import backup.agenthop.json --to codex -y
 ## Development
 
 ```bash
-git clone https://github.com/CyrusSE/agenthop.git
-cd agenthop
+git clone https://github.com/nxxxsooo/another.git
+cd another
 make build test      # compile + unit tests
 ./scripts/smoke.sh   # integration smoke test
 make install         # go install + copy to ~/.local/bin (on PATH)

@@ -1,10 +1,10 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
-project_name: agenthop
+project_name: another
 builds:
-  - id: agenthop
-    main: ./cmd/agenthop
-    binary: agenthop
+  - id: another
+    main: ./cmd/another
+    binary: another
     env:
       - CGO_ENABLED=0
     goos:

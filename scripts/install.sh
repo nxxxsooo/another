@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="CyrusSE/agenthop"
+REPO="nxxxsooo/another"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${VERSION:-latest}"
 
@@ -17,13 +17,13 @@ if [ "$VERSION" = "latest" ]; then
   VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4)"
 fi
 
-url="https://github.com/${REPO}/releases/download/${VERSION}/agenthop_${VERSION#v}_${os}_${arch}.tar.gz"
+url="https://github.com/${REPO}/releases/download/${VERSION}/another_${VERSION#v}_${os}_${arch}.tar.gz"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
-echo "Installing agenthop ${VERSION} for ${os}/${arch}..."
+echo "Installing another ${VERSION} for ${os}/${arch}..."
 curl -fsSL "$url" | tar -xz -C "$tmpdir"
 mkdir -p "$INSTALL_DIR"
-install -m 755 "$tmpdir/agenthop" "$INSTALL_DIR/agenthop"
-echo "Installed to $INSTALL_DIR/agenthop"
-echo "Run: agenthop --help"
+install -m 755 "$tmpdir/another" "$INSTALL_DIR/another"
+echo "Installed to $INSTALL_DIR/another"
+echo "Run: another --help"

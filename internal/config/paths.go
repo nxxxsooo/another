@@ -27,16 +27,16 @@ func ExpandPath(p string) string {
 
 func CacheDir() string {
 	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "agenthop")
+		return filepath.Join(xdg, "another")
 	}
-	return filepath.Join(HomeDir(), ".cache", "agenthop")
+	return filepath.Join(HomeDir(), ".cache", "another")
 }
 
 func ConfigDir() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "agenthop")
+		return filepath.Join(xdg, "another")
 	}
-	return filepath.Join(HomeDir(), ".config", "agenthop")
+	return filepath.Join(HomeDir(), ".config", "another")
 }
 
 func IndexPath() string {

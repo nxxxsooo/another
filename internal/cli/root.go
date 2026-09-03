@@ -48,7 +48,7 @@ func (a *App) Root() *cobra.Command {
 	var to, from, project, contextMode string
 	var guided, dryRun, yes, refresh bool
 	root := &cobra.Command{
-		Use:           "agenthop",
+		Use:           "another",
 		Short:         "Hop AI coding sessions between agents",
 		Long:          "List, show, and migrate conversation sessions across Claude Code, Codex, Cursor, OpenCode, CommandCode, Hermes, and more.",
 		SilenceUsage:  true,
