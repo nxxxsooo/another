@@ -240,7 +240,7 @@ func projectConversation(source *model.Conversation, mode ContextMode) (*model.C
 	projected, changed := recentConversation(source, cleaned)
 	info.ProjectedCount = len(projected.Messages)
 	if changed {
-		info.Warning = fmt.Sprintf("resume context reduced from %d source messages (%d cleaned) to %d; retrieve older details with agenthop search/show/export using %s session %s", info.SourceCount, info.CleanedCount, info.ProjectedCount, source.Provider, source.ID)
+		info.Warning = fmt.Sprintf("resume context reduced from %d source messages (%d cleaned) to %d; retrieve older details with another search/show/export using %s session %s", info.SourceCount, info.CleanedCount, info.ProjectedCount, source.Provider, source.ID)
 	}
 	return projected, info
 }

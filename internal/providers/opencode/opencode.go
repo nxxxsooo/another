@@ -416,8 +416,14 @@ func ocID(prefix string) string {
 	return prefix + raw
 }
 
+// ResumeCommand includes the project directory so a pasted line lands in the
+// right project regardless of where the user runs it.
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	return "opencode --session " + util.ShellQuote(r.SessionID)
+	cmd := "opencode --session " + util.ShellQuote(r.SessionID)
+	if r.ProjectPath != "" {
+		return "cd " + util.ShellQuote(r.ProjectPath) + " && " + cmd
+	}
+	return cmd
 }
 
 func (p *Provider) CleanupWrite(ctx context.Context, r provider.WriteResult) error {

@@ -77,7 +77,7 @@ func (a *App) Root() *cobra.Command {
 				return tui.Run(a.Registry, a.Index, a.Migrate, mode)
 			}
 			if to == "" {
-				return fmt.Errorf("--to is required for session %s (or use 'agenthop migrate %s' in a terminal)", args[0], args[0])
+				return fmt.Errorf("--to is required for session %s (or use 'another migrate %s' in a terminal)", args[0], args[0])
 			}
 			return a.runMigration(cmd, args[0], from, to, project, mode, dryRun, yes, refresh)
 		},

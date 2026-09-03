@@ -499,8 +499,15 @@ func buildV2RolloutLines(conv *model.Conversation, sessionID, project string, no
 	return lines, nil
 }
 
+// ResumeCommand includes the project directory: a Codex session is bound to the
+// cwd it was written for, so resuming from elsewhere lands the agent in the
+// wrong project.
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	return "codex resume " + util.ShellQuote(r.SessionID)
+	cmd := "codex resume " + util.ShellQuote(r.SessionID)
+	if r.ProjectPath != "" {
+		return "cd " + util.ShellQuote(r.ProjectPath) + " && " + cmd
+	}
+	return cmd
 }
 
 func (p *Provider) CleanupWrite(_ context.Context, r provider.WriteResult) error {
