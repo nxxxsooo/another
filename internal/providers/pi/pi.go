@@ -430,6 +430,19 @@ func unixMillis(ts time.Time) int64 {
 	return ts.UTC().UnixMilli()
 }
 
+// zeroUsage is required on every persisted Pi assistant message. Migrated
+// turns have no source billing data, so record a complete zero-value usage
+// object rather than omitting it; Pi's session footer totals every assistant
+// usage record when it opens a session.
+func zeroUsage() map[string]any {
+	return map[string]any{
+		"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 0,
+		"cost": map[string]any{
+			"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0,
+		},
+	}
+}
+
 func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts provider.WriteOpts) (*provider.WriteResult, error) {
 	if len(conv.Messages) == 0 {
 		return nil, provider.ErrEmptySession
@@ -487,13 +500,16 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 		if m.Role == model.RoleAssistant {
 			role = "assistant"
 		}
+		message := map[string]any{
+			"role":      role,
+			"content":   []any{map[string]any{"type": "text", "text": text}},
+			"timestamp": unixMillis(m.Timestamp),
+		}
+		if role == "assistant" {
+			message["usage"] = zeroUsage()
+		}
 		chain.add(map[string]any{
-			"type": "message", "timestamp": isoOrNow(m.Timestamp),
-			"message": map[string]any{
-				"role":      role,
-				"content":   []any{map[string]any{"type": "text", "text": text}},
-				"timestamp": unixMillis(m.Timestamp),
-			},
+			"type": "message", "timestamp": isoOrNow(m.Timestamp), "message": message,
 		})
 		wrote++
 		lastRole = m.Role

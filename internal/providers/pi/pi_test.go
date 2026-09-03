@@ -225,6 +225,57 @@ func TestWriteMatchesPiResumeContract(t *testing.T) {
 	}
 }
 
+// Pi's footer aggregates usage from every assistant event. A migrated turn has
+// no provider billable usage, but it must still supply a complete zero-valued
+// usage record so opening the session cannot crash the TUI.
+func TestWriteGivesMigratedAssistantZeroUsage(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PI_AGENT_DIR", root)
+	conv := &model.Conversation{
+		ID: "source", Provider: "codex", ProjectPath: "/home/user/proj",
+		Messages: []model.Message{
+			{Role: model.RoleUser, Content: "q"},
+			{Role: model.RoleAssistant, Content: "a"},
+		},
+	}
+	res, err := pi.New().Write(context.Background(), conv, provider.WriteOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(res.StoragePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		var event map[string]any
+		if err := json.Unmarshal([]byte(row), &event); err != nil {
+			t.Fatal(err)
+		}
+		if event["type"] != "message" {
+			continue
+		}
+		message, _ := event["message"].(map[string]any)
+		if message["role"] != "assistant" {
+			continue
+		}
+		usage, ok := message["usage"].(map[string]any)
+		if !ok {
+			t.Fatalf("migrated assistant message has no usage: %#v", message)
+		}
+		for _, field := range []string{"input", "output", "cacheRead", "cacheWrite", "totalTokens"} {
+			if usage[field] != float64(0) {
+				t.Fatalf("usage.%s = %v, want 0", field, usage[field])
+			}
+		}
+		cost, ok := usage["cost"].(map[string]any)
+		if !ok || cost["total"] != float64(0) {
+			t.Fatalf("usage.cost = %#v, want zero-valued cost", usage["cost"])
+		}
+		return
+	}
+	t.Fatal("written session has no assistant message")
+}
+
 // pi rejects a resumed session whose last turn is an assistant message on some
 // providers; codex2pi solved this with a trailing bridge user turn.
 func TestWriteAppendsBridgeTurnWhenLastMessageIsAssistant(t *testing.T) {
