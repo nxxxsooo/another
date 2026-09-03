@@ -1,5 +1,15 @@
 # Provider storage reference
 
+## Pi (`pi`)
+
+- Path: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`
+- Encoding: `/home/user/proj` → `--home-user-proj--`
+- Format: session header followed by an event parent chain (`version: 3`)
+- Env: `PI_AGENT_DIR`
+- Resume: `pi --session <absolute-session-file>`
+- Migration marker: a `custom` event with `customType: "agenthop-migration"`
+- Migrated assistant events must be complete Pi assistant records: explicit `api`, `provider`, `model`, and `stopReason`, plus a zero-valued `usage` object when source billing data is unavailable. Omitting `usage` causes Pi's footer aggregation to fail on affected releases.
+
 ## Claude Code (`claude-code`)
 
 - Path: `~/.claude/projects/<encoded-path>/<session-uuid>.jsonl`

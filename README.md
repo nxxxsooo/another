@@ -175,6 +175,7 @@ At 100 columns or wider, detail and migration views use split panes. Narrow term
 |-------|-----|----------------|
 | Claude Code | `claude-code` | `claude --resume <id>` |
 | Codex | `codex` | `codex resume <id>` |
+| Pi | `pi` | `pi --session <absolute-session-file>` |
 | Cursor CLI | `cursor` | `cursor-agent --resume <id>` |
 | OpenCode | `opencode` | `opencode --session <id>` |
 | CommandCode | `commandcode` | `commandcode --resume <id>` |
