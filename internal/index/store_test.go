@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/config"
-	"github.com/CyrusSE/agenthop/internal/index"
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/registry"
+	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/registry"
 )
 
 func TestStoreUpsertList(t *testing.T) {

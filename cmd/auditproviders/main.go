@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/CyrusSE/agenthop/internal/index"
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/registry"
+	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/registry"
 )
 
 func main() {

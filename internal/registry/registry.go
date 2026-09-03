@@ -5,14 +5,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/providers/claude"
-	"github.com/CyrusSE/agenthop/internal/providers/codex"
-	"github.com/CyrusSE/agenthop/internal/providers/commandcode"
-	"github.com/CyrusSE/agenthop/internal/providers/cursor"
-	"github.com/CyrusSE/agenthop/internal/providers/hermes"
-	"github.com/CyrusSE/agenthop/internal/providers/opencode"
-	"github.com/CyrusSE/agenthop/internal/providers/pi"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/providers/claude"
+	"github.com/nxxxsooo/another/internal/providers/codex"
+	"github.com/nxxxsooo/another/internal/providers/commandcode"
+	"github.com/nxxxsooo/another/internal/providers/cursor"
+	"github.com/nxxxsooo/another/internal/providers/hermes"
+	"github.com/nxxxsooo/another/internal/providers/opencode"
+	"github.com/nxxxsooo/another/internal/providers/opencode2"
+	"github.com/nxxxsooo/another/internal/providers/pi"
 )
 
 type Registry struct {
@@ -26,6 +27,7 @@ func New() *Registry {
 		codex.New(),
 		cursor.New(),
 		opencode.New(),
+		opencode2.New(),
 		commandcode.New(),
 		hermes.New(),
 		pi.New(),
@@ -87,6 +89,7 @@ func NormalizeID(id string) string {
 		"codex":  "codex",
 		"cursor": "cursor", "cursor-agent": "cursor",
 		"opencode": "opencode", "open-code": "opencode",
+		"opencode2": "opencode2", "open-code-2": "opencode2", "o2": "opencode2",
 		"commandcode": "commandcode", "command-code": "commandcode",
 		"hermes": "hermes", "hermes-agent": "hermes",
 		"pi": "pi", "pi-coding-agent": "pi",

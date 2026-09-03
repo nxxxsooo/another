@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
 	_ "modernc.org/sqlite"
 )
 

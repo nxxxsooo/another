@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/providers/codex"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/providers/codex"
 )
 
 func writeRollout(t *testing.T, dir, name string) string {

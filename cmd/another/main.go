@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/CyrusSE/agenthop/internal/cli"
+	"github.com/nxxxsooo/another/internal/cli"
 )
 
 func main() {

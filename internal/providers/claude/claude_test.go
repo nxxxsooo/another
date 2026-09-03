@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/providers/claude"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/providers/claude"
 )
 
 // Load must drop isMeta rows and tool_result-only rows (empty text), matching

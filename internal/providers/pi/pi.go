@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/config"
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/util"
 	"github.com/google/uuid"
+	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 const ProviderID = "pi"
@@ -30,13 +30,34 @@ const sessionFormatVersion = 3
 // migrationCustomType labels the custom event that carries the migration
 // marker. pi keeps unknown custom events in the transcript without replaying
 // them as conversation turns, so the marker survives a resume untouched.
-const migrationCustomType = "agenthop-migration"
+const migrationCustomType = "another-migration"
 
-// bridgeText is appended as a trailing user turn when the migrated
-// conversation ends on an assistant message. Anthropic-backed models reject a
-// resumed session whose last turn is an assistant message, treating it as a
-// prefill. Load drops this exact turn again so a round trip stays digest-stable.
-const bridgeText = "上面是从另一个 agent 迁移过来的历史上下文，接着这里继续。"
+// legacyBridgeText is the fixed bridge-turn literal earlier builds wrote
+// verbatim. isBridgeTurn still recognizes it so already-migrated sessions
+// don't retain a stray literal user turn when reloaded.
+const legacyBridgeText = "上面是从另一个 agent 迁移过来的历史上下文，接着这里继续。"
+
+// bridgeTextFor builds the synthetic trailing user turn appended when the
+// migrated conversation ends on an assistant message. Anthropic-backed
+// models reject a resumed session whose last turn is an assistant message,
+// treating it as a prefill; naming the source agent doubles as provenance
+// instead of a generic placeholder. Load drops this exact turn again so a
+// round trip stays digest-stable.
+func bridgeTextFor(sourceProvider string) string {
+	if sourceProvider == "" {
+		return legacyBridgeText
+	}
+	return "上面是从 " + sourceProvider + " 迁移过来的历史上下文，接着这里继续。"
+}
+
+// isBridgeTurn reports whether text is a synthetic bridge turn — the
+// current per-source form or the earlier fixed literal.
+func isBridgeTurn(text string) bool {
+	if text == legacyBridgeText {
+		return true
+	}
+	return strings.HasPrefix(text, "上面是从 ") && strings.HasSuffix(text, " 迁移过来的历史上下文，接着这里继续。")
+}
 
 type Provider struct {
 	root string
@@ -355,7 +376,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 func dropBridgeTurn(msgs []model.Message) []model.Message {
 	if n := len(msgs); n > 0 {
 		last := msgs[n-1]
-		if last.Role == model.RoleUser && last.Content == bridgeText {
+		if last.Role == model.RoleUser && isBridgeTurn(last.Content) {
 			return msgs[:n-1]
 		}
 	}
@@ -529,7 +550,7 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 			"type": "message",
 			"message": map[string]any{
 				"role":      "user",
-				"content":   []any{map[string]any{"type": "text", "text": bridgeText}},
+				"content":   []any{map[string]any{"type": "text", "text": bridgeTextFor(conv.Provider)}},
 				"timestamp": time.Now().UTC().UnixMilli(),
 			},
 		})

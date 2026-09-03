@@ -6,27 +6,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/config"
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/util"
 	"github.com/google/uuid"
+	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/util"
 	_ "modernc.org/sqlite"
 )
 
 const ProviderID = "opencode"
 
 type Provider struct {
-	dbPath string
+	dbPath  string
+	command string
 }
 
 func New() *Provider {
 	root := config.EnvOrDefault("XDG_DATA_HOME", filepath.Join(config.HomeDir(), ".local", "share"))
-	return &Provider{dbPath: filepath.Join(root, "opencode", "opencode.db")}
+	return &Provider{
+		dbPath:  filepath.Join(root, "opencode", "opencode.db"),
+		command: config.EnvOrDefault("OPENCODE_COMMAND", "opencode"),
+	}
 }
 
 func (p *Provider) ID() string          { return ProviderID }
@@ -143,10 +148,14 @@ func openCodeMigration(db *sql.DB, id string) *model.MigrationMeta {
 		return nil
 	}
 	var wrapped struct {
-		Migration *model.MigrationMeta `json:"agenthop_migration"`
+		Migration    *model.MigrationMeta `json:"another_migration"`
+		MigrationOld *model.MigrationMeta `json:"agenthop_migration"`
 	}
 	if json.Unmarshal([]byte(raw.String), &wrapped) != nil {
 		return nil
+	}
+	if wrapped.Migration == nil {
+		wrapped.Migration = wrapped.MigrationOld
 	}
 	return wrapped.Migration
 }
@@ -291,121 +300,150 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 	if project == "" {
 		project, _ = os.Getwd()
 	}
-	now := time.Now().UnixMilli()
-	created := conv.CreatedAt.UnixMilli()
-	if conv.CreatedAt.IsZero() {
-		created = now
-		for _, message := range conv.Messages {
-			if !message.Timestamp.IsZero() && message.Timestamp.UnixMilli() < created {
-				created = message.Timestamp.UnixMilli()
-			}
-		}
+	result := &provider.WriteResult{SessionID: sessionID, StoragePath: p.dbPath + "#" + sessionID, ProjectPath: project}
+	if opts.DryRun {
+		return result, nil
 	}
-	updated := conv.UpdatedAt.UnixMilli()
-	if conv.UpdatedAt.IsZero() || updated < created {
+	db, err := p.openRO()
+	if err != nil {
+		return nil, err
+	}
+	version, agent, modelRef, err := p.nativeDefaults(db)
+	_ = db.Close()
+	if err != nil {
+		return nil, err
+	}
+	payload, err := openCodeImportPayload(conv, sessionID, project, version, agent, modelRef)
+	if err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp("", "another-opencode-*.json")
+	if err != nil {
+		return nil, err
+	}
+	path := tmp.Name()
+	defer os.Remove(path)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if _, err := tmp.Write(payload); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+	command := p.command
+	if command == "" {
+		command = "opencode"
+	}
+	cmd := exec.CommandContext(ctx, command, "import", path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("opencode import: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return result, nil
+}
+
+func (p *Provider) nativeDefaults(db *sql.DB) (string, string, map[string]any, error) {
+	var version, agent, raw string
+	err := db.QueryRow(`SELECT version, COALESCE(agent,''), model FROM session WHERE model IS NOT NULL AND model <> '' ORDER BY time_updated DESC LIMIT 1`).
+		Scan(&version, &agent, &raw)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("OpenCode has no model default yet; run opencode once first")
+	}
+	var modelRef map[string]any
+	if json.Unmarshal([]byte(raw), &modelRef) != nil || modelRef["id"] == nil || modelRef["providerID"] == nil {
+		return "", "", nil, fmt.Errorf("OpenCode latest model reference is invalid")
+	}
+	if agent == "" {
+		agent = "build"
+	}
+	return version, agent, modelRef, nil
+}
+
+func openCodeImportPayload(conv *model.Conversation, sessionID, project, version, agent string, modelRef map[string]any) ([]byte, error) {
+	now := time.Now().UnixMilli()
+	created, updated := now, now
+	if !conv.CreatedAt.IsZero() {
+		created = conv.CreatedAt.UnixMilli()
+	}
+	if !conv.UpdatedAt.IsZero() {
+		updated = conv.UpdatedAt.UnixMilli()
+	}
+	if updated < created {
 		updated = created
 	}
-	for _, message := range conv.Messages {
-		if !message.Timestamp.IsZero() && message.Timestamp.UnixMilli() > updated {
-			updated = message.Timestamp.UnixMilli()
-		}
-	}
-	title := conv.Title
+	title := strings.TrimSpace(conv.Title)
 	if title == "" {
 		title = "Migrated session"
 	}
-	storagePath := p.dbPath + "#" + sessionID
-	if opts.DryRun {
-		return &provider.WriteResult{SessionID: sessionID, StoragePath: storagePath, ProjectPath: project}, nil
-	}
-	db, err := sql.Open("sqlite", p.dbPath)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	if err := p.ensureGlobalProject(db, now); err != nil {
-		return nil, err
-	}
-	version := latestOpenCodeVersion(db)
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	meta := model.NewMigrationMeta(conv)
-	metaJSON, _ := json.Marshal(map[string]any{"agenthop_migration": meta})
 	slug := util.FirstUserSnippet(title, 20)
 	if slug == "" {
 		slug = "migrated"
 	}
-	_, err = tx.Exec(`INSERT INTO session (
-  id, project_id, directory, title, version, slug, time_created, time_updated, metadata, agent, model, cost,
-  tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write
-) VALUES (?, 'global', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 0, 0, 0, 0, 0)`,
-		sessionID, project, title, version, slug, created, updated, string(metaJSON))
-	if err != nil {
-		return nil, fmt.Errorf("insert session: %w", err)
+	zeroTokens := map[string]any{"input": 0, "output": 0, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}}
+	info := map[string]any{
+		"id": sessionID, "slug": slug, "projectID": "global", "directory": project,
+		"path": strings.TrimPrefix(filepath.ToSlash(project), "/"), "title": title,
+		"agent": agent, "model": modelRef, "version": version,
+		"summary": map[string]any{"additions": 0, "deletions": 0, "files": 0},
+		"cost":    0, "tokens": zeroTokens,
+		"metadata": map[string]any{"another_migration": model.NewMigrationMeta(conv)},
+		"time":     map[string]any{"created": created, "updated": updated},
 	}
-	var lastTS int64
-	haveLastTS := false
-	for i, m := range conv.Messages {
-		if m.Role != model.RoleUser && m.Role != model.RoleAssistant {
+	modelID, _ := modelRef["id"].(string)
+	providerID, _ := modelRef["providerID"].(string)
+	variant, _ := modelRef["variant"].(string)
+	var messages []any
+	var parent string
+	for i, message := range conv.Messages {
+		if message.Role != model.RoleUser && message.Role != model.RoleAssistant || message.PlainText() == "" {
 			continue
 		}
-		msgID := ocID("msg_")
-		sourceTS := m.Timestamp.UnixMilli()
-		if m.Timestamp.IsZero() {
-			sourceTS = created + int64(i)
-			if haveLastTS && sourceTS <= lastTS {
-				sourceTS = lastTS + 1
+		ts := message.Timestamp.UnixMilli()
+		if message.Timestamp.IsZero() {
+			ts = created + int64(i)
+		}
+		messageID := ocID("msg_")
+		messageInfo := map[string]any{
+			"id": messageID, "sessionID": sessionID, "role": string(message.Role),
+			"time": map[string]any{"created": ts},
+		}
+		if parent != "" {
+			messageInfo["parentID"] = parent
+		}
+		if message.Role == model.RoleUser {
+			messageInfo["agent"] = agent
+			messageInfo["model"] = map[string]any{"providerID": providerID, "modelID": modelID}
+		} else {
+			messageInfo["mode"] = agent
+			messageInfo["agent"] = agent
+			messageInfo["path"] = map[string]any{"cwd": project, "root": "/"}
+			messageInfo["cost"] = 0
+			messageInfo["tokens"] = map[string]any{"total": 0, "input": 0, "output": 0, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}}
+			messageInfo["modelID"] = modelID
+			messageInfo["providerID"] = providerID
+			if variant != "" {
+				messageInfo["variant"] = variant
 			}
-		}
-		storageTS := sourceTS
-		if haveLastTS && storageTS <= lastTS {
-			storageTS = lastTS + 1
-		}
-		lastTS, haveLastTS = storageTS, true
-		msgData, _ := json.Marshal(map[string]any{
-			"role":    string(m.Role),
-			"time":    map[string]any{"created": sourceTS},
-			"summary": map[string]any{"diffs": []any{}},
-		})
-		_, err = tx.Exec(`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)`,
-			msgID, sessionID, storageTS, storageTS, string(msgData))
-		if err != nil {
-			return nil, fmt.Errorf("insert message: %w", err)
+			messageInfo["time"] = map[string]any{"created": ts, "completed": ts}
+			messageInfo["finish"] = "stop"
 		}
 		partID := ocID("prt_")
-		partData, _ := json.Marshal(ocPartData{Type: "text", Text: m.PlainText()})
-		_, err = tx.Exec(`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)`,
-			partID, msgID, sessionID, storageTS, storageTS, string(partData))
-		if err != nil {
-			return nil, fmt.Errorf("insert part: %w", err)
-		}
+		messages = append(messages, map[string]any{
+			"info": messageInfo,
+			"parts": []any{map[string]any{
+				"id": partID, "sessionID": sessionID, "messageID": messageID,
+				"type": "text", "text": message.PlainText(),
+			}},
+		})
+		parent = messageID
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit session: %w", err)
+	if len(messages) == 0 {
+		return nil, provider.ErrEmptySession
 	}
-	return &provider.WriteResult{SessionID: sessionID, StoragePath: storagePath, ProjectPath: project}, nil
-}
-
-func (p *Provider) ensureGlobalProject(db *sql.DB, now int64) error {
-	var n int
-	_ = db.QueryRow(`SELECT COUNT(*) FROM project WHERE id = 'global'`).Scan(&n)
-	if n > 0 {
-		return nil
-	}
-	_, err := db.Exec(`INSERT OR IGNORE INTO project (id, worktree, time_created, time_updated, sandboxes) VALUES ('global', '/', ?, ?, '[]')`, now, now)
-	return err
-}
-
-func latestOpenCodeVersion(db *sql.DB) string {
-	var version sql.NullString
-	if db.QueryRow(`SELECT version FROM session WHERE version <> '' ORDER BY time_updated DESC LIMIT 1`).Scan(&version) == nil && version.Valid {
-		return version.String
-	}
-	// OpenCode requires this column even in an otherwise empty database.
-	return "unknown"
+	return json.Marshal(map[string]any{"info": info, "messages": messages})
 }
 
 func ocID(prefix string) string {
@@ -427,30 +465,24 @@ func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 }
 
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {
-	return p.CleanupWrite(ctx, provider.WriteResult{
-		SessionID: ref.ID, StoragePath: ref.StoragePath, ProjectPath: ref.ProjectPath,
-	})
+	return p.deleteWithCLI(ctx, ref.ID)
 }
 
 func (p *Provider) CleanupWrite(ctx context.Context, r provider.WriteResult) error {
-	db, err := sql.Open("sqlite", p.dbPath+"?_pragma=busy_timeout(5000)")
-	if err != nil {
-		return err
+	return p.deleteWithCLI(ctx, r.SessionID)
+}
+
+func (p *Provider) deleteWithCLI(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("opencode: missing session id")
 	}
-	defer db.Close()
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+	command := p.command
+	if command == "" {
+		command = "opencode"
 	}
-	defer tx.Rollback()
-	for _, query := range []string{
-		`DELETE FROM part WHERE session_id = ?`,
-		`DELETE FROM message WHERE session_id = ?`,
-		`DELETE FROM session WHERE id = ?`,
-	} {
-		if _, err := tx.ExecContext(ctx, query, r.SessionID); err != nil {
-			return err
-		}
+	cmd := exec.CommandContext(ctx, command, "session", "delete", sessionID)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("opencode delete: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	return tx.Commit()
+	return nil
 }

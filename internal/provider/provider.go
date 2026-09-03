@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/model"
+	"github.com/nxxxsooo/another/internal/model"
 )
 
 type PathSpec struct {

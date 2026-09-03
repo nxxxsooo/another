@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/util"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/util"
 	_ "modernc.org/sqlite"
 )
 
@@ -98,7 +98,10 @@ func (p *Provider) EnsureResumable(conv *model.Conversation, ref provider.WriteR
 	}
 	title := strings.TrimSpace(conv.Title)
 	if title == "" {
-		title = "agenthop migration"
+		title = "migrated session"
+		if conv.Provider != "" {
+			title = conv.Provider + " migration"
+		}
 	}
 	firstUser := ""
 	for _, m := range conv.Messages {
@@ -119,7 +122,9 @@ func rolloutIsAgenthopMigration(path string) bool {
 	return util.ScanJSONLEdges(path, 3, 8*1024, func(line []byte) bool {
 		_, ok := model.ParseMigrationMeta(line)
 		return ok || strings.Contains(string(line), `"type":"agenthop_migration"`) ||
-			strings.Contains(string(line), `"type": "agenthop_migration"`)
+			strings.Contains(string(line), `"type": "agenthop_migration"`) ||
+			strings.Contains(string(line), `"type":"another_migration"`) ||
+			strings.Contains(string(line), `"type": "another_migration"`)
 	})
 }
 

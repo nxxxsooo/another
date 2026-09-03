@@ -1,6 +1,6 @@
 /bin/
 /dist/
-*.agenthop.json
+*.another.json
 .DS_Store
 .idea/
 .vscode/

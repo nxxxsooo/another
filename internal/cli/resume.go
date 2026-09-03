@@ -3,9 +3,9 @@ package cli
 import (
 	"fmt"
 
-	"github.com/CyrusSE/agenthop/internal/migrate"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/registry"
+	"github.com/nxxxsooo/another/internal/migrate"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/spf13/cobra"
 )
 

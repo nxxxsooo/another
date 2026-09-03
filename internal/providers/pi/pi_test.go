@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/providers/pi"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/providers/pi"
 )
 
 // writeSession lays out a pi session exactly as pi does: one directory per
@@ -222,6 +222,44 @@ func TestWriteMatchesPiResumeContract(t *testing.T) {
 	}
 	if len(userText) == 0 || userText[0] != "  hello\r\n" {
 		t.Fatalf("user text not preserved verbatim: %q", userText)
+	}
+}
+
+// A migrated conversation ending on an assistant turn gets a synthetic
+// trailing user turn naming the source agent (Anthropic-backed models
+// reject a resume whose last turn is assistant, treating it as a prefill).
+// Load must drop that synthetic turn again so the round trip is clean.
+func TestWriteBridgesTrailingAssistantAndLoadDropsIt(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PI_AGENT_DIR", root)
+	p := pi.New()
+	conv := &model.Conversation{
+		ID: "source", Provider: "claude-code", ProjectPath: "/home/user/proj", Title: "carried title",
+		Messages: []model.Message{
+			{Role: model.RoleUser, Content: "question"},
+			{Role: model.RoleAssistant, Content: "answer"},
+		},
+	}
+	res, err := p.Write(context.Background(), conv, provider.WriteOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(res.StoragePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "上面是从 claude-code 迁移过来的历史上下文") {
+		t.Fatalf("expected bridge turn naming the source agent, got: %s", data)
+	}
+	loaded, err := p.Load(context.Background(), provider.SessionRef{ID: res.SessionID, StoragePath: res.StoragePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Messages) != 2 {
+		t.Fatalf("messages = %d, want 2 (bridge turn must be dropped on load)", len(loaded.Messages))
+	}
+	if loaded.Messages[len(loaded.Messages)-1].Content != "answer" {
+		t.Fatalf("last message = %q, want the real trailing assistant answer, not the bridge turn", loaded.Messages[len(loaded.Messages)-1].Content)
 	}
 }
 

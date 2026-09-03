@@ -11,14 +11,14 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/index"
-	"github.com/CyrusSE/agenthop/internal/migrate"
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/registry"
-	"github.com/CyrusSE/agenthop/internal/tui"
-	"github.com/CyrusSE/agenthop/internal/util"
 	"github.com/charmbracelet/x/term"
+	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/migrate"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/registry"
+	"github.com/nxxxsooo/another/internal/tui"
+	"github.com/nxxxsooo/another/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -446,6 +446,7 @@ func providerCLIStatus(id string) string {
 		"codex":       "codex",
 		"cursor":      "cursor-agent",
 		"opencode":    "opencode",
+		"opencode2":   "opencode2",
 		"commandcode": "commandcode",
 		"hermes":      "hermes",
 		"pi":          "pi",
@@ -481,7 +482,7 @@ func (a *App) exportCmd() *cobra.Command {
 				return err
 			}
 			if out == "" {
-				out = "session.agenthop.json"
+				out = "session.another.json"
 			}
 			f, err := os.Create(out)
 			if err != nil {

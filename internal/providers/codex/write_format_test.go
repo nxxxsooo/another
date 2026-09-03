@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
 )
 
 func TestBuildV2RolloutLines(t *testing.T) {
@@ -38,7 +38,7 @@ func TestBuildV2RolloutLines(t *testing.T) {
 	if !ok || payload["id"] != "019d0304-afe0-7001-b42e-69d2028e34d1" {
 		t.Fatalf("bad session_meta payload: %v", row["payload"])
 	}
-	if !strings.Contains(lines[1], `"type":"agenthop_migration"`) {
+	if !strings.Contains(lines[1], `"type":"another_migration"`) {
 		t.Fatalf("expected migration marker immediately after session_meta, got %s", lines[1])
 	}
 	if !strings.Contains(lines[2], "task_started") {

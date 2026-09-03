@@ -133,6 +133,8 @@ func SkipUserMessage(text string) bool {
 		"<image name=",
 		"<recommended_plugins>",
 		"[Agenthop migration handoff]",
+		"[Migrated from ",
+		"[Migrated session]",
 		"Read HEARTBEAT.md",
 		"You are being used as the model planner",
 		"Sender (untrusted metadata)",

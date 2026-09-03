@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CyrusSE/agenthop/internal/util"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 func TestReadJSONLLinesAcceptsLargeProviderRecord(t *testing.T) {
@@ -118,7 +118,7 @@ func TestWriteFileAtomicIsSecureAndCleansFailedTemp(t *testing.T) {
 	if err := util.WriteFileAtomic(dir, []byte("cannot replace directory"), 0o600); err == nil {
 		t.Fatal("expected rename over directory to fail")
 	}
-	if temps, err := filepath.Glob(filepath.Join(dir, ".agenthop-*.tmp")); err != nil || len(temps) != 0 {
+	if temps, err := filepath.Glob(filepath.Join(dir, ".another-*.tmp")); err != nil || len(temps) != 0 {
 		t.Fatalf("temporary files remain: %v err=%v", temps, err)
 	}
 }

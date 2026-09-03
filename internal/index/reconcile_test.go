@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/model"
+	"github.com/nxxxsooo/another/internal/model"
 )
 
 func TestReconcilePromotesRemainingSourceAndPrunesDeletedSession(t *testing.T) {

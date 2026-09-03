@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
 )
 
 func TestRolloutNeedsV2Rewrite(t *testing.T) {
@@ -73,7 +73,7 @@ func TestRewriteRolloutFile(t *testing.T) {
 	if err := os.WriteFile(victim, []byte("untouched"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(victim, path+".agenthop.tmp"); err != nil {
+	if err := os.Symlink(victim, path+".another.tmp"); err != nil {
 		t.Fatal(err)
 	}
 	p := &Provider{sessionsRoot: filepath.Join(dir, "sessions")}

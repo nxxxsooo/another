@@ -118,7 +118,7 @@ func FileMtime(path string) (time.Time, error) {
 // WriteFileAtomic replaces path only after a private temporary file has been
 // fully written, synced, closed, and chmodded.
 func WriteFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
-	f, err := os.CreateTemp(filepath.Dir(path), ".agenthop-*.tmp")
+	f, err := os.CreateTemp(filepath.Dir(path), ".another-*.tmp")
 	if err != nil {
 		return err
 	}

@@ -16,16 +16,11 @@
 </p>
 
 <p align="center">
-  <sub>A fork of <a href="https://github.com/CyrusSE/agenthop">CyrusSE/agenthop</a> (MIT), adding a <code>pi</code> provider.</sub>
-</p>
-
-<p align="center">
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#tui">TUI</a> ·
   <a href="#providers">Providers</a> ·
-  <a href="#cli">CLI</a> ·
-  <a href="docs/architecture.md">Architecture</a>
+  <a href="#cli">CLI</a>
 </p>
 
 ---
@@ -52,7 +47,10 @@ You hit a rate limit mid-task, or you want a different model for the next step. 
 # Recommended: install script (linux / macOS)
 curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash
 
-# From source (no `go install`: the Go module path still points at upstream)
+# From source
+go install github.com/nxxxsooo/another/cmd/another@latest
+
+# ...or clone and build
 git clone https://github.com/nxxxsooo/another.git
 cd another && make install
 ```
@@ -188,8 +186,6 @@ another providers
 another providers doctor
 ```
 
-Add a new provider: [docs/adding-a-provider.md](docs/adding-a-provider.md)
-
 ---
 
 ## CLI
@@ -227,13 +223,11 @@ make build test      # compile + unit tests
 make install         # go install + copy to ~/.local/bin (on PATH)
 ```
 
-Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Provider guide: [docs/adding-a-provider.md](docs/adding-a-provider.md)
-
 ---
 
 ## Limitations
 
-- Cursor formats evolve frequently; Agenthop writes the native `store.db` graph, CLI `meta.json`, and transcript fallback, then verifies the conversation it can reload.
+- Cursor formats evolve frequently; another writes the native `store.db` graph, CLI `meta.json`, and transcript fallback, then verifies the conversation it can reload.
 - The portable fidelity contract covers ordered user/assistant text and timestamps. Tool, reasoning, image, and system structures are best-effort because providers do not share equivalent formats.
 - `--context full` preserves every cleaned user/assistant message in destination storage, but no migration tool can make a transcript larger than the destination model's context window simultaneously active. Codex may compact or reject oversized history.
 - **Claude Code** resume may require `cd` to the original project directory.

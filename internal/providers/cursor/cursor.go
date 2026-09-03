@@ -19,11 +19,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/config"
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/util"
 	"github.com/google/uuid"
+	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/util"
 	_ "modernc.org/sqlite"
 )
 
@@ -1311,7 +1311,7 @@ type cursorStoreBlob struct {
 }
 
 func writeCursorStore(path, sessionID, project string, conv *model.Conversation) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".agenthop-store-*.db")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".another-store-*.db")
 	if err != nil {
 		return err
 	}
@@ -1409,10 +1409,10 @@ func buildCursorBlobs(conv *model.Conversation, project string) ([]cursorStoreBl
 		}
 		messages = append(messages, message)
 		payload, err := json.Marshal(map[string]any{
-			"role":           message.Role,
-			"content":        []map[string]any{{"type": "text", "text": message.PlainText()}},
-			"_agenthopOrder": i,
-			"timestamp":      cursorTimestamp(message.Timestamp, conv.CreatedAt, i).Format(time.RFC3339Nano),
+			"role":          message.Role,
+			"content":       []map[string]any{{"type": "text", "text": message.PlainText()}},
+			"_anotherOrder": i,
+			"timestamp":     cursorTimestamp(message.Timestamp, conv.CreatedAt, i).Format(time.RFC3339Nano),
 		})
 		if err != nil {
 			return nil, "", err

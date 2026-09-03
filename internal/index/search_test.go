@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/config"
-	"github.com/CyrusSE/agenthop/internal/index"
-	"github.com/CyrusSE/agenthop/internal/model"
+	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/model"
 )
 
 func TestFullTextSearchAndSubagentDefault(t *testing.T) {

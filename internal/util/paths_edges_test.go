@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CyrusSE/agenthop/internal/util"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 func TestScanJSONLEdgesFindsTailMeta(t *testing.T) {

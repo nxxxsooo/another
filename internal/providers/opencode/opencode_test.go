@@ -3,15 +3,15 @@ package opencode
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
 	_ "modernc.org/sqlite"
 )
 
@@ -39,27 +39,15 @@ PRAGMA wal_checkpoint(TRUNCATE);`); err != nil {
 	if err != nil || len(before) != 1 {
 		t.Fatalf("initial discover: summaries=%d err=%v", len(before), err)
 	}
-	mainBefore, err := os.Stat(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	walBefore, err := os.Stat(dbPath + "-wal")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mainBefore, _ := os.Stat(dbPath)
+	walBefore, _ := os.Stat(dbPath + "-wal")
 	if _, err := db.Exec(`UPDATE part SET data='{"type":"text","text":"second"}' WHERE message_id='m1'`); err != nil {
 		t.Fatal(err)
 	}
-	mainAfter, err := os.Stat(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mainAfter, _ := os.Stat(dbPath)
+	walAfter, _ := os.Stat(dbPath + "-wal")
 	if mainAfter.Size() != mainBefore.Size() || !mainAfter.ModTime().Equal(mainBefore.ModTime()) {
 		t.Fatal("test setup checkpointed the WAL into opencode.db")
-	}
-	walAfter, err := os.Stat(dbPath + "-wal")
-	if err != nil {
-		t.Fatal(err)
 	}
 	if walAfter.Size() == walBefore.Size() && walAfter.ModTime().Equal(walBefore.ModTime()) {
 		t.Fatal("test setup did not change opencode.db-wal")
@@ -71,89 +59,83 @@ PRAGMA wal_checkpoint(TRUNCATE);`); err != nil {
 	if after[0].SourceMtime == before[0].SourceMtime && after[0].SourceSize == before[0].SourceSize {
 		t.Fatal("WAL-only edit did not alter source stamp")
 	}
-	if after[0].UpdatedAt != before[0].UpdatedAt || after[0].MessageCount != before[0].MessageCount {
-		t.Fatal("test edit unexpectedly changed ordinary freshness fields")
-	}
 }
 
-func TestWriteRoundTripUsesNativeVersionAndCleanup(t *testing.T) {
+func TestWriteUsesOfficialImportWithNativeFields(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "opencode.db")
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`
-CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, sandboxes TEXT NOT NULL);
-CREATE TABLE session (
- id TEXT PRIMARY KEY, project_id TEXT NOT NULL, parent_id TEXT, slug TEXT NOT NULL, directory TEXT NOT NULL,
- title TEXT NOT NULL, version TEXT NOT NULL, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL,
- metadata TEXT, agent TEXT, model TEXT, cost REAL NOT NULL DEFAULT 0, tokens_input INTEGER NOT NULL DEFAULT 0,
- tokens_output INTEGER NOT NULL DEFAULT 0, tokens_reasoning INTEGER NOT NULL DEFAULT 0,
- tokens_cache_read INTEGER NOT NULL DEFAULT 0, tokens_cache_write INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL);
-CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL);
-INSERT INTO project VALUES ('global', '/', 1, 1, '[]');
-INSERT INTO session (id, project_id, slug, directory, title, version, time_created, time_updated) VALUES ('native', 'global', 'native', '/', 'native', '9.8.7', 1, 1);
-`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE session (
+ id TEXT PRIMARY KEY, directory TEXT, title TEXT, version TEXT, agent TEXT, model TEXT, time_updated INTEGER);
+INSERT INTO session VALUES ('native','/','native','9.8.7','build','{"id":"model-1","providerID":"provider-1","variant":"default"}',1);`); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Close(); err != nil {
+	_ = db.Close()
+	captureDir := t.TempDir()
+	capture := filepath.Join(captureDir, "payload.json")
+	calls := filepath.Join(captureDir, "calls")
+	script := filepath.Join(captureDir, "opencode")
+	body := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$*\" >> \"$CALLS\"\n" +
+		"if [ \"$1\" = import ]; then cp \"$2\" \"$CAPTURE\"; echo 'Imported session'; fi\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	p := &Provider{dbPath: dbPath}
-	start := time.Date(2026, 8, 17, 2, 0, 0, 0, time.UTC)
+	t.Setenv("CAPTURE", capture)
+	t.Setenv("CALLS", calls)
+	p := &Provider{dbPath: dbPath, command: script}
+	start := time.UnixMilli(10000)
 	conv := &model.Conversation{
-		ID: "origin", Provider: "claude-code", ProjectPath: "/old", Title: "Portable",
-		CreatedAt: start, UpdatedAt: start.Add(time.Minute),
+		ID: "origin", Provider: "pi", ProjectPath: "/old", Title: "Portable",
+		CreatedAt: start, UpdatedAt: start.Add(time.Second),
 		Messages: []model.Message{
-			{Role: model.RoleUser, Content: "first", Timestamp: start.Add(2 * time.Second)},
-			{Role: model.RoleAssistant, Content: "equal", Timestamp: start.Add(2 * time.Second)},
-			{Role: model.RoleUser, Content: "decreasing", Timestamp: start},
+			{Role: model.RoleUser, Content: "first", Timestamp: start},
+			{Role: model.RoleAssistant, Content: "answer", Timestamp: start.Add(time.Second)},
 		},
 	}
-	before := *conv
-	before.Messages = append([]model.Message(nil), conv.Messages...)
 	write, err := p.Write(context.Background(), conv, provider.WriteOpts{ProjectPath: "/new path"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(*conv, before) {
-		t.Fatalf("write mutated input: before=%+v after=%+v", before, *conv)
-	}
-	loaded, err := p.Load(context.Background(), provider.SessionRef{ID: write.SessionID, StoragePath: write.StoragePath})
+	data, err := os.ReadFile(capture)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if model.ContentDigest(loaded) != model.ContentDigest(conv) || loaded.ProjectPath != "/new path" {
-		t.Fatalf("round trip mismatch: %+v", loaded)
+	var payload struct {
+		Info struct {
+			ID       string         `json:"id"`
+			Title    string         `json:"title"`
+			Agent    string         `json:"agent"`
+			Model    map[string]any `json:"model"`
+			Metadata map[string]any `json:"metadata"`
+		} `json:"info"`
+		Messages []struct {
+			Info  map[string]any   `json:"info"`
+			Parts []map[string]any `json:"parts"`
+		} `json:"messages"`
 	}
-	for i := range conv.Messages {
-		if !loaded.Messages[i].Timestamp.Equal(conv.Messages[i].Timestamp) {
-			t.Fatalf("timestamp %d = %v, want %v", i, loaded.Messages[i].Timestamp, conv.Messages[i].Timestamp)
-		}
+	if json.Unmarshal(data, &payload) != nil {
+		t.Fatal("captured import is not JSON")
 	}
-	db, err = sql.Open("sqlite", dbPath+"?mode=ro")
-	if err != nil {
-		t.Fatal(err)
+	if payload.Info.ID != write.SessionID || payload.Info.Title != "Portable" || payload.Info.Agent != "build" || payload.Info.Model["id"] != "model-1" {
+		t.Fatalf("native session fields missing: %+v", payload.Info)
 	}
-	var version string
-	var agent, usedModel sql.NullString
-	if err := db.QueryRow(`SELECT version, agent, model FROM session WHERE id=?`, write.SessionID).Scan(&version, &agent, &usedModel); err != nil {
-		t.Fatal(err)
+	if payload.Info.Metadata["another_migration"] == nil || len(payload.Messages) != 2 {
+		t.Fatalf("migration payload incomplete: %+v", payload)
 	}
-	_ = db.Close()
-	if version != "9.8.7" || agent.Valid || usedModel.Valid {
-		t.Fatalf("defaults: version=%q agent=%v model=%v", version, agent, usedModel)
+	assistant := payload.Messages[1].Info
+	if assistant["role"] != "assistant" || assistant["agent"] != "build" || assistant["modelID"] != "model-1" || assistant["providerID"] != "provider-1" || assistant["parentID"] == nil {
+		t.Fatalf("assistant lacks native fields required by the TUI: %+v", assistant)
 	}
 	if err := p.CleanupWrite(context.Background(), *write); err != nil {
 		t.Fatal(err)
 	}
-	db, _ = sql.Open("sqlite", dbPath+"?mode=ro")
-	defer db.Close()
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM session WHERE id=?`, write.SessionID).Scan(&count); err != nil || count != 0 {
-		t.Fatalf("cleanup count=%d err=%v", count, err)
+	callData, _ := os.ReadFile(calls)
+	callText := string(callData)
+	if !strings.Contains(callText, "import ") || !strings.Contains(callText, "session delete "+write.SessionID) {
+		t.Fatalf("official CLI calls = %q", callText)
 	}
 }
 

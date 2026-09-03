@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/CyrusSE/agenthop/internal/registry"
+	"github.com/nxxxsooo/another/internal/registry"
 )
 
 func TestCompletedRefreshClearsIndexing(t *testing.T) {

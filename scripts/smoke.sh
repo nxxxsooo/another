@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$ROOT/bin/agenthop"
+BIN="$ROOT/bin/another"
 [[ -x "$BIN" ]] || { echo "build first: make build"; exit 1; }
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT

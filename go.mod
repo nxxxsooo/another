@@ -1,4 +1,4 @@
-module github.com/CyrusSE/agenthop
+module github.com/nxxxsooo/another
 
 go 1.24.0
 

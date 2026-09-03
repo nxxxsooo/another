@@ -4,7 +4,7 @@ BINARY := another
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 build:
-	go build -buildvcs=false -ldflags "-X github.com/CyrusSE/agenthop/internal/cli.version=$(VERSION)" -o bin/$(BINARY) ./cmd/another
+	go build -buildvcs=false -ldflags "-X github.com/nxxxsooo/another/internal/cli.version=$(VERSION)" -o bin/$(BINARY) ./cmd/another
 
 test:
 	go test ./...
@@ -14,7 +14,7 @@ GOBIN_PATH := $(shell go env GOBIN)
 INSTALL_BIN := $(if $(GOBIN_PATH),$(GOBIN_PATH),$(GOPATH_BIN))/$(BINARY)
 
 install:
-	go install -buildvcs=false -ldflags "-X github.com/CyrusSE/agenthop/internal/cli.version=$(VERSION)" ./cmd/another
+	go install -buildvcs=false -ldflags "-X github.com/nxxxsooo/another/internal/cli.version=$(VERSION)" ./cmd/another
 	@mkdir -p $(HOME)/.local/bin
 # Replace by rename, never in place: overwriting a Mach-O that has already been
 # executed invalidates its code signature and macOS then SIGKILLs it (exit 137,

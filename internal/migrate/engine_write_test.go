@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/index"
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/registry"
+	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/registry"
 )
 
 type corruptingProvider struct {
@@ -109,7 +109,7 @@ func TestResumableConversationBoundsAndNormalizesProviderHistory(t *testing.T) {
 	if warning == "" || len(projected.Messages) > resumeMessageLimit+1 {
 		t.Fatalf("projection len=%d warning=%q", len(projected.Messages), warning)
 	}
-	if !strings.HasPrefix(projected.Messages[0].Content, "[Agenthop migration handoff]") {
+	if !strings.HasPrefix(projected.Messages[0].Content, "[Migrated from ") {
 		t.Fatalf("missing handoff: %q", projected.Messages[0].Content)
 	}
 	last := projected.Messages[len(projected.Messages)-1]
@@ -162,7 +162,7 @@ func TestProjectConversationModes(t *testing.T) {
 		t.Fatalf("full projection changed content: len=%d info=%+v", len(full.Messages), fullInfo)
 	}
 	bounded, boundedInfo := projectConversation(large, ContextAuto)
-	if !boundedInfo.ExceedsSafeLimits || len(bounded.Messages) > resumeMessageLimit+1 || !strings.HasPrefix(bounded.Messages[0].Content, "[Agenthop migration handoff]") {
+	if !boundedInfo.ExceedsSafeLimits || len(bounded.Messages) > resumeMessageLimit+1 || !strings.HasPrefix(bounded.Messages[0].Content, "[Migrated from ") {
 		t.Fatalf("oversized auto projection len=%d info=%+v", len(bounded.Messages), boundedInfo)
 	}
 	recent, recentInfo := projectConversation(large, ContextRecent)

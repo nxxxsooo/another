@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/util"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 func TestDiscoverSeesWALOnlyStoreChange(t *testing.T) {

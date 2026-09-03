@@ -3,8 +3,8 @@ package hermes
 import (
 	"strings"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/util"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 func hermesMapRole(role string) (model.Role, bool) {

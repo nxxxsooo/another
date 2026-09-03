@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/CyrusSE/agenthop/internal/index"
+	"github.com/nxxxsooo/another/internal/index"
 )
 
 // The browser lists everywhere. Scoping to the working directory is a CLI

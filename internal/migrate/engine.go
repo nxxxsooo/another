@@ -8,11 +8,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/CyrusSE/agenthop/internal/index"
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/registry"
-	"github.com/CyrusSE/agenthop/internal/util"
+	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/registry"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 type Options struct {
@@ -298,7 +298,7 @@ func recentConversation(source, cleaned *model.Conversation) (*model.Conversatio
 		}
 		runes := []rune(candidates[i].Content)
 		half := resumeMessageRunes / 2
-		candidates[i].Content = string(runes[:half]) + "\n\n[... message shortened by Agenthop for resumable context ...]\n\n" + string(runes[len(runes)-half:])
+		candidates[i].Content = string(runes[:half]) + "\n\n[... message shortened for resumable context ...]\n\n" + string(runes[len(runes)-half:])
 		changed = true
 	}
 
@@ -339,9 +339,13 @@ func recentConversation(source, cleaned *model.Conversation) (*model.Conversatio
 		projected.MessageCount = len(selected)
 		return projected, false
 	}
+	handoffPrefix := "[Migrated session]"
+	if source.Provider != "" {
+		handoffPrefix = fmt.Sprintf("[Migrated from %s]", source.Provider)
+	}
 	handoff := model.Message{
 		Role:      model.RoleUser,
-		Content:   fmt.Sprintf("[Agenthop migration handoff]\nThis is a bounded recent-context view of %s session %s (%q). Older history and provider control records remain in the source session. Continue from the recent turns below; do not restart the task.", source.Provider, source.ID, source.Title),
+		Content:   fmt.Sprintf("%s\nThis is a bounded recent-context view of session %s (%q). Older history and provider control records remain in the source session. Continue from the recent turns below; do not restart the task.", handoffPrefix, source.ID, source.Title),
 		Timestamp: source.CreatedAt,
 	}
 	projected.Messages = append([]model.Message{handoff}, selected...)

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/CyrusSE/agenthop/internal/migrate"
-	"github.com/CyrusSE/agenthop/internal/model"
+	"github.com/nxxxsooo/another/internal/migrate"
+	"github.com/nxxxsooo/another/internal/model"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +14,7 @@ func (a *App) importCmd() *cobra.Command {
 	var to, project, contextMode string
 	var dryRun, yes bool
 	cmd := &cobra.Command{
-		Use:   "import <session.agenthop.json>",
+		Use:   "import <session.another.json>",
 		Short: "Import portable JSON session into a provider",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

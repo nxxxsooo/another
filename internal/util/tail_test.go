@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CyrusSE/agenthop/internal/util"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 // TailJSONLLines must return the last lines of a file larger than its internal

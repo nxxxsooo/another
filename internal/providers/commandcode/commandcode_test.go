@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
 )
 
 func TestWriteRoundTripDoesNotMutateAndCleanup(t *testing.T) {

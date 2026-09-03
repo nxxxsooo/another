@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CyrusSE/agenthop/internal/config"
-	"github.com/CyrusSE/agenthop/internal/model"
-	"github.com/CyrusSE/agenthop/internal/provider"
-	"github.com/CyrusSE/agenthop/internal/util"
 	"github.com/google/uuid"
+	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 const ProviderID = "codex"
@@ -244,7 +244,7 @@ func codexAppendMessage(conv *model.Conversation, last *codexLoadedMessage, wire
 	if role == "user" && conv.Migration == nil && codexSkipUserText(text) {
 		return
 	}
-	if role == "user" && text == codexRestoredUserPrompt {
+	if role == "user" && codexIsRestoredUserPrompt(text) {
 		return
 	}
 	current := codexLoadedMessage{wireType: wireType, role: role, text: text, timestamp: ts}
@@ -490,7 +490,7 @@ func buildV2RolloutLines(conv *model.Conversation, sessionID, project string, no
 	if line, err := codexV2Line(metaTS, "session_meta", map[string]any{
 		"id": sessionID, "session_id": sessionID,
 		"timestamp": now.Format(time.RFC3339Nano),
-		"cwd":       project, "originator": "agenthop", "source": "cli",
+		"cwd":       project, "originator": "another", "source": "cli",
 		"thread_source": "user", "cli_version": cliVersion,
 		"model_provider": modelProvider,
 	}); err != nil {
@@ -504,7 +504,7 @@ func buildV2RolloutLines(conv *model.Conversation, sessionID, project string, no
 	} else {
 		lines = append(lines, string(b))
 	}
-	turnLines, err := codexBuildTurnLines(conv.Messages, project, now)
+	turnLines, err := codexBuildTurnLines(conv.Messages, project, now, conv.Provider)
 	if err != nil {
 		return nil, err
 	}

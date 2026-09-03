@@ -167,12 +167,21 @@ type MigrationMeta struct {
 	TargetFormatVersion *int   `json:"targetFormatVersion,omitempty"`
 }
 
-const MigrationType = "agenthop_migration"
+const MigrationType = "another_migration"
+
+// legacyMigrationType and legacyMigrationTypeCtxmv are marker values written
+// by earlier builds of this tool (agenthop) and, before that, the original
+// ctxmv tool. ParseMigrationMeta keeps recognizing both so sessions migrated
+// by older versions are still found, deduped, and resumed correctly; new
+// migrations only ever write MigrationType.
+const legacyMigrationType = "agenthop_migration"
+const legacyMigrationTypeCtxmv = "ctxmv_migration"
 
 const MigrationTargetFormatVersion = 6
 
-// ParseMigrationMeta recognizes native agenthop markers and compatible ctxmv
-// markers, either bare or wrapped in a provider progress/data object.
+// ParseMigrationMeta recognizes the current marker plus every legacy marker
+// still found on disk, either bare or wrapped in a provider progress/data
+// object.
 func ParseMigrationMeta(line []byte) (*MigrationMeta, bool) {
 	var row map[string]any
 	if json.Unmarshal(line, &row) != nil {
@@ -183,7 +192,7 @@ func ParseMigrationMeta(line []byte) (*MigrationMeta, bool) {
 		data = nested
 	}
 	typ, _ := data["type"].(string)
-	if typ != MigrationType && typ != "ctxmv_migration" {
+	if typ != MigrationType && typ != legacyMigrationType && typ != legacyMigrationTypeCtxmv {
 		return nil, false
 	}
 	b, err := json.Marshal(data)

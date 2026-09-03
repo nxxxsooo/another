@@ -5,10 +5,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/CyrusSE/agenthop/internal/index"
-	"github.com/CyrusSE/agenthop/internal/registry"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/registry"
 )
 
 // TestRenderProbe prints the real screen against the local index. An alt-screen
