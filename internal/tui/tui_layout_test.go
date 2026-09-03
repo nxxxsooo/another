@@ -248,6 +248,22 @@ func TestEnterOnTargetStartsMigration(t *testing.T) {
 	}
 }
 
+func TestArchiveOffersOneStepUndo(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	if cmd == nil || !updated.(modelState).loading {
+		t.Fatal("A did not start native archive")
+	}
+	summary := m.sessions.SelectedItem().(sessionItem).summary
+	updated, _ = m.Update(archiveDoneMsg{summary: summary, archived: true})
+	got := updated.(modelState)
+	if got.lastArchived == nil || !strings.Contains(got.help(), "撤销") {
+		t.Fatalf("archive has no one-step undo: %+v", got.lastArchived)
+	}
+}
+
 func TestCtrlROpensPrefilledNativeRename(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 100, 30

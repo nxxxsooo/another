@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -529,6 +530,18 @@ func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, tit
 		return fmt.Errorf("codex: title must not be empty")
 	}
 	return errors.Join(p.renameThread(ref.ID, title), p.appendGUITitle(ref.ID, title))
+}
+
+func (p *Provider) ArchiveSession(ctx context.Context, ref provider.SessionRef, archived bool) error {
+	verb := "archive"
+	if !archived {
+		verb = "unarchive"
+	}
+	cmd := exec.CommandContext(ctx, "codex", verb, ref.ID)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("codex %s: %w: %s", verb, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {

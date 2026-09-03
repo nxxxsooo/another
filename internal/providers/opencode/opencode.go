@@ -61,7 +61,11 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 	if hasParent {
 		parentExpr = "parent_id"
 	}
-	rows, err := db.Query(`SELECT id, directory, title, time_created, time_updated, ` + parentExpr + ` FROM session ORDER BY time_updated DESC`)
+	activeWhere := ""
+	if sqliteColumnExists(db, "session", "time_archived") {
+		activeWhere = " WHERE time_archived IS NULL"
+	}
+	rows, err := db.Query(`SELECT id, directory, title, time_created, time_updated, ` + parentExpr + ` FROM session` + activeWhere + ` ORDER BY time_updated DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -475,6 +479,26 @@ func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, t
 	}
 	defer db.Close()
 	result, err := db.ExecContext(ctx, `UPDATE session SET title = ?, time_updated = ? WHERE id = ?`, title, time.Now().UnixMilli(), ref.ID)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return provider.ErrNotFound
+	}
+	return nil
+}
+
+func (p *Provider) ArchiveSession(ctx context.Context, ref provider.SessionRef, archived bool) error {
+	db, err := sql.Open("sqlite", p.dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var value any
+	if archived {
+		value = time.Now().UnixMilli()
+	}
+	result, err := db.ExecContext(ctx, `UPDATE session SET time_archived = ?, time_updated = ? WHERE id = ?`, value, time.Now().UnixMilli(), ref.ID)
 	if err != nil {
 		return err
 	}

@@ -139,6 +139,37 @@ INSERT INTO session VALUES ('native','/','native','9.8.7','build','{"id":"model-
 	}
 }
 
+func TestArchiveTogglesNativeTimestamp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "opencode.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE session (id TEXT PRIMARY KEY, time_updated INTEGER, time_archived INTEGER); INSERT INTO session VALUES ('s1',1,NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	p := &Provider{dbPath: path}
+	ref := provider.SessionRef{ID: "s1"}
+	if err := p.ArchiveSession(context.Background(), ref, true); err != nil {
+		t.Fatal(err)
+	}
+	db, _ = sql.Open("sqlite", path)
+	var archived sql.NullInt64
+	if err := db.QueryRow(`SELECT time_archived FROM session WHERE id='s1'`).Scan(&archived); err != nil || !archived.Valid {
+		t.Fatalf("archive timestamp=%v err=%v", archived, err)
+	}
+	_ = db.Close()
+	if err := p.ArchiveSession(context.Background(), ref, false); err != nil {
+		t.Fatal(err)
+	}
+	db, _ = sql.Open("sqlite", path)
+	defer db.Close()
+	if err := db.QueryRow(`SELECT time_archived FROM session WHERE id='s1'`).Scan(&archived); err != nil || archived.Valid {
+		t.Fatalf("unarchive timestamp=%v err=%v", archived, err)
+	}
+}
+
 func TestRenameUpdatesNativeSessionTitle(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "opencode.db")
 	db, err := sql.Open("sqlite", path)

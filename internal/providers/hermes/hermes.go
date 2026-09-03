@@ -320,6 +320,26 @@ func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	return "hermes --resume " + util.ShellQuote(r.SessionID)
 }
 
+func (p *Provider) ArchiveSession(ctx context.Context, ref provider.SessionRef, archived bool) error {
+	db, err := sql.Open("sqlite", p.dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	value := 0
+	if archived {
+		value = 1
+	}
+	result, err := db.ExecContext(ctx, `UPDATE sessions SET archived = ? WHERE id = ?`, value, ref.ID)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return provider.ErrNotFound
+	}
+	return nil
+}
+
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {
 	return p.CleanupWrite(ctx, provider.WriteResult{
 		SessionID: ref.ID, StoragePath: ref.StoragePath, ProjectPath: ref.ProjectPath,

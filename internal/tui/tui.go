@@ -219,6 +219,11 @@ type renameDoneMsg struct {
 	title      string
 	err        error
 }
+type archiveDoneMsg struct {
+	summary  model.Summary
+	archived bool
+	err      error
+}
 type indexRefreshedMsg struct {
 	counts     map[string]int
 	err        error
@@ -264,6 +269,7 @@ type modelState struct {
 	cwd             string
 	pageGen         uint64
 	lastResume      string
+	lastArchived    *model.Summary
 	contextMode     migrate.ContextMode
 	err             string
 	status          string
@@ -600,6 +606,32 @@ func loadPreviewCmd(ctx context.Context, reg *registry.Registry, sm model.Summar
 	}
 }
 
+func archiveSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sm model.Summary, archived bool) tea.Cmd {
+	return func() tea.Msg {
+		p, err := reg.Get(sm.Provider)
+		if err != nil {
+			return archiveDoneMsg{summary: sm, archived: archived, err: err}
+		}
+		archiver, ok := p.(provider.SessionArchiver)
+		if !ok {
+			return archiveDoneMsg{summary: sm, archived: archived, err: fmt.Errorf("%s does not support archive", p.DisplayName())}
+		}
+		ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+		if err := archiver.ArchiveSession(ctx, ref, archived); err != nil {
+			return archiveDoneMsg{summary: sm, archived: archived, err: err}
+		}
+		_, err = index.UpdateIncremental(ctx, reg, idx, sm.Provider)
+		if err != nil {
+			action := "archived"
+			if !archived {
+				action = "unarchived"
+			}
+			err = fmt.Errorf("session %s, but index refresh failed: %w", action, err)
+		}
+		return archiveDoneMsg{summary: sm, archived: archived, err: err}
+	}
+}
+
 func renameSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sm model.Summary, title string) tea.Cmd {
 	return func() tea.Msg {
 		p, err := reg.Get(sm.Provider)
@@ -685,6 +717,23 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.preview.GotoTop()
 		m.layout()
 		return m, nil
+	case archiveDoneMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		if msg.archived {
+			summary := msg.summary
+			m.lastArchived = &summary
+			m.status = okStyle.Render("已归档 "+truncateDisplay(msg.summary.Title, 48)) + mutedStyle.Render("  ·  A 撤销")
+		} else {
+			m.lastArchived = nil
+			m.status = okStyle.Render("已取消归档 " + truncateDisplay(msg.summary.Title, 48))
+		}
+		var cmd tea.Cmd
+		m, cmd = dispatchPageLoad(m)
+		return m, cmd
 	case renameDoneMsg:
 		m.loading = false
 		m.overlay = overlayNone
@@ -1070,6 +1119,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchInput.SetValue("")
 			return dispatchPageLoadModel(m)
 		}
+		m.lastArchived = nil
 		m.status = ""
 		return m, nil
 	case "enter":
@@ -1095,6 +1145,32 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.lastResume != "" {
 			_ = clipboard.WriteAll(m.lastResume)
 			m.status = okStyle.Render("已复制 resume 命令")
+		}
+		return m, nil
+	case "A":
+		if m.lastArchived != nil {
+			summary := *m.lastArchived
+			m.loading = true
+			m.err = ""
+			return m, tea.Batch(m.spinner.Tick, archiveSessionCmd(m.ctx, m.reg, m.idx, summary, false))
+		}
+		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
+			if isCurrentSession(it.summary) {
+				m.err = "不能归档当前正在运行的会话"
+				return m, nil
+			}
+			p, err := m.reg.Get(it.summary.Provider)
+			if err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			if _, ok := p.(provider.SessionArchiver); !ok {
+				m.err = p.DisplayName() + " 不支持归档"
+				return m, nil
+			}
+			m.loading = true
+			m.err = ""
+			return m, tea.Batch(m.spinner.Tick, archiveSessionCmd(m.ctx, m.reg, m.idx, it.summary, true))
 		}
 		return m, nil
 	case "ctrl+r":
@@ -1365,7 +1441,10 @@ func (m modelState) help() string {
 	if m.lastResume != "" {
 		return " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出"
 	}
-	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · ctrl+d 删除 · / 搜索 · r 刷新"
+	if m.lastArchived != nil {
+		return " A 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览"
+	}
+	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · A 归档 · ctrl+d 删除 · / 搜索"
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across

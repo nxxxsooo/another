@@ -103,3 +103,9 @@ type SessionDeleter interface {
 type SessionRenamer interface {
 	RenameSession(context.Context, SessionRef, string) error
 }
+
+// SessionArchiver toggles a provider's native reversible archive state. It is
+// intentionally separate from deletion: archived sessions remain recoverable.
+type SessionArchiver interface {
+	ArchiveSession(context.Context, SessionRef, bool) error
+}

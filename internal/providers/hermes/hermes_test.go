@@ -15,6 +15,39 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func TestArchiveTogglesNativeFlag(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, archived INTEGER NOT NULL DEFAULT 0); INSERT INTO sessions VALUES ('s1',0)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	p := &Provider{dbPath: path}
+	ref := provider.SessionRef{ID: "s1"}
+	if err := p.ArchiveSession(context.Background(), ref, true); err != nil {
+		t.Fatal(err)
+	}
+	db, _ = sql.Open("sqlite", path)
+	var archived int
+	_ = db.QueryRow(`SELECT archived FROM sessions WHERE id='s1'`).Scan(&archived)
+	_ = db.Close()
+	if archived != 1 {
+		t.Fatalf("archived=%d", archived)
+	}
+	if err := p.ArchiveSession(context.Background(), ref, false); err != nil {
+		t.Fatal(err)
+	}
+	db, _ = sql.Open("sqlite", path)
+	defer db.Close()
+	_ = db.QueryRow(`SELECT archived FROM sessions WHERE id='s1'`).Scan(&archived)
+	if archived != 0 {
+		t.Fatalf("unarchived=%d", archived)
+	}
+}
+
 func TestDiscoverNullTitleSessions(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "state.db")
