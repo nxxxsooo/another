@@ -1,10 +1,14 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/CyrusSE/agenthop/internal/migrate"
 	"github.com/CyrusSE/agenthop/internal/model"
+	"github.com/CyrusSE/agenthop/internal/provider"
 	"github.com/CyrusSE/agenthop/internal/registry"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -221,6 +225,44 @@ func TestEnterOnTargetStartsMigration(t *testing.T) {
 	}
 	if !updated.(modelState).loading {
 		t.Fatal("migration did not enter the loading state")
+	}
+}
+
+func TestClaudeProjectTrustedReadsExactProject(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".claude.json")
+	project := filepath.Join(t.TempDir(), "project")
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := `{"projects":{"` + project + `":{"hasTrustDialogAccepted":true},"/other":{"hasTrustDialogAccepted":false}}}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !claudeProjectTrusted(path, project) {
+		t.Fatal("trusted project was not recognized")
+	}
+	if claudeProjectTrusted(path, "/other") {
+		t.Fatal("untrusted project was reported trusted")
+	}
+	if claudeProjectTrusted(filepath.Join(t.TempDir(), "missing"), project) {
+		t.Fatal("missing config must be untrusted")
+	}
+}
+
+func TestMigrationResultRetainsLaunchIdentity(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
+	updated, _ := m.Update(migrateDoneMsg{
+		targetID: "claude-code",
+		res: &migrate.Result{
+			Resume:     "cd '/tmp/project' && claude --resume 'abc'",
+			TargetName: "Claude Code",
+			Write:      &provider.WriteResult{ProjectPath: "/tmp/project"},
+		},
+	})
+	got := updated.(modelState)
+	if got.launchTarget != "claude-code" || got.launchProject != "/tmp/project" {
+		t.Fatalf("launch identity lost: target=%q project=%q", got.launchTarget, got.launchProject)
 	}
 }
 

@@ -2,13 +2,17 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/CyrusSE/agenthop/internal/config"
 	"github.com/CyrusSE/agenthop/internal/index"
 	"github.com/CyrusSE/agenthop/internal/migrate"
 	"github.com/CyrusSE/agenthop/internal/model"
@@ -222,8 +226,9 @@ type previewLoadedMsg struct {
 	err     error
 }
 type migrateDoneMsg struct {
-	res *migrate.Result
-	err error
+	res      *migrate.Result
+	targetID string
+	err      error
 }
 type indexRefreshedMsg struct {
 	counts     map[string]int
@@ -274,6 +279,8 @@ type modelState struct {
 	// launch is the resume command the caller should exec after the program
 	// exits. Running it from inside bubbletea would fight over the terminal.
 	launch         string
+	launchTarget   string
+	launchProject  string
 	width          int
 	height         int
 	ctx            context.Context
@@ -344,21 +351,56 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		return runErr
 	}
 	if done, ok := final.(modelState); ok && done.launch != "" {
-		return execResume(done.launch)
+		return launchResume(done.launch, done.launchTarget, done.launchProject)
 	}
 	return nil
 }
 
-// execResume replaces this process with the target agent, so the user lands in
-// it directly instead of copying a command out of a dead screen. The command
-// carries a cd, so it needs a shell.
-func execResume(command string) error {
+// launchResume replaces this process with the target agent. Claude Code is the
+// one exception: accepting a project's first trust prompt records the decision
+// and exits instead of resuming. For that exact transition we run it once more;
+// a normal Claude exit never restarts.
+func launchResume(command, target, project string) error {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
 	}
 	fmt.Fprintln(os.Stderr, command)
+	if target != "claude-code" {
+		return syscall.Exec(shell, []string{shell, "-c", command}, os.Environ())
+	}
+
+	configPath := filepath.Join(config.HomeDir(), ".claude.json")
+	trustedBefore := claudeProjectTrusted(configPath, project)
+	cmd := exec.Command(shell, "-c", command)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	if trustedBefore || !claudeProjectTrusted(configPath, project) {
+		return nil
+	}
+	fmt.Fprintln(os.Stderr, "Workspace trusted; resuming Claude Code…")
 	return syscall.Exec(shell, []string{shell, "-c", command}, os.Environ())
+}
+
+func claudeProjectTrusted(configPath, project string) bool {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return false
+	}
+	var state struct {
+		Projects map[string]struct {
+			Trusted bool `json:"hasTrustDialogAccepted"`
+		} `json:"projects"`
+	}
+	if json.Unmarshal(data, &state) != nil {
+		return false
+	}
+	if state.Projects[project].Trusted {
+		return true
+	}
+	return state.Projects[util.NormalizeProjectPath(project)].Trusted
 }
 
 // newBareList strips every chrome row bubbles adds by default. The browser
@@ -569,7 +611,7 @@ func migrateCmd(ctx context.Context, engine *migrate.Engine, sm model.Summary, t
 			SessionID: sm.ID, FromProvider: sm.Provider, ToProvider: to,
 			ContextMode: contextMode,
 		})
-		return migrateDoneMsg{res: res, err: err}
+		return migrateDoneMsg{res: res, targetID: to, err: err}
 	}
 }
 
@@ -612,6 +654,10 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.lastResume = msg.res.Resume
+		m.launchTarget = msg.targetID
+		if msg.res.Write != nil {
+			m.launchProject = msg.res.Write.ProjectPath
+		}
 		target := msg.res.TargetName
 		if target == "" {
 			target = "target"
@@ -861,6 +907,8 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		if m.lastResume != "" {
 			m.lastResume = ""
+			m.launchTarget = ""
+			m.launchProject = ""
 			m.status = ""
 			return m, nil
 		}
