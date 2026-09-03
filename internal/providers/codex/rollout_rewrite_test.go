@@ -28,12 +28,12 @@ func TestRolloutIsAgenthopMigration(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "rollout.jsonl")
 	body := strings.Repeat(`{"type":"response_item","payload":{}}`+"\n", 10) +
-		`{"type":"agenthop_migration","data":{"source_provider":"hermes"}}` + "\n"
+		`{"type":"another_migration","data":{"source_provider":"hermes"}}` + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if !rolloutIsAgenthopMigration(path) {
-		t.Fatal("expected agenthop migration marker")
+		t.Fatal("expected migration marker")
 	}
 	plain := filepath.Join(dir, "plain.jsonl")
 	_ = os.WriteFile(plain, []byte(`{"type":"session_meta","payload":{"id":"x"}}`+"\n"), 0o644)
@@ -45,7 +45,7 @@ func TestRolloutIsAgenthopMigration(t *testing.T) {
 func TestRolloutMarkerRemainsDiscoverableAfterAppendedRows(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rollout.jsonl")
 	body := `{"type":"session_meta","payload":{"id":"abc"}}` + "\n" +
-		`{"type":"agenthop_migration","data":{"type":"agenthop_migration","originId":"src","originSource":"claude-code","originDigest":"digest"}}` + "\n" +
+		`{"type":"another_migration","data":{"type":"another_migration","originId":"src","originSource":"claude-code","originDigest":"digest"}}` + "\n" +
 		strings.Repeat(`{"type":"response_item","payload":{}}`+"\n", 10_000)
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)

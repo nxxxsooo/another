@@ -37,7 +37,7 @@ func fixtureDB(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	meta := `{"agenthop_migration":{"type":"agenthop_migration","originId":"origin","originSource":"pi","originMessageCount":2}}`
+	meta := `{"another_migration":{"type":"another_migration","originId":"origin","originSource":"pi","originMessageCount":2}}`
 	modelRef := `{"id":"test-model","providerID":"test","variant":"default"}`
 	if _, err := db.Exec(`INSERT INTO session_v2
 		(id,project_id,parent_id,slug,directory,title,version,metadata,agent,model,time_created,time_updated)

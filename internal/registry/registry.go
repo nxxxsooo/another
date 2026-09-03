@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -21,8 +22,18 @@ type Registry struct {
 	all  []provider.Provider
 }
 
-func New() *Registry {
-	providers := []provider.Provider{
+func New() *Registry { return newRegistry(nil) }
+
+func NewEnabled(enabled []string) *Registry {
+	allowed := make(map[string]bool, len(enabled))
+	for _, id := range enabled {
+		allowed[NormalizeID(id)] = true
+	}
+	return newRegistry(allowed)
+}
+
+func newRegistry(allowed map[string]bool) *Registry {
+	available := []provider.Provider{
 		claude.New(),
 		codex.New(),
 		cursor.New(),
@@ -31,6 +42,12 @@ func New() *Registry {
 		commandcode.New(),
 		hermes.New(),
 		pi.New(),
+	}
+	providers := make([]provider.Provider, 0, len(available))
+	for _, p := range available {
+		if allowed == nil || allowed[p.ID()] {
+			providers = append(providers, p)
+		}
 	}
 	byID := make(map[string]provider.Provider, len(providers))
 	for _, p := range providers {
@@ -74,6 +91,29 @@ func (r *Registry) IDs() []string {
 }
 
 // DisplayName returns the human-readable provider name for an ID.
+func CLICommand(id string) string {
+	commands := map[string]string{
+		"claude-code": "claude",
+		"codex":       "codex",
+		"cursor":      "cursor-agent",
+		"opencode":    "opencode",
+		"opencode2":   "opencode2",
+		"commandcode": "commandcode",
+		"hermes":      "hermes",
+		"pi":          "pi",
+	}
+	return commands[NormalizeID(id)]
+}
+
+func CLIAvailable(id string) bool {
+	command := CLICommand(id)
+	if command == "" {
+		return false
+	}
+	_, err := exec.LookPath(command)
+	return err == nil
+}
+
 func DisplayName(reg *Registry, id string) string {
 	id = NormalizeID(id)
 	if p, err := reg.Get(id); err == nil {

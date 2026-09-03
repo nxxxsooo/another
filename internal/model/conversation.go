@@ -53,7 +53,7 @@ type Conversation struct {
 	Messages     []Message `json:"messages"`
 	StoragePath  string    `json:"storage_path,omitempty"`
 	MessageCount int       `json:"message_count"`
-	// Migration is set when a provider loads an agenthop-created target.
+	// Migration is set when a provider loads an another-created target.
 	Migration *MigrationMeta `json:"-"`
 	// WriteMigration overrides the marker written for a resumable projection.
 	WriteMigration *MigrationMeta `json:"-"`
@@ -74,7 +74,7 @@ type Summary struct {
 	SourceMtime    int64  `json:"source_mtime,omitempty"` // nanoseconds since Unix epoch
 	SourceSize     int64  `json:"source_size,omitempty"`
 	SourcePriority int    `json:"-"` // provider preference when one session has multiple representations
-	// Migration is populated while discovering an agenthop-created target. It is
+	// Migration is populated while discovering an another-created target. It is
 	// consumed by the index and intentionally not part of the sessions table.
 	Migration *MigrationMeta `json:"-"`
 }
@@ -169,19 +169,16 @@ type MigrationMeta struct {
 
 const MigrationType = "another_migration"
 
-// legacyMigrationType and legacyMigrationTypeCtxmv are marker values written
-// by earlier builds of this tool (agenthop) and, before that, the original
-// ctxmv tool. ParseMigrationMeta keeps recognizing both so sessions migrated
-// by older versions are still found, deduped, and resumed correctly; new
-// migrations only ever write MigrationType.
+// Legacy marker values already exist in local and published migrations. New
+// writes use MigrationType; reads keep recognizing both old generations so
+// deduplication, rollback, and imported-session detection remain stable.
 const legacyMigrationType = "agenthop_migration"
 const legacyMigrationTypeCtxmv = "ctxmv_migration"
 
 const MigrationTargetFormatVersion = 6
 
-// ParseMigrationMeta recognizes the current marker plus every legacy marker
-// still found on disk, either bare or wrapped in a provider progress/data
-// object.
+// ParseMigrationMeta recognizes current and legacy markers, either bare or
+// wrapped in a provider progress/data object.
 func ParseMigrationMeta(line []byte) (*MigrationMeta, bool) {
 	var row map[string]any
 	if json.Unmarshal(line, &row) != nil {

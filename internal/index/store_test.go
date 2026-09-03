@@ -17,6 +17,35 @@ import (
 	"github.com/nxxxsooo/another/internal/registry"
 )
 
+func TestKeepProvidersPrunesDisabledIndexWithoutNativeDeletion(t *testing.T) {
+	store, err := index.Open(filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	for _, sm := range []model.Summary{
+		{ID: "pi-1", Provider: "pi", StoragePath: "/native/pi", Title: "pi"},
+		{ID: "codex-1", Provider: "codex", StoragePath: "/native/codex", Title: "codex"},
+	} {
+		if err := store.Upsert(sm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.KeepProviders([]string{"pi"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := store.Count(index.ListOpts{Provider: "pi"}); n != 1 {
+		t.Fatalf("enabled provider count = %d", n)
+	}
+	if n, _ := store.Count(index.ListOpts{Provider: "codex"}); n != 0 {
+		t.Fatalf("disabled provider remains indexed: %d", n)
+	}
+	// The source path is only a string in the index; pruning must never touch it.
+	if _, err := os.Stat("/native/codex"); !os.IsNotExist(err) {
+		t.Fatalf("test source unexpectedly exists: %v", err)
+	}
+}
+
 func TestStoreUpsertList(t *testing.T) {
 	dir := t.TempDir()
 	store, err := index.Open(filepath.Join(dir, "test.db"))

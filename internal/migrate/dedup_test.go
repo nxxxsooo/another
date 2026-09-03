@@ -22,7 +22,7 @@ func TestFindExistingMigration(t *testing.T) {
 	}
 	meta := model.NewMigrationMeta(conv)
 	path := filepath.Join(dir, "rollout-test-abc.jsonl")
-	line := `{"type":"agenthop_migration","data":` + mustJSON(meta) + `}`
+	line := `{"type":"another_migration","data":` + mustJSON(meta) + `}`
 	if err := os.WriteFile(path, []byte(line+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestFindDuplicateDoesNotScanProviderFolders(t *testing.T) {
 	}
 	meta := model.NewMigrationMeta(conv)
 	path := filepath.Join(sub, "rollout-2026-06-24-deadbeef.jsonl")
-	if err := os.WriteFile(path, []byte(`{"type":"agenthop_migration","data":`+mustJSON(meta)+`}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"type":"another_migration","data":`+mustJSON(meta)+`}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CLAUDE_CONFIG_DIR", dir)

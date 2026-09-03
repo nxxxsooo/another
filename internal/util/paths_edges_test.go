@@ -16,7 +16,7 @@ func TestScanJSONLEdgesFindsTailMeta(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		lines = append(lines, `{"type":"event_msg","n":`+string(rune('0'+i%10))+`}`)
 	}
-	lines = append(lines, `{"type":"agenthop_migration","data":{"originDigest":"abc123"}}`)
+	lines = append(lines, `{"type":"another_migration","data":{"originDigest":"abc123"}}`)
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

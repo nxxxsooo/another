@@ -18,6 +18,17 @@ func TestNormalizeID(t *testing.T) {
 	}
 }
 
+func TestNewEnabledKeepsOnlyConfiguredProviders(t *testing.T) {
+	reg := registry.NewEnabled([]string{"pi", "o2", "unknown"})
+	ids := reg.IDs()
+	if len(ids) != 2 || ids[0] != "opencode2" || ids[1] != "pi" {
+		t.Fatalf("enabled ids = %v", ids)
+	}
+	if _, err := reg.Get("codex"); err == nil {
+		t.Fatal("disabled provider remains addressable")
+	}
+}
+
 func TestRegistryProviders(t *testing.T) {
 	reg := registry.New()
 	if len(reg.All()) < 8 {

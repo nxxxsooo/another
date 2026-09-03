@@ -74,7 +74,7 @@ func (p *Provider) codexDefaults() (cliVersion, modelProvider string) {
 }
 
 // EnsureResumable registers an existing rollout in Codex's threads table so `codex resume <id>` works.
-// Legacy agenthop rollouts (pre-v2 format) are rewritten in place from conv before registration.
+// Legacy pre-v2 format rollouts are rewritten in place from conv before registration.
 func (p *Provider) EnsureResumable(conv *model.Conversation, ref provider.WriteResult) error {
 	if ref.SessionID == "" || ref.StoragePath == "" {
 		return fmt.Errorf("codex: missing session id or rollout path")
@@ -89,7 +89,7 @@ func (p *Provider) EnsureResumable(conv *model.Conversation, ref provider.WriteR
 	if project == "" {
 		project = conv.ProjectPath
 	}
-	// Only rewrite legacy agenthop rollouts: a v2-format file may since have
+	// Only rewrite legacy pre-v2 rollouts: a v2-format file may since have
 	// real codex turns appended after resume — rewriting would destroy them.
 	if rolloutNeedsV2Rewrite(ref.StoragePath) && rolloutIsAgenthopMigration(ref.StoragePath) {
 		if err := p.rewriteRolloutFile(ref.StoragePath, ref.SessionID, project, conv); err != nil {
@@ -121,10 +121,10 @@ func (p *Provider) EnsureResumable(conv *model.Conversation, ref provider.WriteR
 func rolloutIsAgenthopMigration(path string) bool {
 	return util.ScanJSONLEdges(path, 3, 8*1024, func(line []byte) bool {
 		_, ok := model.ParseMigrationMeta(line)
-		return ok || strings.Contains(string(line), `"type":"agenthop_migration"`) ||
-			strings.Contains(string(line), `"type": "agenthop_migration"`) ||
-			strings.Contains(string(line), `"type":"another_migration"`) ||
-			strings.Contains(string(line), `"type": "another_migration"`)
+		return ok || strings.Contains(string(line), `"type":"another_migration"`) ||
+			strings.Contains(string(line), `"type": "another_migration"`) ||
+			strings.Contains(string(line), `"type":"agenthop_migration"`) ||
+			strings.Contains(string(line), `"type": "agenthop_migration"`)
 	})
 }
 

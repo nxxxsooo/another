@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/charmbracelet/x/term"
+	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
@@ -33,6 +33,12 @@ type App struct {
 
 func NewApp() (*App, error) {
 	reg := registry.New()
+	settings, settingsErr := config.LoadSettings()
+	if settingsErr == nil {
+		reg = registry.NewEnabled(settings.EnabledProviders)
+	} else if !os.IsNotExist(settingsErr) {
+		return nil, fmt.Errorf("load config: %w", settingsErr)
+	}
 	idx, err := index.Open("")
 	if err != nil {
 		return nil, err
@@ -74,6 +80,12 @@ func (a *App) Root() *cobra.Command {
 				return tui.RunMigrate(a.Registry, a.Index, a.Migrate, id, from, mode)
 			}
 			if len(args) == 0 {
+				if !config.SettingsExist() && stdinIsTerminal() {
+					saved, err := a.runSetup(cmd.Context())
+					if err != nil || !saved {
+						return err
+					}
+				}
 				return tui.Run(a.Registry, a.Index, a.Migrate, mode)
 			}
 			if to == "" {
@@ -97,6 +109,7 @@ func (a *App) Root() *cobra.Command {
 	root.AddCommand(a.migrateCmd())
 	root.AddCommand(a.indexCmd())
 	root.AddCommand(a.providersCmd())
+	root.AddCommand(a.setupCmd())
 	root.AddCommand(a.exportCmd())
 	root.AddCommand(a.importCmd())
 	root.AddCommand(a.resumeCmd())
@@ -402,6 +415,49 @@ func (a *App) finishContentIndex(ctx context.Context, metadataOnly bool) error {
 	return nil
 }
 
+func (a *App) setupCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "setup",
+		Short: "Choose which coding agents another manages",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !stdinIsTerminal() {
+				return fmt.Errorf("setup requires an interactive terminal")
+			}
+			_, err := a.runSetup(cmd.Context())
+			return err
+		},
+	}
+}
+
+func (a *App) runSetup(ctx context.Context) (bool, error) {
+	all := registry.New()
+	counts, _ := a.Index.CountByProvider()
+	var initial []string
+	if settings, err := config.LoadSettings(); err == nil {
+		initial = settings.EnabledProviders
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("load config: %w", err)
+	}
+	enabled, saved, err := tui.RunSetup(all, counts, initial)
+	if err != nil || !saved {
+		return false, err
+	}
+	if err := config.SaveSettings(config.Settings{EnabledProviders: enabled}); err != nil {
+		return false, fmt.Errorf("save config: %w", err)
+	}
+	if err := a.Index.KeepProviders(enabled); err != nil {
+		return false, fmt.Errorf("prune index: %w", err)
+	}
+	a.Registry = registry.NewEnabled(enabled)
+	a.Migrate = &migrate.Engine{Registry: a.Registry, Index: a.Index}
+	if _, err := index.UpdateIncremental(ctx, a.Registry, a.Index, ""); err != nil {
+		return false, fmt.Errorf("index selected agents: %w", err)
+	}
+	fmt.Printf("Configured %d agents: %s\n", len(enabled), strings.Join(enabled, ", "))
+	return true, nil
+}
+
 func (a *App) providersCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "providers", Short: "List providers"}
 	doctor := &cobra.Command{
@@ -441,21 +497,10 @@ func availability(ok bool) string {
 }
 
 func providerCLIStatus(id string) string {
-	commands := map[string]string{
-		"claude-code": "claude",
-		"codex":       "codex",
-		"cursor":      "cursor-agent",
-		"opencode":    "opencode",
-		"opencode2":   "opencode2",
-		"commandcode": "commandcode",
-		"hermes":      "hermes",
-		"pi":          "pi",
-	}
-	name, ok := commands[id]
-	if !ok {
+	if registry.CLICommand(id) == "" {
 		return "n/a"
 	}
-	if _, err := exec.LookPath(name); err == nil {
+	if registry.CLIAvailable(id) {
 		return "ready"
 	}
 	return "missing"

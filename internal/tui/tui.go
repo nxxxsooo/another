@@ -428,7 +428,7 @@ func sourceChips(reg *registry.Registry, counts map[string]int) []sourceChip {
 	}
 	chips := []sourceChip{{id: "", name: "all", count: allCount}}
 	for _, p := range reg.All() {
-		if !p.Installed() {
+		if !p.Installed() && counts[p.ID()] == 0 {
 			continue
 		}
 		chips = append(chips, sourceChip{id: p.ID(), name: p.DisplayName(), count: counts[p.ID()]})
@@ -453,7 +453,7 @@ func (m modelState) currentSource() sourceChip {
 func targetItems(reg *registry.Registry, exclude string) []list.Item {
 	var items []list.Item
 	for _, p := range reg.All() {
-		if !p.Installed() || p.ID() == exclude {
+		if !registry.CLIAvailable(p.ID()) || p.ID() == exclude {
 			continue
 		}
 		items = append(items, targetItem{id: p.ID(), name: p.DisplayName()})

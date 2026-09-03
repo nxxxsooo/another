@@ -653,6 +653,55 @@ func (s *Store) CountByProvider() (map[string]int, error) {
 	return out, rows.Err()
 }
 
+// KeepProviders removes disabled providers from every user-visible index table.
+// Native session data is untouched; re-enabling a provider discovers it again.
+func (s *Store) KeepProviders(enabled []string) error {
+	keep := make(map[string]bool, len(enabled))
+	for _, id := range enabled {
+		keep[id] = true
+	}
+	rows, err := s.db.Query(`SELECT DISTINCT provider FROM session_sources UNION SELECT DISTINCT provider FROM sessions`)
+	if err != nil {
+		return err
+	}
+	var remove []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		if !keep[id] {
+			remove = append(remove, id)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range remove {
+		for _, query := range []string{
+			`DELETE FROM session_fts WHERE provider = ?`,
+			`DELETE FROM content_index WHERE provider = ?`,
+			`DELETE FROM sessions WHERE provider = ?`,
+			`DELETE FROM session_sources WHERE provider = ?`,
+			`DELETE FROM source_files WHERE provider = ?`,
+		} {
+			if _, err := tx.Exec(query, id); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(`DELETE FROM meta WHERE key = ?`, discoverCountMetaKey(id)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) SetMeta(key, value string) error {
 	_, err := s.db.Exec(`INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err

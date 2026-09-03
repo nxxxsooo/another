@@ -13,6 +13,10 @@ func TestCommandSurface(t *testing.T) {
 			t.Errorf("missing root --%s", flag)
 		}
 	}
+	setup, _, err := root.Find([]string{"setup"})
+	if err != nil || setup == root {
+		t.Fatalf("missing setup command: %v", err)
+	}
 	search, _, err := root.Find([]string{"search"})
 	if err != nil {
 		t.Fatal(err)
