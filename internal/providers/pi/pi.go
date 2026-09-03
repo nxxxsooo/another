@@ -506,6 +506,13 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 			"timestamp": unixMillis(m.Timestamp),
 		}
 		if role == "assistant" {
+			// These turns are reconstructed history, not responses from the
+			// currently selected model. Keep that provenance explicit while
+			// satisfying Pi's complete AssistantMessage persistence contract.
+			message["api"] = "pi-messages"
+			message["provider"] = "another"
+			message["model"] = "migration"
+			message["stopReason"] = "stop"
 			message["usage"] = zeroUsage()
 		}
 		chain.add(map[string]any{

@@ -258,6 +258,13 @@ func TestWriteGivesMigratedAssistantZeroUsage(t *testing.T) {
 		if message["role"] != "assistant" {
 			continue
 		}
+		for field, want := range map[string]string{
+			"api": "pi-messages", "provider": "another", "model": "migration", "stopReason": "stop",
+		} {
+			if message[field] != want {
+				t.Fatalf("assistant %s = %v, want %q", field, message[field], want)
+			}
+		}
 		usage, ok := message["usage"].(map[string]any)
 		if !ok {
 			t.Fatalf("migrated assistant message has no usage: %#v", message)
