@@ -58,6 +58,7 @@ func (p *Provider) DefaultPaths() []provider.PathSpec {
 
 func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]model.Summary, error) {
 	var out []model.Summary
+	gui := p.loadGUITitles()
 	err := filepath.WalkDir(p.sessionsRoot, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -69,14 +70,15 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 			return nil
 		}
 		if info, infoErr := d.Info(); infoErr == nil {
-			if opts.SkipSource != nil && opts.SkipSource(path, info.ModTime().UnixNano(), info.Size()) {
+			mtime, size := gui.fingerprint(info)
+			if opts.SkipSource != nil && opts.SkipSource(path, mtime, size) {
 				return nil
 			}
-			if opts.SkipSource == nil && opts.SkipUnchanged != nil && opts.SkipUnchanged(path, info.ModTime().Unix()) {
+			if opts.SkipSource == nil && opts.SkipUnchanged != nil && opts.SkipUnchanged(path, time.Unix(0, mtime).Unix()) {
 				return nil
 			}
 		}
-		sm, err := p.summarizeFile(path)
+		sm, err := p.summarizeFileWithGUI(path, gui)
 		if err != nil {
 			return err
 		}
@@ -97,7 +99,7 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 
 // SummarizeFile returns a summary for a single rollout JSONL (used by tests and tooling).
 func (p *Provider) SummarizeFile(path string) (model.Summary, error) {
-	return p.summarizeFile(path)
+	return p.summarizeFileWithGUI(path, p.loadGUITitles())
 }
 
 func sessionIDFromRollout(path string) string {
@@ -261,7 +263,7 @@ func codexAppendMessage(conv *model.Conversation, last *codexLoadedMessage, wire
 	conv.Messages = append(conv.Messages, model.Message{Role: mrole, Content: text, Timestamp: ts})
 }
 
-func (p *Provider) summarizeFile(path string) (model.Summary, error) {
+func (p *Provider) summarizeFileWithGUI(path string, gui guiTitles) (model.Summary, error) {
 	st, err := os.Stat(path)
 	if err != nil {
 		return model.Summary{}, err
@@ -318,6 +320,11 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 		last = st.ModTime()
 	}
 	title := picker.Title()
+	if guiTitle := strings.TrimSpace(gui.names[id]); guiTitle != "" {
+		title = guiTitle
+		kind = model.SessionKindRoot
+		parentID = ""
+	}
 	if title == "" {
 		if project != "" {
 			title = util.FirstUserSnippet(util.TildePath(project), 80)
@@ -326,11 +333,12 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 			title = "(no title)"
 		}
 	}
+	mtime, size := gui.fingerprint(st)
 	return model.Summary{
 		ID: id, Provider: ProviderID, ProjectPath: project, Title: title,
 		CreatedAt: first, UpdatedAt: last, MessageCount: msgCount,
 		StoragePath: path, Kind: kind, ParentID: parentID,
-		SourceMtime: st.ModTime().UnixNano(), SourceSize: st.Size(),
+		SourceMtime: mtime, SourceSize: size,
 		Migration: migration,
 	}, nil
 }
@@ -401,6 +409,11 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		}
 	}
 	conv.Title = picker.Title()
+	if guiTitle := strings.TrimSpace(p.loadGUITitles().names[conv.ID]); guiTitle != "" {
+		conv.Title = guiTitle
+		kind = model.SessionKindRoot
+		parentID = ""
+	}
 	if kind == model.SessionKindSubagent && parentID != "" && conv.ID == "" {
 		conv.ID = ref.ID
 	}

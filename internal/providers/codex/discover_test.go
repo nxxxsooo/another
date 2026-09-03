@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/CyrusSE/agenthop/internal/provider"
@@ -62,6 +63,48 @@ func TestSessionIDFromRolloutFilename(t *testing.T) {
 	}
 	if sums[0].ID != id {
 		t.Fatalf("id = %q, want %q", sums[0].ID, id)
+	}
+}
+
+func TestDiscoverUsesDesktopTitleAndTreatsItAsUserVisible(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	sessions := filepath.Join(home, "sessions")
+	if err := os.MkdirAll(sessions, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const id = "0197f8a1-2b3c-7d4e-8f90-abcdef123456"
+	path := filepath.Join(sessions, "rollout-2025-06-01T10-00-00-"+id+".jsonl")
+	content := strings.Join([]string{
+		`{"timestamp":"2025-06-01T10:00:00Z","type":"session_meta","payload":{"id":"` + id + `","cwd":"/project","source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent"}}}}}`,
+		`{"timestamp":"2025-06-01T10:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"<recommended_plugins> injected transport"}}`,
+		`{"timestamp":"2025-06-01T10:00:02Z","type":"event_msg","payload":{"type":"user_message","message":"real but long fallback title"}}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	indexRow := `{"id":"` + id + `","thread_name":"GUI short title","updated_at":"2025-06-01T11:00:00Z"}` + "\n"
+	if err := os.WriteFile(filepath.Join(home, "session_index.jsonl"), []byte(indexRow), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	p := codex.New()
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sums) != 1 {
+		t.Fatalf("summaries = %d, want 1", len(sums))
+	}
+	if sums[0].Title != "GUI short title" || sums[0].Kind != "root" || sums[0].ParentID != "" {
+		t.Fatalf("desktop title was not authoritative: %+v", sums[0])
+	}
+	conv, err := p.Load(context.Background(), provider.SessionRef{ID: id, StoragePath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conv.Title != "GUI short title" {
+		t.Fatalf("loaded title = %q, want GUI title", conv.Title)
 	}
 }
 
