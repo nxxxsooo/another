@@ -176,3 +176,37 @@ func TestResumeLineReplacesSummaryAfterMigration(t *testing.T) {
 		t.Fatal("footer did not surface the resume command")
 	}
 }
+
+// After a migration the tool must be able to land the user in the other agent.
+// Handing back a command to copy out of a full-screen UI is a dead end.
+func TestEnterAfterMigrationLaunchesTarget(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
+	m.lastResume = "cd '/tmp/project' && codex resume 'abc'"
+	m.layout()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(modelState)
+	if got.launch != m.lastResume {
+		t.Fatalf("launch = %q, want the resume command", got.launch)
+	}
+	if cmd == nil {
+		t.Fatal("enter did not quit the program to hand over the terminal")
+	}
+	if got.overlay != overlayNone {
+		t.Fatalf("enter reopened an overlay instead of launching: %d", got.overlay)
+	}
+}
+
+// Escape keeps browsing without launching, so a finished migration does not
+// trap the session on one screen.
+func TestEscapeAfterMigrationResumesBrowsing(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 80, 24
+	m.lastResume = "cd '/tmp' && codex resume 'abc'"
+	m.layout()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	got := updated.(modelState)
+	if got.lastResume != "" || got.launch != "" {
+		t.Fatalf("escape did not return to browsing: resume=%q launch=%q", got.lastResume, got.launch)
+	}
+}

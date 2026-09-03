@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/CyrusSE/agenthop/internal/index"
@@ -242,11 +243,14 @@ type modelState struct {
 	contextMode     migrate.ContextMode
 	err             string
 	status          string
-	width           int
-	height          int
-	ctx             context.Context
-	cancel          context.CancelFunc
-	previewContent  string
+	// launch is the resume command the caller should exec after the program
+	// exits. Running it from inside bubbletea would fight over the terminal.
+	launch         string
+	width          int
+	height         int
+	ctx            context.Context
+	cancel         context.CancelFunc
+	previewContent string
 }
 
 func Run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, contextMode migrate.ContextMode) error {
@@ -305,8 +309,26 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		m.overlay = overlayTarget
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
-	_, runErr := p.Run()
-	return runErr
+	final, runErr := p.Run()
+	if runErr != nil {
+		return runErr
+	}
+	if done, ok := final.(modelState); ok && done.launch != "" {
+		return execResume(done.launch)
+	}
+	return nil
+}
+
+// execResume replaces this process with the target agent, so the user lands in
+// it directly instead of copying a command out of a dead screen. The command
+// carries a cd, so it needs a shell.
+func execResume(command string) error {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	fmt.Fprintln(os.Stderr, command)
+	return syscall.Exec(shell, []string{shell, "-c", command}, os.Environ())
 }
 
 // newBareList strips every chrome row bubbles adds by default. The browser
@@ -729,6 +751,11 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	case "esc":
 		m.err = ""
+		if m.lastResume != "" {
+			m.lastResume = ""
+			m.status = ""
+			return m, nil
+		}
 		if m.searchQuery != "" {
 			m.searchQuery = ""
 			m.searchInput.SetValue("")
@@ -737,6 +764,15 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m, nil
 	case "enter":
+		// A finished migration owns enter: the point of the tool is to land in
+		// the other agent, not to hand back a command to paste.
+		if m.lastResume != "" {
+			m.launch = m.lastResume
+			if m.cancel != nil {
+				m.cancel()
+			}
+			return m, tea.Quit
+		}
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			sel := it
 			m.selected = &sel
@@ -936,6 +972,9 @@ func (m modelState) help() string {
 	}
 	if m.searching {
 		return " enter 搜索 · esc 取消"
+	}
+	if m.lastResume != "" {
+		return " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出"
 	}
 	return " ←→ 切来源 · ↑↓ 选会话 · enter 选去向 · space 预览 · / 搜索 · r 刷新 · q 退出"
 }
