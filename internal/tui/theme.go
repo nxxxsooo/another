@@ -45,13 +45,17 @@ var providerColors = map[string]lipgloss.Color{
 }
 
 var (
-	accentStyle  = lipgloss.NewStyle().Bold(true).Foreground(punkTheme.primary)
-	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(punkTheme.secondary)
-	mutedStyle   = lipgloss.NewStyle().Foreground(punkTheme.textMostSubtle)
-	okStyle      = lipgloss.NewStyle().Foreground(punkTheme.success)
-	errStyle     = lipgloss.NewStyle().Foreground(punkTheme.danger)
-	paneStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(punkTheme.border).Padding(0, 1)
-	modalStyle   = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(punkTheme.borderFocus).Background(punkTheme.surface).Padding(1, 3)
+	accentStyle = lipgloss.NewStyle().Bold(true).Foreground(punkTheme.primary)
+	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(punkTheme.secondary)
+	mutedStyle  = lipgloss.NewStyle().Foreground(punkTheme.textMostSubtle)
+	okStyle     = lipgloss.NewStyle().Foreground(punkTheme.success)
+	errStyle    = lipgloss.NewStyle().Foreground(punkTheme.danger)
+	paneStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(punkTheme.border).Padding(0, 1)
+	// Do not paint one inherited background behind nested styled content.
+	// Provider labels emit ANSI resets, which also reset the inherited background
+	// and leave black rectangles in Ghostty. Terminal black + a bright frame is
+	// both stable and closer to the sparse Crush/Pantera visual language.
+	modalStyle   = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(punkTheme.borderFocus).Padding(1, 3)
 	footerStyle  = lipgloss.NewStyle().Foreground(punkTheme.textMostSubtle)
 	chipActive   = lipgloss.NewStyle().Bold(true).Foreground(punkTheme.text).Background(punkTheme.primary).Padding(0, 1)
 	chipMuted    = lipgloss.NewStyle().Foreground(punkTheme.textSubtle).Padding(0, 1)
