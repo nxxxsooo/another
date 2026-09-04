@@ -2,6 +2,7 @@ package migrate_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -17,7 +18,11 @@ import (
 // verification, migration bookkeeping, provider discovery, and local indexing.
 func TestImportIntoAgyUsesVerifiedNativePath(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("AGY_HOME", filepath.Join(root, "agy"))
+	agyHome := filepath.Join(root, "agy")
+	if err := os.MkdirAll(agyHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGY_HOME", agyHome)
 	idx, err := index.Open(filepath.Join(root, "index.db"))
 	if err != nil {
 		t.Fatal(err)
