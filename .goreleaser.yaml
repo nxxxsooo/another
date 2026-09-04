@@ -17,8 +17,50 @@ builds:
       - -s -w
       - -X github.com/nxxxsooo/another/internal/cli.version={{.Version}}
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+# Casks, because goreleaser deprecated `brews`. Casks are no longer macOS-only:
+# Homebrew ships Linux implementations of caskroom, quarantine, installer, and
+# trash, and Cask::DSL includes OnSystem::MacOSAndLinux, so the generated
+# on_macos/on_linux blocks both resolve. Homebrew therefore covers every
+# platform this project builds for.
+#
+# GITHUB_TOKEN cannot write to a repository outside this one, so the tap needs
+# its own fine-grained token with contents:write on the tap alone.
+#
+# Verified with `goreleaser check`, `brew style --cask`, and `brew audit --cask`
+# against a scratch tap. Deprecations surface only at runtime, never in the
+# JSON schema, so `goreleaser check` is the gate before every release.
+homebrew_casks:
+  - name: another
+    repository:
+      owner: nxxxsooo
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: "https://github.com/nxxxsooo/another"
+    # Under 80 characters, or `brew style` flags Cask/Desc.
+    description: "Browse and manage coding-agent sessions, or move one into another agent"
+    license: MIT
+    binaries: [another]
+    hooks:
+      post:
+        # These binaries are unsigned, so macOS quarantines them on download and
+        # Gatekeeper kills the first run. Strip the attribute the way Homebrew
+        # documents for unsigned casks.
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status.zero?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/another"]
+          end
+    zap:
+      trash:
+        # Only on `brew uninstall --zap`. These are the two directories another
+        # creates; native agent sessions are never touched. Alphabetical, or
+        # `brew style` flags Cask/ArrayAlphabetization.
+        - "~/.cache/another"
+        - "~/.config/another"
+
 checksum:
   name_template: checksums.txt
 changelog:

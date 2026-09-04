@@ -38,16 +38,38 @@ store, so you open it there and keep going.
 macOS and Linux:
 
 ```bash
+# Homebrew
+brew install nxxxsooo/tap/another
+
+# Install script
 curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash
 ```
 
-Or install from source with Go 1.24+:
+<details>
+<summary><strong>From source</strong></summary>
+
+Go 1.24+:
 
 ```bash
 go install github.com/nxxxsooo/another/cmd/another@latest
 ```
 
-Make sure `~/.local/bin` or your Go bin directory is on `PATH`, then run:
+</details>
+
+<details>
+<summary><strong>Manual download</strong></summary>
+
+Grab a `darwin`/`linux` `amd64`/`arm64` tarball from [Releases](https://github.com/nxxxsooo/another/releases), verify it against `checksums.txt`, and put the binary on your `PATH`:
+
+```bash
+shasum -a 256 -c checksums.txt --ignore-missing
+tar -xzf another_*_darwin_arm64.tar.gz
+install -m 755 another ~/.local/bin/another
+```
+
+</details>
+
+With `~/.local/bin` or your Go bin directory on `PATH`, run:
 
 ```bash
 another
@@ -57,19 +79,13 @@ The first run opens a Charmtone setup screen. Use `↑↓` to move, `Space` to s
 
 ### Update
 
-Re-run the install command:
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash
+brew upgrade another                     # Homebrew
+curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash   # script
+go install github.com/nxxxsooo/another/cmd/another@latest                                      # source
 ```
 
-Source installs update with:
-
-```bash
-go install github.com/nxxxsooo/another/cmd/another@latest
-```
-
-Updates are manual; installed binaries do not follow the repository automatically.
+Outside Homebrew, updates are manual; installed binaries do not follow the repository.
 
 ## Use the TUI
 
