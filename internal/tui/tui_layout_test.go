@@ -48,7 +48,7 @@ func layoutTestModel() modelState {
 
 func TestViewsFitTerminal(t *testing.T) {
 	for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
-		for _, ov := range []int{overlayNone, overlaySource, overlayTarget, overlayPreview, overlayDelete} {
+		for _, ov := range []int{overlayNone, overlaySource, overlayTarget, overlayPreview, overlayDelete, overlayBatchTitle} {
 			m := layoutTestModel()
 			m.overlay = ov
 			updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})

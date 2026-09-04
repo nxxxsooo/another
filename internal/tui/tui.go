@@ -43,6 +43,7 @@ const (
 	overlayPreview
 	overlayDelete
 	overlayRename
+	overlayBatchTitle
 )
 
 type sessionItem struct {
@@ -291,6 +292,19 @@ type modelState struct {
 	// rather than list index: filtering and page reloads rebuild the rows, and
 	// an index-keyed selection would silently follow a different session.
 	marked map[string]bool
+
+	// batch* carries the bulk-rename flow. Items keep mark order, results
+	// stream in out of order, and total counts both from the moment the
+	// engine starts. The channel and cancel func are nil outside a run.
+	batchItems      []model.Summary
+	batchByID       map[string]model.Summary
+	batchResults    []titler.BatchResult
+	batchTotal      int
+	batchCh         <-chan titler.BatchResult
+	batchCancel     context.CancelFunc
+	batchRunning    bool
+	batchCancelling bool
+	batchExpanded   bool
 
 	selected        *sessionItem
 	loading         bool
@@ -851,6 +865,62 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m, cmd = dispatchPageLoad(m)
 		return m, cmd
+	case batchReadyMsg:
+		m.batchResults = append(m.batchResults, msg.frozen...)
+		if len(msg.items) == 0 {
+			m.finalizeBatch()
+			return m, nil
+		}
+		parent := m.ctx
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, cancel := context.WithCancel(parent)
+		m.batchCancel = cancel
+		m.batchTotal = len(m.batchResults) + len(msg.items)
+		m.batchCh = titler.SuggestBatch(ctx, m.titleCfg, msg.items, titler.DefaultConcurrency)
+		m.batchRunning = true
+		return m, batchNextCmd(m.batchCh)
+	case batchResultMsg:
+		m.batchResults = append(m.batchResults, msg.res)
+		if m.batchCh != nil && len(m.batchResults) < m.batchTotal {
+			return m, batchNextCmd(m.batchCh)
+		}
+		m.finalizeBatch()
+		return m, nil
+	case batchFinishedMsg:
+		if !m.batchRunning {
+			return m, nil
+		}
+		m.finalizeBatch()
+		return m, nil
+	case batchAppliedMsg:
+		for _, id := range msg.appliedIDs {
+			delete(m.marked, id)
+		}
+		m.overlay = overlayNone
+		m.resetBatch()
+		switch {
+		case msg.applied > 0 && msg.failed > 0:
+			detail := msg.detail
+			if detail == "" {
+				detail = "部分行失败"
+			}
+			m.err = fmt.Sprintf("已重命名 %d 条，失败 %d 条：%s", msg.applied, msg.failed, detail)
+		case msg.applied > 0:
+			m.status = okStyle.Render(fmt.Sprintf("已重命名 %d 条", msg.applied))
+		case msg.failed > 0:
+			detail := msg.detail
+			if detail == "" {
+				detail = "全部失败"
+			}
+			m.err = fmt.Sprintf("批量重命名失败 %d 条：%s", msg.failed, detail)
+		default:
+			m.status = "没有应用任何标题变更"
+		}
+		var cmd tea.Cmd
+		m, cmd = dispatchPageLoad(m)
+		return m, cmd
 	case deleteDoneMsg:
 		m.loading = false
 		m.overlay = overlayNone
@@ -985,6 +1055,10 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.preview, cmd = m.preview.Update(msg)
 	case overlayRename:
 		m.renameInput, cmd = m.renameInput.Update(msg)
+	case overlayBatchTitle:
+		// The batch overlay owns its keys; ticks and cursor blinks die here
+		// instead of leaking into the session list underneath.
+		return m, nil
 	default:
 		m.sessions, cmd = m.sessions.Update(msg)
 	}
@@ -1019,6 +1093,9 @@ func (m modelState) updateSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.overlay == overlayBatchTitle {
+		return m.updateBatchOverlay(msg)
+	}
 	if m.overlay == overlayRename {
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -1357,6 +1434,10 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		}
 		return m, nil
+	case "ctrl+t":
+		// The batch flow previews first and renames only on confirmation, so
+		// opening it never spends a model call by itself.
+		return m.startBatch()
 	case "ctrl+d":
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
@@ -1465,6 +1546,9 @@ func (m modelState) View() string {
 		box := modalStyle.Render(titleStyle.Render("重命名会话") + "\n" +
 			mutedStyle.Render("写回来源 agent 的原生标题") + "\n\n" + m.renameInput.View() +
 			m.suggestionLine())
+		pane = overlay(pane, box, m.width)
+	case overlayBatchTitle:
+		box := modalStyle.Render(m.batchView())
 		pane = overlay(pane, box, m.width)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, pane, footer)
@@ -1628,6 +1712,11 @@ func (m modelState) help() string {
 			return " 输入新标题 · tab 用建议 · enter 保存 · esc 取消"
 		}
 		return " 输入新标题 · enter 保存 · esc 取消"
+	case overlayBatchTitle:
+		if m.batchRunning {
+			return " 生成中 · esc 取消剩余任务"
+		}
+		return " enter 应用变更 · e 展开其余 · esc 关闭"
 	}
 	if m.searching {
 		return " enter 搜索 · esc 取消"
@@ -1638,7 +1727,7 @@ func (m modelState) help() string {
 	if m.lastArchived != nil {
 		return " A 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览"
 	}
-	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · A 归档 · ctrl+d 删除 · / 搜索"
+	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · x 标记 · ctrl+t 批量 · A 归档 · ctrl+d 删除 · / 搜索"
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across
