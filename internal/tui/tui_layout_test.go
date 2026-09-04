@@ -25,9 +25,11 @@ import (
 func layoutTestModel() modelState {
 	sm := model.Summary{ID: "session", Provider: "codex", Title: "A useful title", ProjectPath: "/tmp/project", MessageCount: 12}
 	item := sessionItem{summary: sm, providerLbl: "Codex"}
+	marked := map[string]bool{}
 	return modelState{
 		reg:      registry.New(),
-		sessions: newSessionList([]list.Item{item}),
+		marked:   marked,
+		sessions: newSessionList([]list.Item{item}, marked),
 		targets:  newTargetList([]list.Item{targetItem{id: "claude-code", name: "Claude Code"}}),
 		sources: []sourceChip{
 			{id: "", name: "all", count: 3},
@@ -543,5 +545,80 @@ func TestEscapeAfterMigrationResumesBrowsing(t *testing.T) {
 	got := updated.(modelState)
 	if got.lastResume != "" || got.launch != "" {
 		t.Fatalf("escape did not return to browsing: resume=%q launch=%q", got.lastResume, got.launch)
+	}
+}
+
+func markKey(r rune) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}} }
+
+func TestXTogglesTheBatchMark(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+
+	updated, _ := m.Update(markKey('x'))
+	got := updated.(modelState)
+	if !got.marked["session"] {
+		t.Fatalf("x did not mark the row: %v", got.marked)
+	}
+	if !strings.Contains(got.View(), "✓") {
+		t.Fatal("a marked row must render its mark")
+	}
+
+	updated, _ = got.Update(markKey('x'))
+	if again := updated.(modelState); again.marked["session"] {
+		t.Fatalf("x did not unmark the row: %v", again.marked)
+	}
+}
+
+func TestSpaceStillOpensPreviewInsteadOfMarking(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+	updated, cmd := m.Update(markKey(' '))
+	got := updated.(modelState)
+	if len(got.marked) != 0 {
+		t.Fatalf("space must not mark; it is the preview key: %v", got.marked)
+	}
+	if !got.loading || cmd == nil {
+		t.Fatalf("space no longer opens the preview: loading=%v cmd=%v", got.loading, cmd)
+	}
+}
+
+func TestAMarksEveryVisibleRowAndClearsOnRepeat(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+
+	updated, _ := m.Update(markKey('a'))
+	got := updated.(modelState)
+	if len(got.marked) != len(got.sessions.Items()) {
+		t.Fatalf("a did not mark every visible row: %d of %d", len(got.marked), len(got.sessions.Items()))
+	}
+
+	updated, _ = got.Update(markKey('a'))
+	if again := updated.(modelState); len(again.marked) != 0 {
+		t.Fatalf("a did not clear a fully marked page: %v", again.marked)
+	}
+}
+
+func TestMarksSurviveAPageReload(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+	updated, _ := m.Update(markKey('x'))
+	got := updated.(modelState)
+
+	// A filter change or an index refresh rebuilds the rows. An index-keyed
+	// selection would follow whatever now sits in that position instead.
+	sm := model.Summary{ID: "other", Provider: "pi", Title: "Another session", ProjectPath: "/tmp/project"}
+	got.sessions.SetItems([]list.Item{
+		sessionItem{summary: sm, providerLbl: "pi"},
+		sessionItem{summary: model.Summary{ID: "session", Provider: "codex", Title: "A useful title", ProjectPath: "/tmp/project"}, providerLbl: "Codex"},
+	})
+	if !got.marked["session"] {
+		t.Fatalf("the mark did not survive a page reload: %v", got.marked)
+	}
+	if got.marked["other"] {
+		t.Fatal("the mark moved to a different session")
 	}
 }

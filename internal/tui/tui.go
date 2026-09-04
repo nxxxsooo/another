@@ -70,7 +70,10 @@ func (i sessionItem) FilterValue() string {
 
 // sessionDelegate renders one session per line so the title, the only thing
 // that identifies a session, gets every column the terminal can spare.
-type sessionDelegate struct{}
+// sessionDelegate carries the batch selection by reference so the browser can
+// mutate it in place. The list is rebuilt on every page load and the delegate
+// is not, so the map must never be reassigned after construction.
+type sessionDelegate struct{ marked map[string]bool }
 
 func (sessionDelegate) Height() int                         { return 1 }
 func (sessionDelegate) Spacing() int                        { return 0 }
@@ -81,10 +84,18 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		return
 	}
 	width := max(20, m.Width())
-	cursor := "  "
+	cursor := " "
 	if index == m.Index() {
-		cursor = "› "
+		cursor = "›"
 	}
+	// The mark gets its own column rather than replacing the cursor, so a
+	// marked row still shows where the cursor is, and so the row width never
+	// changes when a batch selection starts or ends.
+	mark := " "
+	if d.marked[it.summary.ID] {
+		mark = accentStyle.Render("✓")
+	}
+	gutter := cursor + mark + " "
 
 	rel := util.FormatRelative(it.summary.UpdatedAt)
 	lbl := it.providerLbl
@@ -107,7 +118,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	if width >= 92 {
 		projW = min(28, width/4)
 	}
-	fixed := 2 + timeW + provW + msgW + 3
+	fixed := 3 + timeW + provW + msgW + 3
 	if projW > 0 {
 		fixed += projW + 1
 	}
@@ -124,7 +135,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		provText = lipgloss.NewStyle().Foreground(color).Render(provText)
 	}
 
-	row := cursor +
+	row := gutter +
 		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + " " +
 		provText + " " + title + " "
 	if projW > 0 {
@@ -276,6 +287,11 @@ type modelState struct {
 	suggestErr string
 	suggestFor string
 
+	// marked holds the session IDs chosen for a batch action, keyed by ID
+	// rather than list index: filtering and page reloads rebuild the rows, and
+	// an index-keyed selection would silently follow a different session.
+	marked map[string]bool
+
 	selected        *sessionItem
 	loading         bool
 	indexing        bool
@@ -328,7 +344,9 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 
 	counts, _ := idx.CountByProvider()
 
-	sessList := newSessionList(nil)
+	// One map instance is shared with the delegate; see sessionDelegate.
+	marked := map[string]bool{}
+	sessList := newSessionList(nil, marked)
 	sources := sourceChips(reg, counts)
 	sourceList := newSourceList(sourceItems(sources))
 	targetList := newTargetList(nil)
@@ -358,6 +376,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	m := modelState{
 		reg: reg, idx: idx, engine: engine,
 		titleCfg: titleCfg,
+		marked:   marked,
 		sessions: sessList, sourceList: sourceList, targets: targetList,
 		preview: vp, searchInput: search, renameInput: rename, spinner: sp,
 		sources: sources, cwd: cwd,
@@ -450,8 +469,17 @@ func newBareList(items []list.Item, delegate list.ItemDelegate, w, h int) list.M
 	return l
 }
 
-func newSessionList(items []list.Item) list.Model {
-	return newBareList(items, sessionDelegate{}, 72, 20)
+func newSessionList(items []list.Item, marked map[string]bool) list.Model {
+	return newBareList(items, sessionDelegate{marked: marked}, 72, 20)
+}
+
+// markStatus describes the batch selection, and yields the status line back to
+// ordinary messages once nothing is marked.
+func (m modelState) markStatus() string {
+	if len(m.marked) == 0 {
+		return ""
+	}
+	return mutedStyle.Render(fmt.Sprintf("已标记 %d 个会话  ·  x 标记 · a 全选 · ctrl+t 批量命名", len(m.marked)))
 }
 
 func newSourceList(items []list.Item) list.Model {
@@ -1258,6 +1286,42 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.err = ""
 			return m, tea.Batch(m.spinner.Tick, archiveSessionCmd(m.ctx, m.reg, m.idx, it.summary, true))
 		}
+		return m, nil
+	case "x":
+		// x rather than space: space already opens the preview, which is the
+		// primary browsing action and must keep it.
+		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
+			if m.marked[it.summary.ID] {
+				delete(m.marked, it.summary.ID)
+			} else {
+				m.marked[it.summary.ID] = true
+			}
+			m.status = m.markStatus()
+		}
+		return m, nil
+	case "a":
+		// Toggling on the whole visible page keeps one key for select-all and
+		// clear-all; A is already the archive undo.
+		items := m.sessions.Items()
+		allMarked := len(items) > 0
+		for _, li := range items {
+			if it, ok := li.(sessionItem); ok && !m.marked[it.summary.ID] {
+				allMarked = false
+				break
+			}
+		}
+		for _, li := range items {
+			it, ok := li.(sessionItem)
+			if !ok {
+				continue
+			}
+			if allMarked {
+				delete(m.marked, it.summary.ID)
+			} else {
+				m.marked[it.summary.ID] = true
+			}
+		}
+		m.status = m.markStatus()
 		return m, nil
 	case "ctrl+r":
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {

@@ -36,9 +36,11 @@ func TestRenderProbe(t *testing.T) {
 		items = append(items, sessionItem{summary: s, providerLbl: registry.DisplayName(reg, s.Provider)})
 	}
 	sources := sourceChips(reg, counts)
+	marked := map[string]bool{}
 	m := modelState{
 		reg: reg, idx: idx,
-		sessions:      newSessionList(items),
+		marked:        marked,
+		sessions:      newSessionList(items, marked),
 		sourceList:    newSourceList(sourceItems(sources)),
 		targets:       newTargetList(targetItems(reg, "pi")),
 		sources:       sources,
