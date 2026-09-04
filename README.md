@@ -19,15 +19,19 @@
   <img src="docs/assets/tui-preview.svg" width="100%" alt="another TUI showing sessions from several coding agents and the target picker">
 </p>
 
+You are deep in a session when the model runs out of quota, or the work turns
+out to want a different one. The usual escape is to summarize what happened and
+paste it somewhere else, which throws away the conversation and asks you to
+re-explain it. `another` moves the session itself into the other agent's own
+store, so you open it there and keep going.
+
 ## Features
 
 - **Native sessions:** resumes in the target agent's own format — not a pasted summary.
 - **Eight agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, and Hermes.
-- **One keyboard:** `Enter` resumes, `→` migrates, `Space` previews, `Ctrl+R` renames, `A` archives, and `Ctrl+D` deletes.
-- **Verified migration:** reloads every write, compares a content digest, and rolls back on mismatch.
-- **Real session management:** search, rename, archive, delete, export, and import from one local browser.
-- **Local by default:** reads native local stores; the private search index stays under `~/.cache/another/`.
-- **Fast after first scan:** SQLite metadata and FTS indexes avoid reparsing unchanged sessions.
+- **One screen:** browse, search, preview, rename, archive, delete, and migrate without leaving the list.
+- **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
+- **Local and fast:** reads native local stores; the private SQLite index under `~/.cache/another/` skips unchanged sessions on re-scan.
 
 ## Install
 
@@ -87,17 +91,6 @@ q         quit
 
 Migration shows the exact resume command first. Press `Enter` to hand the terminal to the target agent, `c` to copy the command, or `Esc` to keep browsing.
 
-Quitting leaves the wordmark in your scrollback. Handing the terminal to another agent does not — that would be noise in front of the agent about to start.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/tui-goodbye-static.png">
-    <img src="docs/assets/tui-goodbye.gif" width="500" alt="the another wordmark printed on exit; its upper half slips two cells and turns magenta, then returns to violet and to register">
-  </picture>
-</p>
-
-Set `ANOTHER_NO_MOTION=1` for the still frame. Pipes, `NO_COLOR`, `CI`, and terminals too short to redraw in already get it.
-
 ## Agents
 
 OpenCode and OpenCode 2 are deliberately separate. They use different commands, databases, schemas, and service lifecycles.
@@ -122,12 +115,16 @@ another providers
 another providers doctor
 ```
 
+## AI title suggestions
+
+When setup names an agent, `Ctrl+R` opens the rename box on the original title and asks that agent, in the background, for one title shaped `MMDD｜类型｜主题`, the contract from the `title-formatter` skill. The date comes from the indexed creation time converted to `Asia/Shanghai`, never from the model. Suggestions that miss the contract, arrive after the box closes, or fail outright are discarded without touching what you typed. The agent runs in a throwaway directory, so your project's own instructions never reach it.
+
 ## CLI
 
 ```bash
 # Browse and search
-another list [--provider ID] [--cwd] [--limit N] [--refresh]
-another search "query" [--provider ID] [--cwd]
+another list [--provider ID] [--project PATH] [--cwd] [--limit N] [--json] [--refresh]
+another search "query" [--provider ID] [--project PATH] [--cwd] [--limit N] [--json]
 another show <session-id> [--provider ID] [--limit N]
 
 # Move a session
@@ -137,13 +134,15 @@ another resume <session-id> --to <provider> [--from ID]
 
 # Portable backup
 another export <session-id> -o session.another.json
-another import session.another.json --to <provider> -y
+another import session.another.json --to <provider> [--context MODE] [--dry-run] -y
 
 # Configuration and index
 another setup
 another index update
 another index rebuild
 ```
+
+`--json` makes `list` and `search` emit machine-readable records. Child agent sessions are hidden by default; `--include-subagents` includes them.
 
 Context modes:
 
@@ -170,10 +169,6 @@ OpenCode and OpenCode 2 writes use their official import/API surfaces. Codex Des
 - Title suggestions borrow an agent CLI you already authenticated; `another` stores no API keys of its own.
 - A suggestion is only ever a suggestion: it is shown next to the rename field, and the rename still needs `Tab` and `Enter`.
 
-### AI title suggestions
-
-When setup names an agent, `Ctrl+R` opens the rename box on the original title and asks that agent, in the background, for one title shaped `MMDD｜类型｜主题`, the contract from the `title-formatter` skill. The date comes from the indexed creation time converted to `Asia/Shanghai`, never from the model. Suggestions that miss the contract, arrive after the box closes, or fail outright are discarded without touching what you typed. The agent runs in a throwaway directory, so your project's own instructions never reach it.
-
 ## Development
 
 ```bash
@@ -185,19 +180,14 @@ go test -race ./...
 go vet ./...
 ```
 
-Regenerate README artwork:
+Regenerate artwork. The rasterized wordmark is checked in, so an ordinary build
+never needs a font installed:
 
 ```bash
-./scripts/render-readme-assets.py
-python3 ./scripts/render-motion-banner.py  # requires Pillow and ffmpeg
-python3 ./scripts/render-goodbye-gif.py    # requires Pillow
-```
-
-Regenerate the TUI wordmark itself only when its typeface or size changes; the
-rasterized face is checked in, so building never needs the font:
-
-```bash
-python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # requires Pillow and JetBrains Mono ExtraBold
+./scripts/render-readme-assets.py                                  # TUI preview SVG
+python3 ./scripts/render-motion-banner.py                          # identity banner; Pillow and ffmpeg
+python3 ./scripts/render-goodbye-gif.py                            # goodbye GIF; Pillow
+python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # wordmark; Pillow and JetBrains Mono ExtraBold
 ```
 
 ## The name
@@ -213,3 +203,15 @@ The name is also a quiet nod to [*Another*](https://www.pa-works.jp/works/anothe
 ## License
 
 [MIT](LICENSE)
+
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/tui-goodbye-static.png">
+    <img src="docs/assets/tui-goodbye.gif" width="500" alt="the another wordmark printed on exit; its upper half slips two cells and turns magenta, then returns to violet and to register">
+  </picture>
+</p>
+
+<p align="center">
+  <sub>Quitting leaves this in your scrollback. Handing the terminal to another agent does not.<br>
+  <code>ANOTHER_NO_MOTION=1</code>, <code>NO_COLOR</code>, <code>CI</code>, and pipes get the still frame.</sub>
+</p>
