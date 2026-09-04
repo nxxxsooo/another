@@ -39,14 +39,17 @@ Use `docs/assets/another-motion-static.jpg` when motion is unsupported or reduce
 |---|---:|---|
 | Ground | `#0A0A0A` | Primary dark field |
 | Panel | `#141414` | Terminal and banner structure |
-| Rule | `#2D2D38` | Borders and dividers |
-| Foreground | `#F4F4F5` | Primary text |
+| Rule | `#2D2D38` | Borders, dividers, and selected neutral actions |
+| Foreground | `#F4F4F5` | Primary text; dense content stays neutral |
 | Muted | `#7E7E8F` | Context and supporting copy |
-| Violet | `#6B50FF` | Stable first identity state and primary action |
-| Mint | `#29D398` / luminous source green | Stable second identity state and success |
-| Magenta | `#FF60FF` | Focus and transient motion channel |
-| Blue | `#62D8FF` | Transient motion channel and information |
+| Source violet | `#6B50FF` | Brand, current state, and source selection |
+| Target mint | `#00FFB2` | Destination, migration, and success |
+| Intersection | `#68FFD6` | Current row and the meeting of source and target |
+| Magenta | `#FF60FF` | Transient campaign motion only; never stable TUI focus |
+| Blue | `#62D8FF` | Information and transient motion channel |
 | Coral | `#FF6B6B` | Destructive or warning signal |
+
+The TUI uses the violet–mint pair as directional grammar, not decorative color blocking. Source overlays and controls are violet; destination overlays and controls are mint; preview, rename, setup, and ordinary confirmation surfaces stay neutral. Provider colors appear only on their short labels, while titles remain foreground or intersection ink for fast scanning.
 
 ## Typography
 

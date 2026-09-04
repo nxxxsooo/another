@@ -1386,10 +1386,10 @@ func (m modelState) View() string {
 
 	switch m.overlay {
 	case overlaySource:
-		box := modalStyle.Render(titleStyle.Render("选择来源") + "\n" + mutedStyle.Render("会话来自哪个 agent？") + "\n\n" + m.sourceList.View())
+		box := sourceModalStyle.Render(accentStyle.Render("选择来源") + "\n" + mutedStyle.Render("会话来自哪个 agent？") + "\n\n" + m.sourceList.View())
 		pane = overlay(pane, box, m.width)
 	case overlayTarget:
-		box := modalStyle.Render(titleStyle.Render("选择去向") + "\n" + mutedStyle.Render("把这条会话带到哪个 agent？") + "\n\n" + m.targets.View())
+		box := targetModalStyle.Render(okStyle.Render("选择去向") + "\n" + mutedStyle.Render("把这条会话带到哪个 agent？") + "\n\n" + m.targets.View())
 		pane = overlay(pane, box, m.width)
 	case overlayPreview:
 		box := modalStyle.Render(m.preview.View())
@@ -1506,9 +1506,9 @@ func (m modelState) headerView() string {
 	if sourceName == "all" {
 		sourceName = "全部"
 	}
-	flow := mutedStyle.Render("← 来源 ") + chipActive.Render(sourceName) +
+	flow := mutedStyle.Render("← 来源 ") + sourceChipStyle.Render(sourceName) +
 		mutedStyle.Render("   │   ") + fmt.Sprintf("%d 个会话", m.totalSessions) +
-		mutedStyle.Render("   │   去向 →")
+		mutedStyle.Render("   │   ") + targetChipStyle.Render("去向 →")
 	lines := []string{ansi.Truncate(brand+"  "+flow, m.width, "…")}
 	if m.searching {
 		lines = append(lines, m.searchInput.View())

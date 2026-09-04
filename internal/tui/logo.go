@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -86,7 +87,7 @@ func rgbOf(k charmtone.Key) (r, g, b int) {
 func mix(from, to charmtone.Key, t float64) lipgloss.Color {
 	fr, fg, fb := rgbOf(from)
 	tr, tg, tb := rgbOf(to)
-	at := func(a, b int) int { return a + int(float64(b-a)*t+0.5) }
+	at := func(a, b int) int { return a + int(math.Round(float64(b-a)*t)) }
 	return lipgloss.Color(fmt.Sprintf("#%02X%02X%02X", at(fr, tr), at(fg, tg), at(fb, tb)))
 }
 
@@ -131,7 +132,7 @@ func shiftRow(row string, off, width int) string {
 func renderFrame(slip int, tension float64) string {
 	width := logoWidth()
 	inRegister := lipgloss.NewStyle().Foreground(charm(charmtone.Charple))
-	displaced := lipgloss.NewStyle().Foreground(mix(charmtone.Charple, charmtone.Dolly, tension))
+	displaced := lipgloss.NewStyle().Foreground(mix(charmtone.Charple, charmtone.Julep, tension))
 
 	lines := make([]string, 0, logoHeight())
 	// The top rule belongs to the displaced state, the bottom to the one still

@@ -139,16 +139,18 @@ func TestScriptOpensAndClosesAtRest(t *testing.T) {
 	}
 }
 
-// Tension walks between two palette stops rather than pairing unrelated hues.
+// Tension walks between the two stable brand states: source violet and
+// destination mint. The rupture previews the migration rather than adding a
+// third, unrelated campaign color.
 func TestColourMixEndpointsAndMidpoint(t *testing.T) {
-	if got := string(mix(charmtone.Charple, charmtone.Dolly, 0)); got != "#6B50FF" {
+	if got := string(mix(charmtone.Charple, charmtone.Julep, 0)); got != "#6B50FF" {
 		t.Errorf("tension 0 = %s, want Charple #6B50FF", got)
 	}
-	if got := string(mix(charmtone.Charple, charmtone.Dolly, 1)); got != "#FF60FF" {
-		t.Errorf("tension 1 = %s, want Dolly #FF60FF", got)
+	if got := string(mix(charmtone.Charple, charmtone.Julep, 1)); got != "#00FFB2" {
+		t.Errorf("tension 1 = %s, want Julep #00FFB2", got)
 	}
-	if got := string(mix(charmtone.Charple, charmtone.Dolly, 0.5)); got != "#B558FF" {
-		t.Errorf("tension 0.5 = %s, want the midpoint #B558FF", got)
+	if got := string(mix(charmtone.Charple, charmtone.Julep, 0.5)); got != "#35A8D8" {
+		t.Errorf("tension 0.5 = %s, want the violet-mint midpoint #35A8D8", got)
 	}
 }
 
