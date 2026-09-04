@@ -90,6 +90,9 @@ func NormalizeUserText(text string) (string, bool) {
 	if query := extractXMLTag(text, "user_query"); query != "" {
 		text = strings.TrimSpace(query)
 	}
+	if req := extractXMLTag(text, "USER_REQUEST"); req != "" {
+		text = strings.TrimSpace(req)
+	}
 	return text, text != "" && !SkipUserMessage(text)
 }
 
@@ -139,6 +142,8 @@ func SkipUserMessage(text string) bool {
 		"You are being used as the model planner",
 		"Sender (untrusted metadata)",
 		"The following is the Codex agent history",
+		"<SYSTEM_MESSAGE>",
+		"{{ CHECKPOINT",
 	} {
 		if strings.HasPrefix(text, prefix) {
 			return true

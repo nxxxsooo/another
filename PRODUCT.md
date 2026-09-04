@@ -39,7 +39,7 @@ A neighboring tool could copy the browser. It could not truthfully copy "the oth
 
 ## Capabilities and Constraints
 
-- Eight providers: `pi`, `codex`, `claude-code`, `cursor`, `opencode`, `opencode2`, `commandcode`, `hermes`. OpenCode V1 and OpenCode 2 are parallel providers, not versions of one — isolated databases, CLIs, and schemas.
+- Nine providers: `pi`, `codex`, `claude-code`, `cursor`, `opencode`, `opencode2`, `commandcode`, `hermes`, `agy`. OpenCode V1 and OpenCode 2 are parallel providers, not versions of one — isolated databases, CLIs, and schemas.
 - Actions: browse, search (FTS5 over titles and normalized message text), preview, native resume, cross-agent migrate, rename, archive and unarchive, delete, JSON export and import.
 - Capability is per provider and deliberately unequal. Unsupported actions are reported, never simulated.
 - Migration carries real user and assistant text. It does not compress into a summary; reasoning and tool noise are dropped.

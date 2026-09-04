@@ -1585,6 +1585,7 @@ func isCurrentSession(sm model.Summary) bool {
 		os.Getenv("CLAUDE_SESSION_ID"),
 		os.Getenv("CODEX_THREAD_ID"),
 		os.Getenv("OPENCODE_SESSION_ID"),
+		os.Getenv("ANTIGRAVITY_CONVERSATION_ID"),
 	}
 	for _, id := range ids {
 		if id != "" && sm.ID == id {

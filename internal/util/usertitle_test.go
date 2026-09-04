@@ -48,3 +48,10 @@ func TestDisplayUserTextRemovesCursorEnvelope(t *testing.T) {
 		t.Fatalf("DisplayUserText() = %q", got)
 	}
 }
+
+func TestDisplayUserTextRemovesAGYEnvelope(t *testing.T) {
+	input := "<USER_REQUEST>\n项目加入agy cli 支持\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: 2026-09-04T11:49:02+08:00.\n</ADDITIONAL_METADATA>"
+	if got := DisplayUserText(input); got != "项目加入agy cli 支持" {
+		t.Fatalf("DisplayUserText() = %q", got)
+	}
+}

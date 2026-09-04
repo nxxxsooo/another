@@ -438,6 +438,16 @@ func TestDeleteRemovesPiSourceAndIndexRecord(t *testing.T) {
 	}
 }
 
+func TestAgyConversationEnvironmentMarksCurrentSession(t *testing.T) {
+	t.Setenv("ANTIGRAVITY_CONVERSATION_ID", "agy-current")
+	if !isCurrentSession(model.Summary{ID: "agy-current", Provider: "agy"}) {
+		t.Fatal("active Antigravity conversation was not recognized")
+	}
+	if isCurrentSession(model.Summary{ID: "other", Provider: "agy"}) {
+		t.Fatal("unrelated Antigravity conversation was marked current")
+	}
+}
+
 func TestCurrentPiSessionCannotBeDeleted(t *testing.T) {
 	m := layoutTestModel()
 	item := m.sessions.SelectedItem().(sessionItem)
