@@ -17,18 +17,18 @@ type theme struct {
 func charm(key charmtone.Key) lipgloss.Color { return lipgloss.Color(key.Hex()) }
 
 var twinTheme = theme{
-	source:         charm(charmtone.Charple),
-	target:         charm(charmtone.Julep),
-	intersection:   charm(charmtone.Bok),
-	text:           charm(charmtone.Sash),
-	textSubtle:     charm(charmtone.Smoke),
-	textMostSubtle: charm(charmtone.Oyster),
-	border:         charm(charmtone.Char),
-	surface:        charm(charmtone.BBQ),
-	success:        charm(charmtone.Julep),
-	danger:         charm(charmtone.Sriracha),
-	warning:        charm(charmtone.Mustard),
-	info:           charm(charmtone.Malibu),
+	source:         lipgloss.Color("#6B50FF"),
+	target:         lipgloss.Color("#00FFB2"),
+	intersection:   lipgloss.Color("#68FFD6"),
+	text:           lipgloss.Color("#F4F4F5"),
+	textSubtle:     lipgloss.Color("#A1A1B3"),
+	textMostSubtle: lipgloss.Color("#7E7E8F"),
+	border:         lipgloss.Color("#2D2D38"),
+	surface:        lipgloss.Color("#0A0A0A"),
+	success:        lipgloss.Color("#00FFB2"),
+	danger:         lipgloss.Color("#FF6B6B"),
+	warning:        lipgloss.Color("#FF6B6B"),
+	info:           lipgloss.Color("#62D8FF"),
 }
 
 var providerColors = map[string]lipgloss.Color{

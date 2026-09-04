@@ -16,11 +16,18 @@ func TestTwinThemeAssignsDistinctInteractionRoles(t *testing.T) {
 		got  string
 		want string
 	}{
-		{name: "source", got: string(twinTheme.source), want: charmtone.Charple.Hex()},
-		{name: "target", got: string(twinTheme.target), want: charmtone.Julep.Hex()},
-		{name: "intersection", got: string(twinTheme.intersection), want: charmtone.Bok.Hex()},
-		{name: "title", got: string(twinTheme.text), want: charmtone.Sash.Hex()},
-		{name: "danger", got: string(twinTheme.danger), want: charmtone.Sriracha.Hex()},
+		{name: "source", got: string(twinTheme.source), want: "#6B50FF"},
+		{name: "target", got: string(twinTheme.target), want: "#00FFB2"},
+		{name: "intersection", got: string(twinTheme.intersection), want: "#68FFD6"},
+		{name: "text", got: string(twinTheme.text), want: "#F4F4F5"},
+		{name: "text subtle", got: string(twinTheme.textSubtle), want: "#A1A1B3"},
+		{name: "text most subtle", got: string(twinTheme.textMostSubtle), want: "#7E7E8F"},
+		{name: "border", got: string(twinTheme.border), want: "#2D2D38"},
+		{name: "surface", got: string(twinTheme.surface), want: "#0A0A0A"},
+		{name: "success", got: string(twinTheme.success), want: "#00FFB2"},
+		{name: "danger", got: string(twinTheme.danger), want: "#FF6B6B"},
+		{name: "warning", got: string(twinTheme.warning), want: "#FF6B6B"},
+		{name: "info", got: string(twinTheme.info), want: "#62D8FF"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -50,10 +57,10 @@ func TestDirectionalStylesCarryTwinSemantics(t *testing.T) {
 	if got := fmt.Sprint(targetModalStyle.GetBorderTopForeground()); got != charmtone.Julep.Hex() {
 		t.Fatalf("target modal border = %s, want mint", got)
 	}
-	if got := fmt.Sprint(neutralModalStyle.GetBorderTopForeground()); got != charmtone.Char.Hex() {
+	if got := fmt.Sprint(neutralModalStyle.GetBorderTopForeground()); got != "#2D2D38" {
 		t.Fatalf("neutral modal border = %s, want structural gray", got)
 	}
-	if got := fmt.Sprint(chipActive.GetBackground()); got != charmtone.Char.Hex() {
+	if got := fmt.Sprint(chipActive.GetBackground()); got != "#2D2D38" {
 		t.Fatalf("neutral selected action background = %s, want structural gray", got)
 	}
 }

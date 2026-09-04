@@ -13,6 +13,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
@@ -217,6 +219,141 @@ func TestMessageCountHasUnit(t *testing.T) {
 	if !strings.Contains(view, "12条") {
 		t.Fatalf("message count is still a bare number: %q", view)
 	}
+}
+
+func TestWideHeaderPinsTargetToRight(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 24
+	header := ansi.Strip(m.headerView())
+	if got := ansi.StringWidth(header); got != m.width {
+		t.Fatalf("header width = %d, want %d: %q", got, m.width, header)
+	}
+	if !strings.HasSuffix(strings.TrimRight(header, " "), "去向 →") {
+		t.Fatalf("target action is not pinned right: %q", header)
+	}
+}
+
+func TestNarrowHeaderKeepsBothDirectionControls(t *testing.T) {
+	for _, source := range []sourceChip{
+		{id: "", name: "all", count: 3},
+		{id: "claude-code", name: "Claude Code", count: 2},
+		{id: "commandcode", name: "CommandCode", count: 1},
+	} {
+		m := layoutTestModel()
+		m.sources = []sourceChip{source}
+		m.width, m.height = 40, 12
+		header := ansi.Strip(m.headerView())
+		if ansi.StringWidth(header) > m.width {
+			t.Fatalf("source %q header width = %d, want <= %d", source.name, ansi.StringWidth(header), m.width)
+		}
+		if !strings.Contains(header, "来源") || !strings.Contains(header, "去向 →") {
+			t.Fatalf("source %q lost a direction control: %q", source.name, header)
+		}
+	}
+}
+
+func TestWideSessionsBreatheButNarrowSessionsStayCompact(t *testing.T) {
+	items := []list.Item{
+		sessionItem{summary: model.Summary{ID: "one", Provider: "codex", Title: "First title"}, providerLbl: "Codex"},
+		sessionItem{summary: model.Summary{ID: "two", Provider: "pi", Title: "Second title"}, providerLbl: "pi"},
+	}
+	m := layoutTestModel()
+	m.sessions.SetItems(items)
+	m.width, m.height = 100, 24
+	m.layout()
+	wide := strings.Split(ansi.Strip(m.sessions.View()), "\n")
+	wideFirst, wideSecond := lineContaining(wide, "First title"), lineContaining(wide, "Second title")
+	if wideFirst < 0 || wideSecond-wideFirst != 2 {
+		t.Fatalf("wide list row distance = %d, want 2: %q", wideSecond-wideFirst, wide)
+	}
+
+	m.width, m.height = 60, 16
+	m.layout()
+	narrow := strings.Split(ansi.Strip(m.sessions.View()), "\n")
+	narrowFirst, narrowSecond := lineContaining(narrow, "First title"), lineContaining(narrow, "Second title")
+	if narrowFirst < 0 || narrowSecond-narrowFirst != 1 {
+		t.Fatalf("narrow list row distance = %d, want 1: %q", narrowSecond-narrowFirst, narrow)
+	}
+}
+
+func TestSelectedCursorUsesIntersectionInk(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+
+	m := layoutTestModel()
+	m.width, m.height = 100, 24
+	m.layout()
+	if !strings.Contains(m.sessions.View(), selectedRow.Render("› ")) {
+		t.Fatal("selected cursor is not visually joined to the selected title")
+	}
+}
+
+func TestWideIdleFooterKeepsOnlyTheActiveControls(t *testing.T) {
+	m := layoutTestModel()
+	m.status = ""
+	m.width, m.height = 100, 24
+	m.layout()
+	footer := ansi.Strip(m.footerView())
+	if strings.Contains(footer, "/tmp/project") || strings.Contains(footer, "session") {
+		t.Fatalf("wide footer repeats row metadata: %q", footer)
+	}
+	if !strings.Contains(footer, "enter") {
+		t.Fatalf("wide footer lost active controls: %q", footer)
+	}
+}
+
+func TestOverlayPreservesBackgroundOutsideItsOwnBounds(t *testing.T) {
+	background := strings.Repeat(strings.Repeat("x", 40)+"\n", 9) + strings.Repeat("x", 40)
+	got := ansi.Strip(overlay(background, "12345\nabcde", 40))
+	lines := strings.Split(got, "\n")
+	for _, row := range []int{4, 5} {
+		if !strings.HasPrefix(lines[row], "x") || !strings.HasSuffix(lines[row], "x") {
+			t.Fatalf("overlay erased background on row %d: %q", row, lines[row])
+		}
+	}
+}
+
+func TestEqualHeightOverlayPreservesBackgroundOutsideItsOwnBounds(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+
+	backgroundLine := mutedStyle.Render(strings.Repeat("x", 40))
+	background := strings.Join([]string{backgroundLine, backgroundLine}, "\n")
+	got := ansi.Strip(overlay(background, "12345\nabcde", 40))
+	for row, line := range strings.Split(got, "\n") {
+		if !strings.HasPrefix(line, "x") || !strings.HasSuffix(line, "x") {
+			t.Fatalf("equal-height overlay erased background on row %d: %q", row, line)
+		}
+	}
+}
+
+func TestTargetModalKeepsTheDesignedWideProportion(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.overlay = overlayTarget
+	m.layout()
+	view := ansi.Strip(m.View())
+	for _, line := range strings.Split(view, "\n") {
+		left, right := strings.Index(line, "┏"), strings.LastIndex(line, "┓")
+		if left >= 0 && right > left {
+			if got := ansi.StringWidth(line[left : right+len("┓")]); got < 42 {
+				t.Fatalf("target modal is narrower than the approved comp: %d columns", got)
+			}
+			return
+		}
+	}
+	t.Fatal("target modal border not rendered")
+}
+
+func lineContaining(lines []string, needle string) int {
+	for i, line := range lines {
+		if strings.Contains(line, needle) {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestTargetOverlayEscapeReturns(t *testing.T) {

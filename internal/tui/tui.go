@@ -70,10 +70,10 @@ func (i sessionItem) FilterValue() string {
 
 // sessionDelegate renders one session per line so the title, the only thing
 // that identifies a session, gets every column the terminal can spare.
-type sessionDelegate struct{}
+type sessionDelegate struct{ spacing int }
 
 func (sessionDelegate) Height() int                         { return 1 }
-func (sessionDelegate) Spacing() int                        { return 0 }
+func (d sessionDelegate) Spacing() int                      { return d.spacing }
 func (sessionDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	it, ok := listItem.(sessionItem)
@@ -83,7 +83,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	width := max(20, m.Width())
 	cursor := "  "
 	if index == m.Index() {
-		cursor = "› "
+		cursor = selectedRow.Render("› ")
 	}
 
 	rel := util.FormatRelative(it.summary.UpdatedAt)
@@ -1351,9 +1351,14 @@ func (m *modelState) layout() {
 	footerH := lipgloss.Height(m.footerView())
 	paneOuterH := max(frameH+1, m.height-headerH-footerH)
 	contentH := max(1, paneOuterH-frameH)
+	sessionSpacing := 0
+	if m.width >= 80 && contentH >= 14 {
+		sessionSpacing = 1
+	}
+	m.sessions.SetDelegate(sessionDelegate{spacing: sessionSpacing})
 	m.sessions.SetSize(max(1, m.width-frameW), contentH)
 
-	modalInnerW := max(24, min(56, m.width-12)-modalStyle.GetHorizontalFrameSize())
+	modalInnerW := modalInnerWidth(m.width)
 	modalListH := max(1, min(10, max(1, contentH-8)))
 	m.sourceList.SetSize(modalInnerW, min(len(m.sourceList.Items()), modalListH))
 	m.targets.SetSize(modalInnerW, min(len(m.targets.Items()), modalListH))
@@ -1364,6 +1369,10 @@ func (m *modelState) layout() {
 	y := m.preview.YOffset
 	m.preview.SetContent(ansi.Hardwrap(m.previewContent, max(1, m.preview.Width), false))
 	m.preview.SetYOffset(y)
+}
+
+func modalInnerWidth(width int) int {
+	return max(24, min(56, width-12)-modalStyle.GetHorizontalFrameSize())
 }
 
 func (m modelState) View() string {
@@ -1389,7 +1398,7 @@ func (m modelState) View() string {
 		box := sourceModalStyle.Render(accentStyle.Render("选择来源") + "\n" + mutedStyle.Render("会话来自哪个 agent？") + "\n\n" + m.sourceList.View())
 		pane = overlay(pane, box, m.width)
 	case overlayTarget:
-		box := targetModalStyle.Render(okStyle.Render("选择去向") + "\n" + mutedStyle.Render("把这条会话带到哪个 agent？") + "\n\n" + m.targets.View())
+		box := targetModalStyle.Width(min(40, modalInnerWidth(m.width))).Render(okStyle.Render("选择去向") + "\n" + mutedStyle.Render("把这条会话带到哪个 agent？") + "\n\n" + m.targets.View())
 		pane = overlay(pane, box, m.width)
 	case overlayPreview:
 		box := modalStyle.Render(m.preview.View())
@@ -1406,28 +1415,21 @@ func (m modelState) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, pane, footer)
 }
 
-// overlay centres box over background by rebuilding the rows it covers. The
-// pinned ansi package cannot cut a styled string from the left, so the covered
-// rows are reconstructed from known pieces — the pane border, blank fill, and
-// the box itself — instead of being sliced.
+// overlay centres a box over the existing pane. Cutting each covered row with
+// the ANSI-aware helper keeps the session context visible on both sides while
+// replacing only the cells occupied by the modal itself.
 func overlay(background, box string, width int) string {
 	bgLines := strings.Split(background, "\n")
 	boxLines := strings.Split(box, "\n")
-	if len(boxLines) >= len(bgLines) {
+	if len(boxLines) > len(bgLines) {
 		return box
 	}
 	boxW := 0
-	for _, l := range boxLines {
-		boxW = max(boxW, ansi.StringWidth(l))
+	for _, line := range boxLines {
+		boxW = max(boxW, ansi.StringWidth(line))
 	}
-	inner := max(0, width-paneStyle.GetHorizontalBorderSize())
-	if boxW > inner {
-		boxW = inner
-	}
-	leftPad := max(0, (inner-boxW)/2)
-	rightPad := max(0, inner-boxW-leftPad)
-	edge := lipgloss.NewStyle().Foreground(paneStyle.GetBorderTopForeground()).
-		Render(paneStyle.GetBorderStyle().Left)
+	boxW = min(boxW, width)
+	x := max(0, (width-boxW)/2)
 	y := max(0, (len(bgLines)-len(boxLines))/2)
 	for i, boxLine := range boxLines {
 		row := y + i
@@ -1436,8 +1438,9 @@ func overlay(background, box string, width int) string {
 		}
 		boxLine = ansi.Truncate(boxLine, boxW, "")
 		boxLine += strings.Repeat(" ", max(0, boxW-ansi.StringWidth(boxLine)))
-		bgLines[row] = edge + strings.Repeat(" ", leftPad) + boxLine +
-			strings.Repeat(" ", rightPad) + edge
+		left := ansi.Cut(bgLines[row], 0, x)
+		right := ansi.Cut(bgLines[row], x+boxW, width)
+		bgLines[row] = left + boxLine + right
 	}
 	return strings.Join(bgLines, "\n")
 }
@@ -1506,10 +1509,15 @@ func (m modelState) headerView() string {
 	if sourceName == "all" {
 		sourceName = "全部"
 	}
-	flow := mutedStyle.Render("← 来源 ") + sourceChipStyle.Render(sourceName) +
-		mutedStyle.Render("   │   ") + fmt.Sprintf("%d 个会话", m.totalSessions) +
-		mutedStyle.Render("   │   ") + targetChipStyle.Render("去向 →")
-	lines := []string{ansi.Truncate(brand+"  "+flow, m.width, "…")}
+	left := brand + "  " + mutedStyle.Render("← 来源 ") + sourceChipStyle.Render(sourceName)
+	if m.width >= 64 {
+		left += mutedStyle.Render(fmt.Sprintf("   %d 个会话", m.totalSessions))
+	}
+	right := targetChipStyle.Render("去向 →")
+	left = ansi.Truncate(left, max(0, m.width-ansi.StringWidth(right)-2), "…")
+	gap := max(2, m.width-ansi.StringWidth(left)-ansi.StringWidth(right))
+	header := left + strings.Repeat(" ", gap) + right
+	lines := []string{ansi.Truncate(header, m.width, "…")}
 	if m.searching {
 		lines = append(lines, m.searchInput.View())
 	}
@@ -1528,7 +1536,9 @@ func (m modelState) footerView() string {
 	case m.status != "":
 		lines = append(lines, m.status)
 	default:
-		lines = append(lines, mutedStyle.Render(m.selectionSummary()))
+		if m.width < 92 {
+			lines = append(lines, mutedStyle.Render(m.selectionSummary()))
+		}
 	}
 	lines = append(lines, footerStyle.Render(m.help()))
 	for i := range lines {

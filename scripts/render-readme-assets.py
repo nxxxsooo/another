@@ -27,7 +27,7 @@ rows = [
 ]
 row_svg = []
 for i, (when, agent, title, path, count, color) in enumerate(rows):
-    y = 202 + i * 52
+    y = 180 + i * 60
     marker = "›" if i == 0 else ""
     selected = C["intersection"] if i == 0 else C["text"]
     row_svg.append(f'<text x="54" y="{y}" fill="{selected}" font-family="{FONT}" font-size="17" font-weight="{700 if i == 0 else 400}">{marker}</text>')
@@ -48,13 +48,13 @@ preview = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" 
 <rect x="1042" y="78" width="104" height="38" rx="6" fill="{C['green']}"/><text x="1094" y="103" text-anchor="middle" fill="{C['bg']}" font-family="{FONT}" font-size="16" font-weight="700">target →</text>
 <line x1="52" y1="130" x2="1148" y2="130" stroke="{C['line']}" stroke-width="2"/>
 {''.join(row_svg)}
-<rect x="668" y="154" width="420" height="254" rx="8" fill="{C['bg']}" stroke="{C['green']}" stroke-width="3"/>
-<text x="704" y="198" fill="{C['green']}" font-family="{FONT}" font-size="19" font-weight="700">Choose target</text>
-<text x="704" y="226" fill="{C['muted']}" font-family="{FONT}" font-size="15">Carry this session to another agent.</text>
-<text x="708" y="276" fill="{C['intersection']}" font-family="{FONT}" font-size="17" font-weight="700">› Claude Code</text>
-<text x="708" y="312" fill="{C['green']}" font-family="{FONT}" font-size="17">  Codex</text>
-<text x="708" y="348" fill="{C['purple']}" font-family="{FONT}" font-size="17">  OpenCode</text>
-<text x="708" y="384" fill="{C['pink']}" font-family="{FONT}" font-size="17">  OpenCode 2</text>
+<rect x="390" y="140" width="420" height="250" rx="8" fill="{C['bg']}" stroke="{C['green']}" stroke-width="3"/>
+<text x="426" y="184" fill="{C['green']}" font-family="{FONT}" font-size="19" font-weight="700">Choose target</text>
+<text x="426" y="212" fill="{C['muted']}" font-family="{FONT}" font-size="15">Carry this session to another agent.</text>
+<text x="430" y="262" fill="{C['intersection']}" font-family="{FONT}" font-size="17" font-weight="700">› Claude Code</text>
+<text x="430" y="298" fill="{C['green']}" font-family="{FONT}" font-size="17">  Codex</text>
+<text x="430" y="334" fill="{C['purple']}" font-family="{FONT}" font-size="17">  OpenCode</text>
+<text x="430" y="370" fill="{C['pink']}" font-family="{FONT}" font-size="17">  OpenCode 2</text>
 <line x1="52" y1="466" x2="1148" y2="466" stroke="{C['line']}" stroke-width="2"/>
 <text x="52" y="500" fill="{C['muted']}" font-family="{FONT}" font-size="14">← source · ↑↓ session · enter resume · → migrate · space preview · ctrl+r rename · A archive · ctrl+d delete</text>
 </svg>'''
