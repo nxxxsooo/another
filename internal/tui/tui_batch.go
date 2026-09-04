@@ -295,71 +295,107 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// providerLookup is the seam that keeps apply tests off real agents.
+// *registry.Registry satisfies it in production.
+type providerLookup interface {
+	Get(id string) (provider.Provider, error)
+}
+
+// summaryLookup rereads titles after a rename. *index.Store satisfies it in
+// production.
+type summaryLookup interface {
+	FindByID(id string) (*model.Summary, error)
+}
+
+type appliedRename struct {
+	id       string
+	title    string
+	provider string
+}
+
+type applyFailure struct {
+	id     string
+	reason string
+}
+
+// applyRenames runs the native rename for every row and isolates failures per
+// row: one bad row never takes healthy rows with it.
+func applyRenames(ctx context.Context, lookup providerLookup, byID map[string]model.Summary, rows []titler.BatchResult) (renamed []appliedRename, failed []applyFailure) {
+	for _, r := range rows {
+		sm, ok := byID[r.SessionID]
+		if !ok {
+			failed = append(failed, applyFailure{id: r.SessionID, reason: "会话已不在列表中"})
+			continue
+		}
+		p, err := lookup.Get(sm.Provider)
+		if err != nil {
+			failed = append(failed, applyFailure{id: r.SessionID, reason: err.Error()})
+			continue
+		}
+		renamer, ok := p.(provider.SessionRenamer)
+		if !ok {
+			failed = append(failed, applyFailure{id: r.SessionID, reason: "该来源不支持重命名"})
+			continue
+		}
+		ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+		if err := renamer.RenameSession(ctx, ref, r.Title); err != nil {
+			failed = append(failed, applyFailure{id: r.SessionID, reason: err.Error()})
+			continue
+		}
+		renamed = append(renamed, appliedRename{id: sm.ID, title: r.Title, provider: sm.Provider})
+	}
+	return renamed, failed
+}
+
+// verifyRenames rereads every renamed title: a rename only counts if the
+// source of truth confirms it.
+func verifyRenames(lookup summaryLookup, renamed []appliedRename) (appliedIDs []string, failed []applyFailure) {
+	for _, rn := range renamed {
+		sm, err := lookup.FindByID(rn.id)
+		if err != nil {
+			failed = append(failed, applyFailure{id: rn.id, reason: err.Error()})
+			continue
+		}
+		if strings.TrimSpace(sm.Title) != rn.title {
+			failed = append(failed, applyFailure{id: rn.id, reason: "回读标题不一致"})
+			continue
+		}
+		appliedIDs = append(appliedIDs, rn.id)
+	}
+	return appliedIDs, failed
+}
+
 // batchApplyCmd renames every confirmed row through the provider's native
 // path, refreshes the index once per touched provider, and reads each title
 // back: a rename only counts if the index confirms it.
 func batchApplyCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, byID map[string]model.Summary, rows []titler.BatchResult) tea.Cmd {
 	return func() tea.Msg {
-		var msg batchAppliedMsg
+		renamed, failures := applyRenames(ctx, reg, byID, rows)
 		touched := map[string]bool{}
-		type pending struct {
-			id    string
-			title string
+		for _, rn := range renamed {
+			touched[rn.provider] = true
 		}
-		var okRows []pending
-		for _, r := range rows {
-			sm, ok := byID[r.SessionID]
-			if !ok {
-				msg.failed++
-				continue
+		var msg batchAppliedMsg
+		for _, f := range failures {
+			msg.failed++
+			if msg.detail == "" {
+				msg.detail = f.reason
 			}
-			p, err := reg.Get(sm.Provider)
-			if err != nil {
-				msg.failed++
-				if msg.detail == "" {
-					msg.detail = err.Error()
-				}
-				continue
-			}
-			renamer, ok := p.(provider.SessionRenamer)
-			if !ok {
-				msg.failed++
-				if msg.detail == "" {
-					msg.detail = "该来源不支持重命名"
-				}
-				continue
-			}
-			ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
-			if err := renamer.RenameSession(ctx, ref, r.Title); err != nil {
-				msg.failed++
-				if msg.detail == "" {
-					msg.detail = err.Error()
-				}
-				continue
-			}
-			touched[sm.Provider] = true
-			okRows = append(okRows, pending{id: sm.ID, title: r.Title})
 		}
 		for providerID := range touched {
 			if _, err := index.UpdateIncremental(ctx, reg, idx, providerID); err != nil && msg.detail == "" {
 				msg.detail = err.Error()
 			}
 		}
-		for _, p := range okRows {
-			sm, err := idx.FindByID(p.id)
-			if err != nil || strings.TrimSpace(sm.Title) != p.title {
-				msg.failed++
-				if msg.detail == "" {
-					msg.detail = "回读标题不一致"
-					if err != nil {
-						msg.detail = err.Error()
-					}
-				}
-				continue
+		appliedIDs, verifyFailures := verifyRenames(idx, renamed)
+		for _, f := range verifyFailures {
+			msg.failed++
+			if msg.detail == "" {
+				msg.detail = f.reason
 			}
-			msg.applied++
-			msg.appliedIDs = append(msg.appliedIDs, p.id)
 		}
+		msg.appliedIDs = appliedIDs
+		msg.applied = len(appliedIDs)
 		return msg
 	}
 }

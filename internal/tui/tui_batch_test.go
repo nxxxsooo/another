@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/titler"
 )
 
@@ -222,5 +223,178 @@ func TestBatchChangedSelectsOnlyChangedRows(t *testing.T) {
 	got := batchChanged(results)
 	if len(got) != 1 || got[0].SessionID != "a" {
 		t.Fatalf("changed = %+v, want only row a", got)
+	}
+}
+
+// fakeRenamer is an in-memory agent for apply tests. failIDs fail every
+// rename; renamed records what got through.
+type fakeRenamer struct {
+	failIDs map[string]bool
+	renamed map[string]string
+}
+
+func (f *fakeRenamer) ID() string          { return "fake" }
+func (f *fakeRenamer) DisplayName() string { return "Fake" }
+func (f *fakeRenamer) DefaultPaths() []provider.PathSpec {
+	return nil
+}
+func (f *fakeRenamer) Installed() bool { return true }
+func (f *fakeRenamer) Discover(context.Context, provider.DiscoverOpts) ([]model.Summary, error) {
+	return nil, nil
+}
+func (f *fakeRenamer) Load(context.Context, provider.SessionRef) (*model.Conversation, error) {
+	return nil, nil
+}
+func (f *fakeRenamer) Write(context.Context, *model.Conversation, provider.WriteOpts) (*provider.WriteResult, error) {
+	return nil, nil
+}
+func (f *fakeRenamer) SupportsResume() bool { return false }
+func (f *fakeRenamer) ResumeCommand(provider.WriteResult) string {
+	return ""
+}
+func (f *fakeRenamer) RenameSession(_ context.Context, ref provider.SessionRef, title string) error {
+	if f.failIDs[ref.ID] {
+		return errBatchTest
+	}
+	if f.renamed == nil {
+		f.renamed = map[string]string{}
+	}
+	f.renamed[ref.ID] = title
+	return nil
+}
+
+// plainProvider implements provider.Provider without SessionRenamer. It
+// shares no structure with fakeRenamer: embedding would promote RenameSession
+// and silently satisfy the assertion under test.
+type plainProvider struct{}
+
+func (p *plainProvider) ID() string          { return "plain" }
+func (p *plainProvider) DisplayName() string { return "Plain" }
+func (p *plainProvider) DefaultPaths() []provider.PathSpec {
+	return nil
+}
+func (p *plainProvider) Installed() bool { return true }
+func (p *plainProvider) Discover(context.Context, provider.DiscoverOpts) ([]model.Summary, error) {
+	return nil, nil
+}
+func (p *plainProvider) Load(context.Context, provider.SessionRef) (*model.Conversation, error) {
+	return nil, nil
+}
+func (p *plainProvider) Write(context.Context, *model.Conversation, provider.WriteOpts) (*provider.WriteResult, error) {
+	return nil, nil
+}
+func (p *plainProvider) SupportsResume() bool { return false }
+func (p *plainProvider) ResumeCommand(provider.WriteResult) string {
+	return ""
+}
+
+type fakeLookup map[string]provider.Provider
+
+func (l fakeLookup) Get(id string) (provider.Provider, error) {
+	p, ok := l[id]
+	if !ok {
+		return nil, errBatchTest
+	}
+	return p, nil
+}
+
+func applyTestRows() ([]titler.BatchResult, map[string]model.Summary) {
+	rows := []titler.BatchResult{
+		{SessionID: "ok1", Current: "old", Title: "0903｜修复｜第一条"},
+		{SessionID: "bad", Current: "old", Title: "0903｜修复｜第二条"},
+		{SessionID: "ok2", Current: "old", Title: "0903｜修复｜第三条"},
+	}
+	byID := map[string]model.Summary{
+		"ok1": {ID: "ok1", Provider: "fake", Title: "old"},
+		"bad": {ID: "bad", Provider: "fake", Title: "old"},
+		"ok2": {ID: "ok2", Provider: "fake", Title: "old"},
+	}
+	return rows, byID
+}
+
+func TestApplyRenamesIsolatesRowFailures(t *testing.T) {
+	rows, byID := applyTestRows()
+	fake := &fakeRenamer{failIDs: map[string]bool{"bad": true}}
+
+	renamed, failed := applyRenames(context.Background(), fakeLookup{"fake": fake}, byID, rows)
+
+	if len(renamed) != 2 || len(failed) != 1 {
+		t.Fatalf("renamed=%d failed=%d, want 2 and 1", len(renamed), len(failed))
+	}
+	if failed[0].id != "bad" {
+		t.Fatalf("wrong row failed: %+v", failed)
+	}
+	if fake.renamed["ok1"] != "0903｜修复｜第一条" || fake.renamed["ok2"] != "0903｜修复｜第三条" {
+		t.Fatalf("healthy rows did not reach the provider: %v", fake.renamed)
+	}
+	if _, ok := fake.renamed["bad"]; ok {
+		t.Fatal("the failing row must not record a rename")
+	}
+}
+
+func TestApplyRenamesRejectsUnknownRowsAndNonRenamers(t *testing.T) {
+	rows := []titler.BatchResult{
+		{SessionID: "ghost", Current: "old", Title: "0903｜修复｜幽灵行"},
+		{SessionID: "plain", Current: "old", Title: "0903｜修复｜普通行"},
+	}
+	byID := map[string]model.Summary{
+		"ghost": {ID: "ghost", Provider: "missing", Title: "old"},
+		"plain": {ID: "plain", Provider: "plain", Title: "old"},
+	}
+	lookup := fakeLookup{"fake": &fakeRenamer{}, "plain": &plainProvider{}}
+
+	renamed, failed := applyRenames(context.Background(), lookup, byID, rows)
+
+	if len(renamed) != 0 || len(failed) != 2 {
+		t.Fatalf("renamed=%d failed=%d, want 0 and 2", len(renamed), len(failed))
+	}
+	reasons := map[string]string{}
+	for _, f := range failed {
+		reasons[f.id] = f.reason
+	}
+	if reasons["plain"] != "该来源不支持重命名" {
+		t.Fatalf("plain reason = %q", reasons["plain"])
+	}
+	// ghost is missing from byID... it is present; drop it to test the
+	// unknown-row path instead.
+	delete(byID, "ghost")
+	_, failed = applyRenames(context.Background(), lookup, byID, rows[:1])
+	if len(failed) != 1 || failed[0].reason != "会话已不在列表中" {
+		t.Fatalf("unknown row failure = %+v", failed)
+	}
+}
+
+type fakeSummaryStore map[string]string
+
+func (s fakeSummaryStore) FindByID(id string) (*model.Summary, error) {
+	title, ok := s[id]
+	if !ok {
+		return nil, errBatchTest
+	}
+	return &model.Summary{ID: id, Title: title}, nil
+}
+
+func TestVerifyRenamesRequiresRereadMatch(t *testing.T) {
+	renamed := []appliedRename{
+		{id: "ok", title: "0903｜修复｜新标题", provider: "fake"},
+		{id: "drift", title: "0903｜修复｜新标题", provider: "fake"},
+		{id: "gone", title: "0903｜修复｜新标题", provider: "fake"},
+	}
+	store := fakeSummaryStore{"ok": "0903｜修复｜新标题", "drift": "完全不一样的标题"}
+
+	applied, failed := verifyRenames(store, renamed)
+
+	if len(applied) != 1 || applied[0] != "ok" {
+		t.Fatalf("applied = %v, want [ok]", applied)
+	}
+	if len(failed) != 2 {
+		t.Fatalf("failed = %+v, want drift and gone", failed)
+	}
+	byID := map[string]string{}
+	for _, f := range failed {
+		byID[f.id] = f.reason
+	}
+	if byID["drift"] != "回读标题不一致" {
+		t.Fatalf("drift reason = %q", byID["drift"])
 	}
 }
