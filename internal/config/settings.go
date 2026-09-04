@@ -12,6 +12,19 @@ const SettingsVersion = 1
 type Settings struct {
 	Version          int      `json:"version"`
 	EnabledProviders []string `json:"enabled_providers"`
+	// TitleModel is the agent CLI another asks for title suggestions. It is
+	// absent until a person picks one, and absent means the feature is off:
+	// another never calls a model on its own initiative.
+	TitleModel *TitleModel `json:"title_model,omitempty"`
+}
+
+// TitleModel names an installed agent CLI, not an API credential. another
+// stays local-first by borrowing an agent the user already authenticated
+// instead of holding provider keys of its own. An empty Model uses that CLI's
+// own default model.
+type TitleModel struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
 }
 
 func SettingsPath() string { return filepath.Join(ConfigDir(), "config.json") }

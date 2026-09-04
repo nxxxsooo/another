@@ -32,6 +32,9 @@ type App struct {
 }
 
 func NewApp() (*App, error) {
+	// version is stamped here by ldflags; the TUI borrows it for its goodbye
+	// logo instead of carrying its own build metadata.
+	tui.SetVersion(version)
 	reg := registry.New()
 	settings, settingsErr := config.LoadSettings()
 	if settingsErr == nil {
@@ -434,16 +437,18 @@ func (a *App) runSetup(ctx context.Context) (bool, error) {
 	all := registry.New()
 	counts, _ := a.Index.CountByProvider()
 	var initial []string
+	var initialTitle *config.TitleModel
 	if settings, err := config.LoadSettings(); err == nil {
 		initial = settings.EnabledProviders
+		initialTitle = settings.TitleModel
 	} else if !os.IsNotExist(err) {
 		return false, fmt.Errorf("load config: %w", err)
 	}
-	enabled, saved, err := tui.RunSetup(all, counts, initial)
+	enabled, titleModel, saved, err := tui.RunSetup(all, counts, initial, initialTitle)
 	if err != nil || !saved {
 		return false, err
 	}
-	if err := config.SaveSettings(config.Settings{EnabledProviders: enabled}); err != nil {
+	if err := config.SaveSettings(config.Settings{EnabledProviders: enabled, TitleModel: titleModel}); err != nil {
 		return false, fmt.Errorf("save config: %w", err)
 	}
 	if err := a.Index.KeepProviders(enabled); err != nil {

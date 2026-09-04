@@ -1,4 +1,9 @@
-<h1 align="center">another</h1>
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/another-motion-static.jpg">
+    <img src="docs/assets/another-motion.gif" width="100%" alt="another — a native coding-agent session manager; its purple and green mark briefly splits into neon channels before returning intact">
+  </picture>
+</p>
 
 <p align="center">
   <a href="https://github.com/nxxxsooo/another/releases"><img src="https://img.shields.io/github/v/release/nxxxsooo/another?style=flat-square&color=6B50FF" alt="Latest release"></a>
@@ -6,8 +11,8 @@
 </p>
 
 <p align="center">
-  Keep the session. Change the agent.<br>
-  在多个 coding agent 之间浏览、管理、迁移并继续真实会话。
+  Browse, manage, and resume native coding-agent sessions — or carry one into another agent without replacing it with a summary.<br>
+  在多个 coding agent 之间浏览、管理、迁移并继续真实会话，而不是粘贴一份摘要。
 </p>
 
 <p align="center">
@@ -44,7 +49,7 @@ Make sure `~/.local/bin` or your Go bin directory is on `PATH`, then run:
 another
 ```
 
-The first run opens a Charmtone setup screen. Use `↑↓` to move, `Space` to select the agents you use, and `Enter` to save. Run `another setup` any time to change the selection.
+The first run opens a Charmtone setup screen. Use `↑↓` to move, `Space` to select the agents you use, and `Enter` to continue. The second page picks an optional agent for AI title suggestions; it defaults to off. Run `another setup` any time to change either choice.
 
 ### Update
 
@@ -71,6 +76,7 @@ Enter     resume the selected session in its native agent
 ↑ / ↓     move through sessions or picker items
 Space     preview the conversation
 Ctrl+R    rename in the source agent's native title store
+Tab       accept the AI title suggestion, when one is configured and arrives
 A         archive; press A again for one-step undo
 Ctrl+D    permanently delete after an explicit confirmation
 /         search titles and normalized conversation text
@@ -150,6 +156,12 @@ OpenCode and OpenCode 2 writes use their official import/API surfaces. Codex Des
 - Exactly identified active sessions are protected from rename, archive, and delete.
 - The configuration directory is mode `0700`; configuration and SQLite index files are mode `0600`.
 - Disabling an agent in setup removes only its local index rows, never its native sessions.
+- Title suggestions borrow an agent CLI you already authenticated; `another` stores no API keys of its own.
+- A suggestion is only ever a suggestion: it is shown next to the rename field, and the rename still needs `Tab` and `Enter`.
+
+### AI title suggestions
+
+When setup names an agent, `Ctrl+R` opens the rename box on the original title and asks that agent, in the background, for one title shaped `MMDD｜类型｜主题`, the contract from the `title-formatter` skill. The date comes from the indexed creation time converted to `Asia/Shanghai`, never from the model. Suggestions that miss the contract, arrive after the box closes, or fail outright are discarded without touching what you typed. The agent runs in a throwaway directory, so your project's own instructions never reach it.
 
 ## Development
 
@@ -166,6 +178,7 @@ Regenerate README artwork:
 
 ```bash
 ./scripts/render-readme-assets.py
+python3 ./scripts/render-motion-banner.py  # requires Pillow and ffmpeg
 ```
 
 ## The name

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/providers/pi"
 	"github.com/nxxxsooo/another/internal/registry"
+	"github.com/nxxxsooo/another/internal/titler"
 )
 
 func layoutTestModel() modelState {
@@ -272,6 +274,93 @@ func TestCtrlROpensPrefilledNativeRename(t *testing.T) {
 	got := updated.(modelState)
 	if got.overlay != overlayRename || got.renameInput.Value() != "A useful title" || !got.renameInput.Focused() || cmd == nil {
 		t.Fatalf("ctrl+r did not open prefilled rename: overlay=%d value=%q focused=%v cmd=%v", got.overlay, got.renameInput.Value(), got.renameInput.Focused(), cmd)
+	}
+}
+
+func TestCtrlRWithoutConfiguredAgentAsksForNoSuggestion(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	got := updated.(modelState)
+	if got.suggesting || got.suggestFor != "" {
+		t.Fatalf("unconfigured another must not call a model: suggesting=%v for=%q", got.suggesting, got.suggestFor)
+	}
+	if strings.Contains(got.View(), "AI 建议") {
+		t.Fatal("suggestion row shown while the feature is off")
+	}
+}
+
+func TestSuggestedTitleIsAcceptedWithTab(t *testing.T) {
+	m := layoutTestModel()
+	m.titleCfg = titler.Config{Provider: "pi"}
+	m.width, m.height = 100, 30
+	m.layout()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	got := updated.(modelState)
+	if !got.suggesting || got.suggestFor != "session" {
+		t.Fatalf("ctrl+r did not request a suggestion: %+v", got.suggestFor)
+	}
+	if got.renameInput.Value() != "A useful title" {
+		t.Fatal("the box must open on the original title, not wait for a model")
+	}
+
+	arrived, _ := got.Update(titleSuggestionMsg{sessionID: "session", title: "0903｜修复｜删除条目快捷键冲突"})
+	got = arrived.(modelState)
+	if got.suggesting || got.suggestion == "" || !strings.Contains(got.help(), "tab") {
+		t.Fatalf("suggestion not offered: %+v", got.suggestion)
+	}
+	if got.renameInput.Value() != "A useful title" {
+		t.Fatal("a suggestion must not overwrite the field on its own")
+	}
+
+	accepted, _ := got.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if value := accepted.(modelState).renameInput.Value(); value != "0903｜修复｜删除条目快捷键冲突" {
+		t.Fatalf("tab did not accept the suggestion: %q", value)
+	}
+}
+
+func TestStaleAndFailedSuggestionsStayOutOfTheWay(t *testing.T) {
+	m := layoutTestModel()
+	m.titleCfg = titler.Config{Provider: "pi"}
+	m.width, m.height = 100, 30
+	m.layout()
+	opened, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	got := opened.(modelState)
+
+	other, _ := got.Update(titleSuggestionMsg{sessionID: "a-different-session", title: "0903｜功能｜别的会话"})
+	if s := other.(modelState); s.suggestion != "" {
+		t.Fatalf("a suggestion for another session was shown: %q", s.suggestion)
+	}
+
+	failed, _ := got.Update(titleSuggestionMsg{sessionID: "session", err: errors.New("pi 未登录")})
+	fail := failed.(modelState)
+	if fail.err != "" {
+		t.Fatalf("a failed suggestion leaked into the main error line: %q", fail.err)
+	}
+	if fail.suggesting || !strings.Contains(fail.View(), "建议不可用") {
+		t.Fatal("a failed suggestion is not reported in the rename box")
+	}
+
+	closed, _ := fail.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if s := closed.(modelState); s.suggestErr != "" || s.suggestFor != "" {
+		t.Fatalf("suggestion state survived the overlay: %+v", s.suggestErr)
+	}
+}
+
+func TestRenameOverlayWithSuggestionFitsTerminal(t *testing.T) {
+	for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
+		m := layoutTestModel()
+		m.overlay = overlayRename
+		m.suggestion = "0903｜修复｜删除条目快捷键冲突"
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		view := updated.(modelState).View()
+		if got := lipgloss.Width(view); got > size[0] {
+			t.Errorf("%dx%d width = %d", size[0], size[1], got)
+		}
+		if got := lipgloss.Height(view); got > size[1] {
+			t.Errorf("%dx%d height = %d", size[0], size[1], got)
+		}
 	}
 }
 

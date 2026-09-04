@@ -26,6 +26,7 @@ import (
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/registry"
+	"github.com/nxxxsooo/another/internal/titler"
 	"github.com/nxxxsooo/another/internal/util"
 )
 
@@ -219,6 +220,15 @@ type renameDoneMsg struct {
 	title      string
 	err        error
 }
+
+// titleSuggestionMsg carries an AI-proposed title back to the rename overlay.
+// sessionID is what makes a late arrival safe to drop: by the time a model
+// answers, the user may have closed the box or moved to another row.
+type titleSuggestionMsg struct {
+	sessionID string
+	title     string
+	err       error
+}
 type archiveDoneMsg struct {
 	summary  model.Summary
 	archived bool
@@ -258,6 +268,13 @@ type modelState struct {
 	sourceIdx    int
 	overlay      int
 	deleteChoice int // 0 cancel, 1 delete
+
+	// titleCfg is empty unless setup picked an agent to write suggestions.
+	titleCfg   titler.Config
+	suggesting bool
+	suggestion string
+	suggestErr string
+	suggestFor string
 
 	selected        *sessionItem
 	loading         bool
@@ -328,10 +345,19 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	sp.Spinner = spinner.Dot
 	sp.Style = accentStyle
 
+	// Settings are read here rather than threaded through every caller: the
+	// suggestion agent is a TUI-only concern and an unreadable config simply
+	// leaves the feature off.
+	var titleCfg titler.Config
+	if settings, err := config.LoadSettings(); err == nil && settings.TitleModel != nil {
+		titleCfg = titler.Config{Provider: settings.TitleModel.Provider, Model: settings.TitleModel.Model}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m := modelState{
 		reg: reg, idx: idx, engine: engine,
+		titleCfg: titleCfg,
 		sessions: sessList, sourceList: sourceList, targets: targetList,
 		preview: vp, searchInput: search, renameInput: rename, spinner: sp,
 		sources: sources, cwd: cwd,
@@ -351,8 +377,14 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	if runErr != nil {
 		return runErr
 	}
-	if done, ok := final.(modelState); ok && done.launch != "" {
+	done, ok := final.(modelState)
+	if ok && done.launch != "" {
+		// Handing the terminal to another agent: no goodbye screen, or it
+		// lands as noise right before that agent paints its own startup.
 		return launchResume(done.launch, done.launchTarget, done.launchProject)
+	}
+	if ok {
+		playFarewell(os.Stdout, done.width, done.height, true)
 	}
 	return nil
 }
@@ -574,6 +606,35 @@ func refreshIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Sto
 	}
 }
 
+// suggestTitleCmd asks the configured agent for one title. It runs off the UI
+// thread and reports failures inline: a missing suggestion must never block or
+// disturb the manual rename that is already on screen.
+func suggestTitleCmd(ctx context.Context, reg *registry.Registry, cfg titler.Config, sm model.Summary) tea.Cmd {
+	return func() tea.Msg {
+		p, err := reg.Get(sm.Provider)
+		if err != nil {
+			return titleSuggestionMsg{sessionID: sm.ID, err: err}
+		}
+		ref := provider.SessionRef{ID: sm.ID, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+		var conv *model.Conversation
+		if preview, ok := p.(provider.PreviewLoader); ok {
+			conv, err = preview.LoadPreview(ctx, ref, 12)
+		} else {
+			conv, err = p.Load(ctx, ref)
+		}
+		if err != nil {
+			return titleSuggestionMsg{sessionID: sm.ID, err: err}
+		}
+		title, err := titler.Suggest(ctx, cfg, titler.Request{
+			Title:       sm.Title,
+			ProjectPath: sm.ProjectPath,
+			CreatedAt:   sm.CreatedAt,
+			Messages:    conv.Messages,
+		})
+		return titleSuggestionMsg{sessionID: sm.ID, title: title, err: err}
+	}
+}
+
 func loadPreviewCmd(ctx context.Context, reg *registry.Registry, sm model.Summary) tea.Cmd {
 	return func() tea.Msg {
 		p, err := reg.Get(sm.Provider)
@@ -734,10 +795,26 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m, cmd = dispatchPageLoad(m)
 		return m, cmd
+	case titleSuggestionMsg:
+		// A suggestion is only meaningful for the box that asked for it.
+		if m.overlay != overlayRename || m.suggestFor == "" || m.suggestFor != msg.sessionID {
+			return m, nil
+		}
+		m.suggesting = false
+		switch {
+		case msg.err != nil:
+			m.suggestErr = msg.err.Error()
+		case msg.title == "":
+			m.suggestErr = "没有可用建议"
+		default:
+			m.suggestion = msg.title
+		}
+		return m, nil
 	case renameDoneMsg:
 		m.loading = false
 		m.overlay = overlayNone
 		m.renameInput.Blur()
+		m.clearSuggestion()
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			return m, nil
@@ -924,7 +1001,15 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.overlay = overlayNone
 			m.renameInput.Blur()
+			m.clearSuggestion()
 			return m, tea.HideCursor
+		case "tab":
+			if m.suggestion == "" {
+				return m, nil
+			}
+			m.renameInput.SetValue(m.suggestion)
+			m.renameInput.CursorEnd()
+			return m, nil
 		case "enter":
 			title := strings.TrimSpace(m.renameInput.Value())
 			if title == "" {
@@ -938,6 +1023,7 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if title == strings.TrimSpace(m.selected.summary.Title) {
 				m.overlay = overlayNone
 				m.renameInput.Blur()
+				m.clearSuggestion()
 				return m, tea.HideCursor
 			}
 			m.loading = true
@@ -1195,6 +1281,15 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.renameInput.Focus()
 			m.overlay = overlayRename
 			m.layout()
+			// The box opens on the original title immediately; the suggestion
+			// lands later, or never, without ever blocking typing.
+			m.suggestion, m.suggestErr, m.suggesting, m.suggestFor = "", "", false, ""
+			if m.titleCfg.Enabled() {
+				m.suggesting = true
+				m.suggestFor = it.summary.ID
+				return m, tea.Batch(textinput.Blink,
+					suggestTitleCmd(m.ctx, m.reg, m.titleCfg, it.summary))
+			}
 			return m, textinput.Blink
 		}
 		return m, nil
@@ -1304,7 +1399,8 @@ func (m modelState) View() string {
 		pane = overlay(pane, box, m.width)
 	case overlayRename:
 		box := modalStyle.Render(titleStyle.Render("重命名会话") + "\n" +
-			mutedStyle.Render("写回来源 agent 的原生标题") + "\n\n" + m.renameInput.View())
+			mutedStyle.Render("写回来源 agent 的原生标题") + "\n\n" + m.renameInput.View() +
+			m.suggestionLine())
 		pane = overlay(pane, box, m.width)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, pane, footer)
@@ -1344,6 +1440,37 @@ func overlay(background, box string, width int) string {
 			strings.Repeat(" ", rightPad) + edge
 	}
 	return strings.Join(bgLines, "\n")
+}
+
+// clearSuggestion drops suggestion state so a stale proposal cannot reappear
+// over the next rename.
+func (m *modelState) clearSuggestion() {
+	m.suggesting = false
+	m.suggestion = ""
+	m.suggestErr = ""
+	m.suggestFor = ""
+}
+
+// suggestionLine renders at most one extra row under the rename input. It adds
+// a single line and clips it: the rename box has to keep fitting inside the
+// terminal it is drawn over, whatever a model returns.
+func (m modelState) suggestionLine() string {
+	var line string
+	switch {
+	case m.suggesting:
+		line = mutedStyle.Render("AI 建议生成中…")
+	case m.suggestion != "":
+		line = okStyle.Render("建议 ") + m.suggestion + mutedStyle.Render("  · tab 接受")
+	case m.suggestErr != "":
+		line = mutedStyle.Render("建议不可用：" + m.suggestErr)
+	default:
+		return ""
+	}
+	inner := m.width - modalStyle.GetHorizontalFrameSize() - paneStyle.GetHorizontalBorderSize()
+	if inner < 8 {
+		return ""
+	}
+	return "\n" + ansi.Truncate(line, inner, "…")
 }
 
 func (m modelState) deleteView() string {
@@ -1433,6 +1560,9 @@ func (m modelState) help() string {
 	case overlayDelete:
 		return " ←→ 选择 · enter 确认 · esc 取消"
 	case overlayRename:
+		if m.suggestion != "" {
+			return " 输入新标题 · tab 用建议 · enter 保存 · esc 取消"
+		}
 		return " 输入新标题 · enter 保存 · esc 取消"
 	}
 	if m.searching {
