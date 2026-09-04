@@ -175,6 +175,11 @@ func TestSuggestRejectsUnknownProviderAndMissingCreationTime(t *testing.T) {
 	if _, err := titler.Suggest(context.Background(), titler.Config{Provider: "pi"}, titler.Request{}); err == nil {
 		t.Fatal("session without creation time accepted")
 	}
+	// No stub needed: the epoch-zero refusal precedes the CLI lookup, so it
+	// holds whether or not the agent is installed.
+	if _, err := titler.Suggest(context.Background(), titler.Config{Provider: "pi"}, titler.Request{CreatedAt: time.Unix(0, 0)}); err == nil || !strings.Contains(err.Error(), "缺少创建时间") {
+		t.Fatalf("epoch-zero creation time accepted: %v", err)
+	}
 }
 
 func TestSuggestRunsOutsideTheProject(t *testing.T) {

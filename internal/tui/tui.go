@@ -43,6 +43,7 @@ const (
 	overlayPreview
 	overlayDelete
 	overlayRename
+	overlayBatchTitle
 )
 
 type sessionItem struct {
@@ -70,7 +71,13 @@ func (i sessionItem) FilterValue() string {
 
 // sessionDelegate renders one session per line so the title, the only thing
 // that identifies a session, gets every column the terminal can spare.
-type sessionDelegate struct{ spacing int }
+// sessionDelegate carries the batch selection by reference so the browser can
+// mutate it in place. The list is rebuilt on every page load and the delegate
+// is not, so the map must never be reassigned after construction.
+type sessionDelegate struct {
+	marked  map[string]bool
+	spacing int
+}
 
 func (sessionDelegate) Height() int                         { return 1 }
 func (d sessionDelegate) Spacing() int                      { return d.spacing }
@@ -81,10 +88,18 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		return
 	}
 	width := max(20, m.Width())
-	cursor := "  "
+	cursor := " "
 	if index == m.Index() {
-		cursor = selectedRow.Render("› ")
+		cursor = selectedRow.Render("›")
 	}
+	// The mark gets its own column rather than replacing the cursor, so a
+	// marked row still shows where the cursor is, and so the row width never
+	// changes when a batch selection starts or ends.
+	mark := " "
+	if d.marked[it.summary.ID] {
+		mark = accentStyle.Render("✓")
+	}
+	gutter := cursor + mark + " "
 
 	rel := util.FormatRelative(it.summary.UpdatedAt)
 	lbl := it.providerLbl
@@ -107,7 +122,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	if width >= 92 {
 		projW = min(28, width/4)
 	}
-	fixed := 2 + timeW + provW + msgW + 3
+	fixed := 3 + timeW + provW + msgW + 3
 	if projW > 0 {
 		fixed += projW + 1
 	}
@@ -124,7 +139,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		provText = lipgloss.NewStyle().Foreground(color).Render(provText)
 	}
 
-	row := cursor +
+	row := gutter +
 		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + " " +
 		provText + " " + title + " "
 	if projW > 0 {
@@ -276,6 +291,24 @@ type modelState struct {
 	suggestErr string
 	suggestFor string
 
+	// marked holds the session IDs chosen for a batch action, keyed by ID
+	// rather than list index: filtering and page reloads rebuild the rows, and
+	// an index-keyed selection would silently follow a different session.
+	marked map[string]bool
+
+	// batch* carries the bulk-rename flow. Items keep mark order, results
+	// stream in out of order, and total counts both from the moment the
+	// engine starts. The channel and cancel func are nil outside a run.
+	batchItems      []model.Summary
+	batchByID       map[string]model.Summary
+	batchResults    []titler.BatchResult
+	batchTotal      int
+	batchCh         <-chan titler.BatchResult
+	batchCancel     context.CancelFunc
+	batchRunning    bool
+	batchCancelling bool
+	batchExpanded   bool
+
 	selected        *sessionItem
 	loading         bool
 	indexing        bool
@@ -328,7 +361,9 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 
 	counts, _ := idx.CountByProvider()
 
-	sessList := newSessionList(nil)
+	// One map instance is shared with the delegate; see sessionDelegate.
+	marked := map[string]bool{}
+	sessList := newSessionList(nil, marked)
 	sources := sourceChips(reg, counts)
 	sourceList := newSourceList(sourceItems(sources))
 	targetList := newTargetList(nil)
@@ -358,6 +393,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	m := modelState{
 		reg: reg, idx: idx, engine: engine,
 		titleCfg: titleCfg,
+		marked:   marked,
 		sessions: sessList, sourceList: sourceList, targets: targetList,
 		preview: vp, searchInput: search, renameInput: rename, spinner: sp,
 		sources: sources, cwd: cwd,
@@ -450,8 +486,17 @@ func newBareList(items []list.Item, delegate list.ItemDelegate, w, h int) list.M
 	return l
 }
 
-func newSessionList(items []list.Item) list.Model {
-	return newBareList(items, sessionDelegate{}, 72, 20)
+func newSessionList(items []list.Item, marked map[string]bool) list.Model {
+	return newBareList(items, sessionDelegate{marked: marked}, 72, 20)
+}
+
+// markStatus describes the batch selection, and yields the status line back to
+// ordinary messages once nothing is marked.
+func (m modelState) markStatus() string {
+	if len(m.marked) == 0 {
+		return ""
+	}
+	return mutedStyle.Render(fmt.Sprintf("已标记 %d 个会话  ·  x 标记 · a 全选 · ctrl+t 批量命名", len(m.marked)))
 }
 
 func newSourceList(items []list.Item) list.Model {
@@ -823,6 +868,62 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m, cmd = dispatchPageLoad(m)
 		return m, cmd
+	case batchReadyMsg:
+		m.batchResults = append(m.batchResults, msg.frozen...)
+		if len(msg.items) == 0 {
+			m.finalizeBatch()
+			return m, nil
+		}
+		parent := m.ctx
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, cancel := context.WithCancel(parent)
+		m.batchCancel = cancel
+		m.batchTotal = len(m.batchResults) + len(msg.items)
+		m.batchCh = titler.SuggestBatch(ctx, m.titleCfg, msg.items, titler.DefaultConcurrency)
+		m.batchRunning = true
+		return m, batchNextCmd(m.batchCh)
+	case batchResultMsg:
+		m.batchResults = append(m.batchResults, msg.res)
+		if m.batchCh != nil && len(m.batchResults) < m.batchTotal {
+			return m, batchNextCmd(m.batchCh)
+		}
+		m.finalizeBatch()
+		return m, nil
+	case batchFinishedMsg:
+		if !m.batchRunning {
+			return m, nil
+		}
+		m.finalizeBatch()
+		return m, nil
+	case batchAppliedMsg:
+		for _, id := range msg.appliedIDs {
+			delete(m.marked, id)
+		}
+		m.overlay = overlayNone
+		m.resetBatch()
+		switch {
+		case msg.applied > 0 && msg.failed > 0:
+			detail := msg.detail
+			if detail == "" {
+				detail = "部分行失败"
+			}
+			m.err = fmt.Sprintf("已重命名 %d 条，失败 %d 条：%s", msg.applied, msg.failed, detail)
+		case msg.applied > 0:
+			m.status = okStyle.Render(fmt.Sprintf("已重命名 %d 条", msg.applied))
+		case msg.failed > 0:
+			detail := msg.detail
+			if detail == "" {
+				detail = "全部失败"
+			}
+			m.err = fmt.Sprintf("批量重命名失败 %d 条：%s", msg.failed, detail)
+		default:
+			m.status = "没有应用任何标题变更"
+		}
+		var cmd tea.Cmd
+		m, cmd = dispatchPageLoad(m)
+		return m, cmd
 	case deleteDoneMsg:
 		m.loading = false
 		m.overlay = overlayNone
@@ -957,6 +1058,10 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.preview, cmd = m.preview.Update(msg)
 	case overlayRename:
 		m.renameInput, cmd = m.renameInput.Update(msg)
+	case overlayBatchTitle:
+		// The batch overlay owns its keys; ticks and cursor blinks die here
+		// instead of leaking into the session list underneath.
+		return m, nil
 	default:
 		m.sessions, cmd = m.sessions.Update(msg)
 	}
@@ -991,6 +1096,9 @@ func (m modelState) updateSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.overlay == overlayBatchTitle {
+		return m.updateBatchOverlay(msg)
+	}
 	if m.overlay == overlayRename {
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -1259,6 +1367,42 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spinner.Tick, archiveSessionCmd(m.ctx, m.reg, m.idx, it.summary, true))
 		}
 		return m, nil
+	case "x":
+		// x rather than space: space already opens the preview, which is the
+		// primary browsing action and must keep it.
+		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
+			if m.marked[it.summary.ID] {
+				delete(m.marked, it.summary.ID)
+			} else {
+				m.marked[it.summary.ID] = true
+			}
+			m.status = m.markStatus()
+		}
+		return m, nil
+	case "a":
+		// Toggling on the whole visible page keeps one key for select-all and
+		// clear-all; A is already the archive undo.
+		items := m.sessions.Items()
+		allMarked := len(items) > 0
+		for _, li := range items {
+			if it, ok := li.(sessionItem); ok && !m.marked[it.summary.ID] {
+				allMarked = false
+				break
+			}
+		}
+		for _, li := range items {
+			it, ok := li.(sessionItem)
+			if !ok {
+				continue
+			}
+			if allMarked {
+				delete(m.marked, it.summary.ID)
+			} else {
+				m.marked[it.summary.ID] = true
+			}
+		}
+		m.status = m.markStatus()
+		return m, nil
 	case "ctrl+r":
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
@@ -1293,6 +1437,10 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		}
 		return m, nil
+	case "ctrl+t":
+		// The batch flow previews first and renames only on confirmation, so
+		// opening it never spends a model call by itself.
+		return m.startBatch()
 	case "ctrl+d":
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
@@ -1355,7 +1503,7 @@ func (m *modelState) layout() {
 	if m.width >= 80 && contentH >= 14 {
 		sessionSpacing = 1
 	}
-	m.sessions.SetDelegate(sessionDelegate{spacing: sessionSpacing})
+	m.sessions.SetDelegate(sessionDelegate{marked: m.marked, spacing: sessionSpacing})
 	m.sessions.SetSize(max(1, m.width-frameW), contentH)
 
 	modalInnerW := modalInnerWidth(m.width)
@@ -1410,6 +1558,9 @@ func (m modelState) View() string {
 		box := modalStyle.Render(titleStyle.Render("重命名会话") + "\n" +
 			mutedStyle.Render("写回来源 agent 的原生标题") + "\n\n" + m.renameInput.View() +
 			m.suggestionLine())
+		pane = overlay(pane, box, m.width)
+	case overlayBatchTitle:
+		box := modalStyle.Render(m.batchView())
 		pane = overlay(pane, box, m.width)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, pane, footer)
@@ -1575,6 +1726,11 @@ func (m modelState) help() string {
 			return " 输入新标题 · tab 用建议 · enter 保存 · esc 取消"
 		}
 		return " 输入新标题 · enter 保存 · esc 取消"
+	case overlayBatchTitle:
+		if m.batchRunning {
+			return " 生成中 · esc 取消剩余任务"
+		}
+		return " enter 应用变更 · e 展开其余 · esc 关闭"
 	}
 	if m.searching {
 		return " enter 搜索 · esc 取消"
@@ -1585,7 +1741,7 @@ func (m modelState) help() string {
 	if m.lastArchived != nil {
 		return " A 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览"
 	}
-	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · A 归档 · ctrl+d 删除 · / 搜索"
+	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · x 标记 · ctrl+t 批量 · A 归档 · ctrl+d 删除 · / 搜索 · r 刷新"
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across

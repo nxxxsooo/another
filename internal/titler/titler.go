@@ -125,6 +125,14 @@ func Command(providerID string) string {
 // or "" when the model declined or drifted. An empty result is not an error:
 // the caller shows nothing and the manual rename path is untouched.
 func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
+	// Missing creation times arrive in two shapes: a zero time from callers
+	// that never had one, and Unix 0 from the index, which scans back as 1970
+	// rather than a zero time. Either way the date cannot be proven, so this
+	// check runs before anything that could spend a model call, and before the
+	// CLI lookup so the refusal never depends on what is installed.
+	if req.CreatedAt.Unix() <= 0 {
+		return "", errors.New("会话缺少创建时间")
+	}
 	l, ok := launchers[NormalizeID(cfg.Provider)]
 	if !ok {
 		return "", fmt.Errorf("%s 不能生成标题", cfg.Provider)
@@ -132,11 +140,6 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 	bin, err := exec.LookPath(l.command)
 	if err != nil {
 		return "", fmt.Errorf("%s 未安装", l.command)
-	}
-	if req.CreatedAt.IsZero() {
-		// The skill freezes rows whose creation time cannot be proven, and so
-		// does another rather than letting the model reach for today's date.
-		return "", errors.New("会话缺少创建时间")
 	}
 
 	// A throwaway working directory keeps the agent out of the user's project:
