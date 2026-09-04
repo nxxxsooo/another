@@ -39,11 +39,16 @@ macOS and Linux:
 
 ```bash
 # Homebrew
+brew trust nxxxsooo/tap
 brew install nxxxsooo/tap/another
 
 # Install script
 curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash
 ```
+
+Homebrew 6 requires third-party taps to be trusted before it will load them, and
+refuses the install otherwise. Older versions load the tap directly and treat
+`brew trust` as an unknown command; skip that line on those.
 
 <details>
 <summary><strong>From source</strong></summary>
