@@ -87,6 +87,17 @@ q         quit
 
 Migration shows the exact resume command first. Press `Enter` to hand the terminal to the target agent, `c` to copy the command, or `Esc` to keep browsing.
 
+Quitting leaves the wordmark in your scrollback. Handing the terminal to another agent does not — that would be noise in front of the agent about to start.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/tui-goodbye-static.png">
+    <img src="docs/assets/tui-goodbye.gif" width="500" alt="the another wordmark printed on exit; its upper half slips two cells and turns magenta, then returns to violet and to register">
+  </picture>
+</p>
+
+Set `ANOTHER_NO_MOTION=1` for the still frame. Pipes, `NO_COLOR`, `CI`, and terminals too short to redraw in already get it.
+
 ## Agents
 
 OpenCode and OpenCode 2 are deliberately separate. They use different commands, databases, schemas, and service lifecycles.
@@ -179,6 +190,14 @@ Regenerate README artwork:
 ```bash
 ./scripts/render-readme-assets.py
 python3 ./scripts/render-motion-banner.py  # requires Pillow and ffmpeg
+python3 ./scripts/render-goodbye-gif.py    # requires Pillow
+```
+
+Regenerate the TUI wordmark itself only when its typeface or size changes; the
+rasterized face is checked in, so building never needs the font:
+
+```bash
+python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # requires Pillow and JetBrains Mono ExtraBold
 ```
 
 ## The name
