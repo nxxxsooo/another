@@ -1727,7 +1727,7 @@ func (m modelState) help() string {
 	if m.lastArchived != nil {
 		return " A 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览"
 	}
-	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · x 标记 · ctrl+t 批量 · A 归档 · ctrl+d 删除 · / 搜索"
+	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · x 标记 · ctrl+t 批量 · A 归档 · ctrl+d 删除 · / 搜索 · r 刷新"
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across
