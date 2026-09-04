@@ -74,11 +74,18 @@ func TestBatchFreezesRowsWithoutACreationTime(t *testing.T) {
 	items := []BatchItem{
 		item("dated", "old", created),
 		item("undated", "old", time.Time{}),
+		item("epoch", "old", time.Unix(0, 0)),
 	}
 	got := byID(drain(suggestBatch(context.Background(), Config{}, items, 2, suggest)))
 
 	if got["undated"].Frozen != "缺少创建时间" {
 		t.Fatalf("undated row was not frozen: %+v", got["undated"])
+	}
+	// Unix 0 is how the index stores a missing creation time; it scans back
+	// as 1970, so the engine must treat it as missing rather than handing the
+	// model an invented MMDD of 0101.
+	if got["epoch"].Frozen != "缺少创建时间" {
+		t.Fatalf("epoch-zero row was not frozen: %+v", got["epoch"])
 	}
 	if got["undated"].Title != "" {
 		t.Fatal("a frozen row must not carry a title")

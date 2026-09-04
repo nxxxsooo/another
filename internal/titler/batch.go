@@ -98,8 +98,9 @@ func runOne(ctx context.Context, cfg Config, item BatchItem, suggest suggestFunc
 	res := BatchResult{SessionID: item.SessionID, Current: item.Request.Title}
 	// A row whose creation date cannot be proven is frozen here rather than
 	// sent to a model, which keeps another from paying for a call whose only
-	// possible answers are a refusal or an invented date.
-	if item.Request.CreatedAt.IsZero() {
+	// possible answers are a refusal or an invented date. Unix 0 counts as
+	// missing too: that is how the index stores it, and it scans back as 1970.
+	if item.Request.CreatedAt.Unix() <= 0 {
 		res.Frozen = "缺少创建时间"
 		return res
 	}
