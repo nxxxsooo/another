@@ -103,6 +103,51 @@ func TestDiscoverReadsHeaderAndSessionInfo(t *testing.T) {
 	}
 }
 
+func TestLatestSessionInfoDefinesCurrentTitle(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		latestName string
+		want       string
+	}{
+		{name: "empty name clears an earlier title", latestName: "", want: "fallback question"},
+		{name: "name is trimmed like pi", latestName: "  renamed title  ", want: "renamed title"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("PI_AGENT_DIR", root)
+			latest, err := json.Marshal(map[string]any{
+				"type": "session_info", "id": "c1", "parentId": "b1", "name": tc.latestName,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := []string{
+				`{"type":"session","version":3,"id":"sess-latest","timestamp":"2026-09-03T05:02:48.316Z","cwd":"/home/user/proj"}`,
+				`{"type":"session_info","id":"a1","parentId":null,"name":"old title"}`,
+				`{"type":"message","id":"b1","parentId":"a1","timestamp":"2026-09-03T05:02:49.000Z","message":{"role":"user","content":[{"type":"text","text":"fallback question"}]}}`,
+				string(latest),
+			}
+			path := writeSession(t, root, "/home/user/proj", "2026-09-03T05-02-48-316Z_sess-latest.jsonl", lines)
+
+			summaries, err := pi.New().Discover(context.Background(), provider.DiscoverOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(summaries) != 1 || summaries[0].Title != tc.want {
+				t.Fatalf("Discover title = %q, want %q", summaries[0].Title, tc.want)
+			}
+
+			conv, err := pi.New().Load(context.Background(), provider.SessionRef{ID: "sess-latest", StoragePath: path})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if conv.Title != tc.want {
+				t.Fatalf("Load title = %q, want %q", conv.Title, tc.want)
+			}
+		})
+	}
+}
+
 // A session with no session_info must still get a usable title from the first
 // user message, the same fallback the other providers use.
 func TestDiscoverFallsBackToFirstUserMessageTitle(t *testing.T) {

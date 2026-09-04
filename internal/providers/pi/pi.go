@@ -226,9 +226,9 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 				first = ts
 			}
 		case "session_info":
-			if e.Name != "" {
-				name = e.Name
-			}
+			// Pi treats the latest session_info as authoritative, including an
+			// empty name that explicitly clears an earlier title.
+			name = strings.TrimSpace(e.Name)
 		case "message":
 			if e.Message == nil {
 				return nil
@@ -322,9 +322,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 				conv.ProjectPath = e.CWD
 			}
 		case "session_info":
-			if e.Name != "" {
-				conv.Title = e.Name
-			}
+			conv.Title = strings.TrimSpace(e.Name)
 		case "message":
 			if e.Message == nil {
 				return nil
