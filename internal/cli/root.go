@@ -434,7 +434,6 @@ func (a *App) setupCmd() *cobra.Command {
 }
 
 func (a *App) runSetup(ctx context.Context) (bool, error) {
-	all := registry.New()
 	counts, _ := a.Index.CountByProvider()
 	var initial []string
 	var initialTitle *config.TitleModel
@@ -444,6 +443,7 @@ func (a *App) runSetup(ctx context.Context) (bool, error) {
 	} else if !os.IsNotExist(err) {
 		return false, fmt.Errorf("load config: %w", err)
 	}
+	all := registry.NewOrdered(initial)
 	enabled, titleModel, saved, err := tui.RunSetup(all, counts, initial, initialTitle)
 	if err != nil || !saved {
 		return false, err

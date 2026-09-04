@@ -41,6 +41,18 @@ func TestTwinThemeAssignsDistinctInteractionRoles(t *testing.T) {
 	}
 }
 
+func TestPiAndOpenCode2ProviderColorsStayDistinct(t *testing.T) {
+	piColor := fmt.Sprint(providerColors["pi"])
+	o2Color := fmt.Sprint(providerColors["opencode2"])
+	cursorColor := fmt.Sprint(providerColors["cursor"])
+	if piColor != "#62D8FF" {
+		t.Fatalf("pi color = %s, want cold blue", piColor)
+	}
+	if piColor == o2Color || piColor == cursorColor || o2Color == cursorColor {
+		t.Fatalf("provider colors are not distinct: pi=%s o2=%s cursor=%s", piColor, o2Color, cursorColor)
+	}
+}
+
 func TestDirectionalStylesCarryTwinSemantics(t *testing.T) {
 	if got := fmt.Sprint(sourceChipStyle.GetBackground()); got != charmtone.Charple.Hex() {
 		t.Fatalf("source chip background = %s, want violet", got)

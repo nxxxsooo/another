@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,6 +160,18 @@ func TestRightOpensTargetOverlay(t *testing.T) {
 	}
 }
 
+func TestOpeningPickersRequestsAFullRepaint(t *testing.T) {
+	for _, key := range []tea.KeyType{tea.KeyLeft, tea.KeyRight} {
+		m := layoutTestModel()
+		m.width, m.height = 87, 24
+		m.layout()
+		_, cmd := m.Update(tea.KeyMsg{Type: key})
+		if !commandContainsMessage(cmd, "tea.clearScreenMsg") {
+			t.Fatalf("opening picker with %v did not request a full repaint", key)
+		}
+	}
+}
+
 func TestEnterDirectlyResumesSourceSession(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 80, 24
@@ -221,15 +234,15 @@ func TestMessageCountHasUnit(t *testing.T) {
 	}
 }
 
-func TestWideHeaderPinsTargetToRight(t *testing.T) {
+func TestWideHeaderKeepsTargetBesideSessionCount(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 100, 24
 	header := ansi.Strip(m.headerView())
-	if got := ansi.StringWidth(header); got != m.width {
-		t.Fatalf("header width = %d, want %d: %q", got, m.width, header)
+	if got := ansi.StringWidth(header); got > m.width {
+		t.Fatalf("header width = %d, want <= %d: %q", got, m.width, header)
 	}
-	if !strings.HasSuffix(strings.TrimRight(header, " "), "去向 →") {
-		t.Fatalf("target action is not pinned right: %q", header)
+	if !strings.Contains(header, "个会话   │    去向 →") {
+		t.Fatalf("target action did not return beside the session count: %q", header)
 	}
 }
 
@@ -314,6 +327,84 @@ func TestOverlayPreservesBackgroundOutsideItsOwnBounds(t *testing.T) {
 	}
 }
 
+func TestOverlayKeepsModalAlignedAcrossWideCharacterCuts(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+
+	backgroundLine := mutedStyle.Render("│" + strings.Repeat("飞", 19) + "│")
+	background := strings.Join([]string{backgroundLine, backgroundLine, backgroundLine}, "\n")
+	got := overlay(background, "┏━━┓\n┃中┃\n┗━━┛", 40)
+	for row, line := range strings.Split(got, "\n") {
+		if width := ansi.StringWidth(line); width != 40 {
+			t.Fatalf("row %d width = %d, want 40 after a wide-character cut: %q", row, width, ansi.Strip(line))
+		}
+	}
+}
+
+func TestSourceModalRowsShareOneCellWidth(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 87, 24
+	m.layout()
+	box := sourceModalStyle.Render(accentStyle.Render("选择来源") + "\n" +
+		mutedStyle.Render("会话来自哪个 agent？") + "\n\n" + m.sourceList.View())
+	lines := strings.Split(box, "\n")
+	want := ansi.StringWidth(lines[0])
+	for row, line := range lines[1:] {
+		if got := ansi.StringWidth(line); got != want {
+			t.Fatalf("source modal row %d width = %d, want %d: %q", row+1, got, want, ansi.Strip(line))
+		}
+	}
+}
+
+func TestSourceModalBordersStayInTheSameColumnsOverSessionRows(t *testing.T) {
+	m := layoutTestModel()
+	var sessions []list.Item
+	for i := 0; i < 20; i++ {
+		sessions = append(sessions, sessionItem{
+			summary: model.Summary{
+				ID:           "session",
+				Provider:     "opencode",
+				Title:        "Claude Code v2.1.260 发布说明摘要",
+				ProjectPath:  "/Users/mingjian/Documents/sync/GitHub/another",
+				MessageCount: 20,
+			},
+			providerLbl: "OpenCode",
+		})
+	}
+	m.sessions.SetItems(sessions)
+	m.sourceList = newSourceList([]list.Item{
+		sourceChip{name: "all", count: 724},
+		sourceChip{id: "claude-code", name: "Claude Code", count: 107},
+		sourceChip{id: "codex", name: "Codex", count: 303},
+		sourceChip{id: "opencode", name: "OpenCode", count: 20},
+		sourceChip{id: "opencode2", name: "OpenCode 2", count: 12},
+		sourceChip{id: "pi", name: "pi", count: 256},
+		sourceChip{id: "agy", name: "Antigravity", count: 26},
+	})
+	m.width, m.height, m.overlay = 87, 24, overlaySource
+	m.layout()
+
+	left, right := -1, -1
+	for row, line := range strings.Split(m.View(), "\n") {
+		plain := ansi.Strip(line)
+		for _, pair := range [][2]string{{"┏", "┓"}, {"┃", "┃"}, {"┗", "┛"}} {
+			first, last := strings.Index(plain, pair[0]), strings.LastIndex(plain, pair[1])
+			if first < 0 || last <= first {
+				continue
+			}
+			gotLeft := ansi.StringWidth(plain[:first])
+			gotRight := ansi.StringWidth(plain[:last])
+			if left < 0 {
+				left, right = gotLeft, gotRight
+			} else if gotLeft != left || gotRight != right {
+				t.Fatalf("source modal border shifted on row %d: (%d,%d), want (%d,%d): %q", row, gotLeft, gotRight, left, right, plain)
+			}
+			break
+		}
+	}
+}
+
 func TestEqualHeightOverlayPreservesBackgroundOutsideItsOwnBounds(t *testing.T) {
 	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
@@ -354,6 +445,26 @@ func lineContaining(lines []string, needle string) int {
 		}
 	}
 	return -1
+}
+
+func commandContainsMessage(cmd tea.Cmd, typeName string) bool {
+	if cmd == nil {
+		return false
+	}
+	msg := cmd()
+	if fmt.Sprintf("%T", msg) == typeName {
+		return true
+	}
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		return false
+	}
+	for _, child := range batch {
+		if child != nil && fmt.Sprintf("%T", child()) == typeName {
+			return true
+		}
+	}
+	return false
 }
 
 func TestTargetOverlayEscapeReturns(t *testing.T) {

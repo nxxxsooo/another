@@ -65,6 +65,41 @@ func TestSetupSpaceTogglesAvailableAgent(t *testing.T) {
 	}
 }
 
+func TestSetupShiftArrowsReorderAgentsWithoutChangingSelection(t *testing.T) {
+	m := setupFixture()
+	m.cursor = 1
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftUp})
+	got := updated.(setupModel)
+	if got.cursor != 0 || got.items[0].id != "codex" || got.items[1].id != "pi" {
+		t.Fatalf("shift+up did not move the row: cursor=%d items=%+v", got.cursor, got.items)
+	}
+	if !got.selected["pi"] || got.selected["codex"] {
+		t.Fatalf("reordering changed selection: %+v", got.selected)
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyShiftDown})
+	got = updated.(setupModel)
+	if got.cursor != 1 || got.items[0].id != "pi" || got.items[1].id != "codex" {
+		t.Fatalf("shift+down did not move the row back: cursor=%d items=%+v", got.cursor, got.items)
+	}
+}
+
+func TestSetupShiftArrowsStopAtTheEnds(t *testing.T) {
+	m := setupFixture()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftUp})
+	got := updated.(setupModel)
+	if got.cursor != 0 || got.items[0].id != "pi" {
+		t.Fatalf("shift+up wrapped the first row: cursor=%d items=%+v", got.cursor, got.items)
+	}
+	got.cursor = len(got.items) - 1
+	last := got.items[got.cursor].id
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyShiftDown})
+	got = updated.(setupModel)
+	if got.cursor != len(got.items)-1 || got.items[got.cursor].id != last {
+		t.Fatalf("shift+down wrapped the last row: cursor=%d items=%+v", got.cursor, got.items)
+	}
+}
+
 func TestSetupRejectsUnavailableAgent(t *testing.T) {
 	m := setupFixture()
 	m.cursor = 2
@@ -160,6 +195,15 @@ func TestSetupTooSmallView(t *testing.T) {
 	m.width, m.height = 47, 19
 	if view := m.View(); !strings.Contains(view, "Terminal too small") {
 		t.Fatalf("small view = %q", view)
+	}
+}
+
+func TestSetupExplainsToggleAndSortControls(t *testing.T) {
+	view := setupFixture().View()
+	for _, want := range []string{"space 开关", "shift+↑↓ 排序"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("setup does not explain %q: %q", want, view)
+		}
 	}
 }
 

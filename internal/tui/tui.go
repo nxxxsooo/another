@@ -1146,7 +1146,7 @@ func (m modelState) openTargetDrawer() (tea.Model, tea.Cmd) {
 	m.targets.Select(0)
 	m.overlay = overlayTarget
 	m.layout()
-	return m, tea.HideCursor
+	return m, tea.Batch(tea.HideCursor, tea.ClearScreen)
 }
 
 func (m modelState) applySource() (tea.Model, tea.Cmd) {
@@ -1183,7 +1183,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sourceList.Select(m.sourceIdx)
 		m.overlay = overlaySource
 		m.layout()
-		return m, tea.HideCursor
+		return m, tea.Batch(tea.HideCursor, tea.ClearScreen)
 	case "right":
 		return m.openTargetDrawer()
 	case "/":
@@ -1510,10 +1510,11 @@ func (m modelState) headerView() string {
 		sourceName = "全部"
 	}
 	left := brand + "  " + mutedStyle.Render("← 来源 ") + sourceChipStyle.Render(sourceName)
-	if m.width >= 64 {
-		left += mutedStyle.Render(fmt.Sprintf("   %d 个会话", m.totalSessions))
-	}
 	right := targetChipStyle.Render("去向 →")
+	if m.width >= 64 {
+		header := left + mutedStyle.Render(fmt.Sprintf("   │   %d 个会话   │   ", m.totalSessions)) + right
+		return ansi.Truncate(header, m.width, "…")
+	}
 	left = ansi.Truncate(left, max(0, m.width-ansi.StringWidth(right)-2), "…")
 	gap := max(2, m.width-ansi.StringWidth(left)-ansi.StringWidth(right))
 	header := left + strings.Repeat(" ", gap) + right

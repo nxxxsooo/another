@@ -83,7 +83,7 @@ With `~/.local/bin` or your Go bin directory on `PATH`, run:
 another
 ```
 
-The first run opens a Charmtone setup screen. Use `↑↓` to move, `Space` to select the agents you use, and `Enter` to continue. The second page picks an optional agent for AI title suggestions; it defaults to off. Run `another setup` any time to change either choice.
+The first run opens a Charmtone setup screen. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The second page picks an optional agent for AI title suggestions; it defaults to off. Run `another setup` any time to change either choice.
 
 ### Update
 

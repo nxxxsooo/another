@@ -39,7 +39,7 @@ var providerColors = map[string]lipgloss.Color{
 	"opencode2":   charm(charmtone.Dolly),
 	"commandcode": charm(charmtone.Tang),
 	"hermes":      charm(charmtone.Guppy),
-	"pi":          charm(charmtone.Blush),
+	"pi":          lipgloss.Color("#62D8FF"),
 	"agy":         charm(charmtone.Mustard),
 }
 

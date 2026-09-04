@@ -159,6 +159,16 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q", "esc":
 			m.cancelled = true
 			return m, tea.Quit
+		case "shift+up":
+			if m.cursor > 0 && m.cursor < len(m.items) {
+				m.items[m.cursor-1], m.items[m.cursor] = m.items[m.cursor], m.items[m.cursor-1]
+				m.cursor--
+			}
+		case "shift+down":
+			if m.cursor >= 0 && m.cursor < len(m.items)-1 {
+				m.items[m.cursor], m.items[m.cursor+1] = m.items[m.cursor+1], m.items[m.cursor]
+				m.cursor++
+			}
 		case "up", "k":
 			if len(m.items) > 0 {
 				m.cursor = (m.cursor - 1 + len(m.items)) % len(m.items)
@@ -252,7 +262,7 @@ func (m setupModel) View() string {
 	var body strings.Builder
 	body.WriteString(accentStyle.Render("another setup") + "\n")
 	body.WriteString(titleStyle.Render("选择你使用的 agent") + "  " + mutedStyle.Render(fmt.Sprintf("%d / %d", selectedCount(m.selected), len(m.items))) + "\n")
-	body.WriteString(mutedStyle.Render("这些选择决定索引范围、来源和迁移去向。") + "\n\n")
+	body.WriteString(mutedStyle.Render("Space 开关 agent；Shift+↑↓ 调整显示顺序。") + "\n\n")
 	for i, item := range m.items {
 		cursor := "  "
 		if i == m.cursor {
@@ -284,7 +294,7 @@ func (m setupModel) View() string {
 	if m.err != "" {
 		body.WriteString(errStyle.Render("✗ "+m.err) + "\n")
 	}
-	body.WriteString(mutedStyle.Render("↑↓ 移动  ·  space 选择  ·  enter 下一步  ·  esc 取消"))
+	body.WriteString(mutedStyle.Render("↑↓ 移动  ·  space 开关  ·  shift+↑↓ 排序  ·  enter 下一步  ·  esc 取消"))
 	panel := modalStyle.Width(width - modalStyle.GetHorizontalFrameSize()).Render(body.String())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
 }

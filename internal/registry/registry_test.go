@@ -1,6 +1,7 @@
 package registry_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/nxxxsooo/another/internal/registry"
@@ -27,6 +28,35 @@ func TestNewEnabledKeepsOnlyConfiguredProviders(t *testing.T) {
 	}
 	if _, err := reg.Get("codex"); err == nil {
 		t.Fatal("disabled provider remains addressable")
+	}
+}
+
+func TestNewEnabledPreservesConfiguredOrder(t *testing.T) {
+	reg := registry.NewEnabled([]string{"pi", "o2", "codex", "opencode2", "unknown"})
+	providers := reg.All()
+	got := make([]string, len(providers))
+	for i, p := range providers {
+		got[i] = p.ID()
+	}
+	want := []string{"pi", "opencode2", "codex"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("configured provider order = %v, want %v", got, want)
+	}
+}
+
+func TestNewOrderedPutsSavedProvidersFirstAndKeepsTheRest(t *testing.T) {
+	providers := registry.NewOrdered([]string{"pi", "o2", "pi"}).All()
+	got := make([]string, len(providers))
+	seen := map[string]bool{}
+	for i, p := range providers {
+		got[i] = p.ID()
+		if seen[p.ID()] {
+			t.Fatalf("provider %q appears twice: %v", p.ID(), got)
+		}
+		seen[p.ID()] = true
+	}
+	if len(got) < 9 || !reflect.DeepEqual(got[:2], []string{"pi", "opencode2"}) {
+		t.Fatalf("ordered providers = %v", got)
 	}
 }
 

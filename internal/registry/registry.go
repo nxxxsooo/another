@@ -30,7 +30,18 @@ func NewEnabled(enabled []string) *Registry {
 	for _, id := range enabled {
 		allowed[NormalizeID(id)] = true
 	}
-	return newRegistry(allowed)
+	reg := newRegistry(allowed)
+	reg.preferOrder(enabled)
+	return reg
+}
+
+// NewOrdered keeps every provider available to setup while putting a saved
+// preference first. Providers absent from the preference retain their native
+// registry order after the configured entries.
+func NewOrdered(preferred []string) *Registry {
+	reg := newRegistry(nil)
+	reg.preferOrder(preferred)
+	return reg
 }
 
 func newRegistry(allowed map[string]bool) *Registry {
@@ -56,6 +67,25 @@ func newRegistry(allowed map[string]bool) *Registry {
 		byID[p.ID()] = p
 	}
 	return &Registry{byID: byID, all: providers}
+}
+
+func (r *Registry) preferOrder(preferred []string) {
+	rank := make(map[string]int, len(preferred))
+	for _, raw := range preferred {
+		id := NormalizeID(raw)
+		if _, exists := rank[id]; exists {
+			continue
+		}
+		rank[id] = len(rank)
+	}
+	sort.SliceStable(r.all, func(i, j int) bool {
+		ri, iPreferred := rank[r.all[i].ID()]
+		rj, jPreferred := rank[r.all[j].ID()]
+		if iPreferred != jPreferred {
+			return iPreferred
+		}
+		return iPreferred && ri < rj
+	})
 }
 
 func (r *Registry) All() []provider.Provider {
