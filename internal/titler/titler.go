@@ -70,6 +70,19 @@ var launchers = map[string]launcher{
 		}
 		return append(args, p)
 	}},
+	// agy is the one CLI here that will not take the prompt as a trailing
+	// argument: --print consumes the next token as its value, so a separate
+	// prompt argument is silently ignored. It must be attached to the flag.
+	// --disable-slash-commands stops the untrusted session content from
+	// expanding a slash command or a skill; the contract is inlined in the
+	// prompt anyway, so nothing is lost by not loading one.
+	"agy": {"agy", func(c Config, p string) []string {
+		args := []string{"--output-format", "text", "--disable-slash-commands"}
+		if c.Model != "" {
+			args = append(args, "--model", c.Model)
+		}
+		return append(args, "--print="+p)
+	}},
 }
 
 // NormalizeID accepts the ids another stores and the aliases people type.
