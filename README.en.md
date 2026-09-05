@@ -31,7 +31,7 @@ store, so you open it there and keep going.
 ## Features
 
 - **Native sessions:** resumes in the target agent's own format — not a pasted summary.
-- **Nine agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, and Antigravity.
+- **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, Qwen Code, and Antigravity.
 - **One screen:** browse, search, preview, rename, archive, delete, and migrate without leaving the list.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
 - **Local and fast:** reads native local stores; the private SQLite index under `~/.cache/another/` skips unchanged sessions on re-scan.
@@ -129,6 +129,7 @@ OpenCode and OpenCode 2 are deliberately separate. They use different commands, 
 | OpenCode 2 | `opencode2` | `opencode2 --session <id>` | ✓ | — | ✓ |
 | CommandCode | `commandcode` | `commandcode --resume <id>` | — | — | ✓ |
 | Hermes | `hermes` | `hermes --resume <id>` | — | ✓ | ✓ |
+| Qwen Code | `qwen` | `qwen --resume <id>` | ✓ | — | — |
 | Antigravity | `agy` | `agy --conversation <id>` | ✓ | — | — |
 
 A dash means that agent has no verified native contract for the operation. `another` reports the limitation instead of storing a private state that disappears on refresh.

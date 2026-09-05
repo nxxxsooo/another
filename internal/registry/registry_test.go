@@ -12,6 +12,7 @@ func TestNormalizeID(t *testing.T) {
 		"claude": "claude-code", "Claude-Code": "claude-code",
 		"cursor-agent": "cursor", "open-code": "opencode", "o2": "opencode2", "open-code-2": "opencode2",
 		"agy": "agy", "antigravity": "agy", "antigravity-cli": "agy", "antigravity_cli": "agy",
+		"qwen": "qwen", "qwen-code": "qwen", "qwencode": "qwen",
 	}
 	for in, want := range cases {
 		if got := registry.NormalizeID(in); got != want {
@@ -55,15 +56,15 @@ func TestNewOrderedPutsSavedProvidersFirstAndKeepsTheRest(t *testing.T) {
 		}
 		seen[p.ID()] = true
 	}
-	if len(got) < 9 || !reflect.DeepEqual(got[:2], []string{"pi", "opencode2"}) {
+	if len(got) < 10 || !reflect.DeepEqual(got[:2], []string{"pi", "opencode2"}) {
 		t.Fatalf("ordered providers = %v", got)
 	}
 }
 
 func TestRegistryProviders(t *testing.T) {
 	reg := registry.New()
-	if len(reg.All()) < 9 {
-		t.Fatalf("expected at least 9 providers, got %d", len(reg.All()))
+	if len(reg.All()) < 10 {
+		t.Fatalf("expected at least 10 providers, got %d", len(reg.All()))
 	}
 	if _, err := reg.Get("codex"); err != nil {
 		t.Fatal(err)
@@ -73,6 +74,9 @@ func TestRegistryProviders(t *testing.T) {
 	}
 	if got := registry.CLICommand("agy"); got != "agy" {
 		t.Fatalf("agy CLI command = %q", got)
+	}
+	if got := registry.CLICommand("qwen-code"); got != "qwen" {
+		t.Fatalf("qwen CLI command = %q", got)
 	}
 	if ids := registry.NewEnabled([]string{"antigravity-cli"}).IDs(); len(ids) != 1 || ids[0] != "agy" {
 		t.Fatalf("enabled agy ids = %v", ids)

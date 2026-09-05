@@ -27,7 +27,7 @@
 ## 功能
 
 - **原生会话**：在目标 agent 中按其原生格式恢复，不是粘贴一份摘要。
-- **九个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、OpenCode 2、CommandCode、Hermes 和 Antigravity。
+- **十个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、OpenCode 2、CommandCode、Hermes、Qwen Code 和 Antigravity。
 - **一个界面**：直接浏览、搜索、预览、重命名、归档、删除或迁移会话。
 - **迁移后校验**：重新读取每次写入，比较内容摘要；不一致时回滚，来源会话始终保持原样。
 - **本地运行**：读取各 agent 的本地原生存储；`~/.cache/another/` 下的私有 SQLite 索引会在重新扫描时跳过未变会话。
@@ -123,6 +123,7 @@ OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令�
 | OpenCode 2 | `opencode2` | `opencode2 --session <id>` | ✓ | — | ✓ |
 | CommandCode | `commandcode` | `commandcode --resume <id>` | — | — | ✓ |
 | Hermes | `hermes` | `hermes --resume <id>` | — | ✓ | ✓ |
+| Qwen Code | `qwen` | `qwen --resume <id>` | ✓ | — | — |
 | Antigravity | `agy` | `agy --conversation <id>` | ✓ | — | — |
 
 `—` 表示这个 agent 没有经过验证的原生操作契约。`another` 会直接提示限制，不会维护一份刷新后消失的私有状态。
