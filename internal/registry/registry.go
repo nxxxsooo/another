@@ -16,6 +16,7 @@ import (
 	"github.com/nxxxsooo/another/internal/providers/opencode"
 	"github.com/nxxxsooo/another/internal/providers/opencode2"
 	"github.com/nxxxsooo/another/internal/providers/pi"
+	"github.com/nxxxsooo/another/internal/providers/qwen"
 )
 
 type Registry struct {
@@ -54,6 +55,7 @@ func newRegistry(allowed map[string]bool) *Registry {
 		commandcode.New(),
 		hermes.New(),
 		pi.New(),
+		qwen.New(),
 		agy.New(),
 	}
 	providers := make([]provider.Provider, 0, len(available))
@@ -133,6 +135,7 @@ func CLICommand(id string) string {
 		"commandcode": "commandcode",
 		"hermes":      "hermes",
 		"pi":          "pi",
+		"qwen":        "qwen",
 		"agy":         "agy",
 	}
 	return commands[NormalizeID(id)]
@@ -166,6 +169,7 @@ func NormalizeID(id string) string {
 		"commandcode": "commandcode", "command-code": "commandcode",
 		"hermes": "hermes", "hermes-agent": "hermes",
 		"pi": "pi", "pi-coding-agent": "pi",
+		"qwen": "qwen", "qwen-code": "qwen", "qwencode": "qwen",
 		"agy": "agy", "antigravity": "agy", "antigravity-cli": "agy", "antigravity_cli": "agy",
 	}
 	if v, ok := replacements[id]; ok {

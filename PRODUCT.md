@@ -8,7 +8,7 @@ web
 
 ## Users
 
-Primary: developers who run two or more coding-agent CLIs on the same machine and the same projects — Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes. They reach for `another` when they hit a rate limit, want a different model mid-task, or an agent is stuck and they do not want to lose the conversation. They also accumulate hundreds to thousands of past sessions across those tools with no single place to find, rename, or clean them up.
+Primary: developers who run two or more coding-agent CLIs on the same machine and the same projects — Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, Qwen Code, and Antigravity. They reach for `another` when they hit a rate limit, want a different model mid-task, or an agent is stuck and they do not want to lose the conversation. They also accumulate hundreds to thousands of past sessions across those tools with no single place to find, rename, or clean them up.
 
 Secondary: the maintainer, who uses it daily. This is a real user, not a persona.
 
@@ -16,9 +16,9 @@ Stated in the maintainer's brief and not contradicted; no external user research
 
 ## Product Purpose
 
-`another` is a local, keyboard-driven session manager for coding agents. From one list it browses, searches, previews, resumes, renames, archives, and deletes real sessions across eight agent CLIs, and it can carry a session into a different agent by writing that agent's own native session format so the target's own resume command works.
+`another` is a local, keyboard-driven session manager for coding agents. From one list it browses, searches, previews, resumes, renames, archives, and deletes real sessions across ten agent CLIs, and it can carry a session into a different agent by writing that agent's own native session format so the target's own resume command works.
 
-Success is two-fold: a developer who switches agents mid-task keeps the actual conversation rather than a summary, and a developer with sessions scattered across eight tools manages them from one place.
+Success is two-fold: a developer who switches agents mid-task keeps the actual conversation rather than a summary, and a developer with sessions scattered across ten tools manages them from one place.
 
 ## Positioning
 
@@ -39,7 +39,7 @@ A neighboring tool could copy the browser. It could not truthfully copy "the oth
 
 ## Capabilities and Constraints
 
-- Nine providers: `pi`, `codex`, `claude-code`, `cursor`, `opencode`, `opencode2`, `commandcode`, `hermes`, `agy`. OpenCode V1 and OpenCode 2 are parallel providers, not versions of one — isolated databases, CLIs, and schemas.
+- Ten providers: `pi`, `codex`, `claude-code`, `cursor`, `opencode`, `opencode2`, `commandcode`, `hermes`, `qwen`, `agy`. OpenCode V1 and OpenCode 2 are parallel providers, not versions of one — isolated databases, CLIs, and schemas.
 - Actions: browse, search (FTS5 over titles and normalized message text), preview, native resume, cross-agent migrate, rename, archive and unarchive, delete, JSON export and import.
 - Capability is per provider and deliberately unequal. Unsupported actions are reported, never simulated.
 - Migration carries real user and assistant text. It does not compress into a summary; reasoning and tool noise are dropped.

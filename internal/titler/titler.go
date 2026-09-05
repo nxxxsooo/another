@@ -70,6 +70,13 @@ var launchers = map[string]launcher{
 		}
 		return append(args, p)
 	}},
+	"qwen": {"qwen", func(c Config, p string) []string {
+		args := []string{"--bare", "--safe-mode", "--chat-recording=false", "--output-format", "text"}
+		if c.Model != "" {
+			args = append(args, "--model", c.Model)
+		}
+		return append(args, p)
+	}},
 	// agy is the one CLI here that will not take the prompt as a trailing
 	// argument: --print consumes the next token as its value, so a separate
 	// prompt argument is silently ignored. It must be attached to the flag.
