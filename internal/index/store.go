@@ -976,9 +976,20 @@ func dropTitlerSessions(summaries []model.Summary) []model.Summary {
 // and therefore never re-examined. It only touches another's own index: the
 // agent's session files stay where that agent put them.
 func (s *Store) PruneTitlerSessions() (int, error) {
+	// Every marker another has ever opened a prompt with, not just the
+	// current one: leftovers keep the title the agent derived at the time.
+	markers := titler.PromptMarkers()
+	clauses := make([]string, 0, len(markers)+1)
+	args := make([]any, 0, len(markers)+1)
+	for _, marker := range markers {
+		clauses = append(clauses, "title LIKE ?")
+		args = append(args, marker+"%")
+	}
+	clauses = append(clauses, "project_path LIKE ?")
+	args = append(args, "%/"+titler.TempDirPrefix+"%")
 	rows, err := s.db.Query(
-		`SELECT provider, storage_path FROM session_sources WHERE title LIKE ? OR project_path LIKE ?`,
-		titler.PromptMarker+"%", "%/"+titler.TempDirPrefix+"%")
+		`SELECT provider, storage_path FROM session_sources WHERE `+strings.Join(clauses, " OR "),
+		args...)
 	if err != nil {
 		return 0, err
 	}

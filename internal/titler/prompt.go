@@ -22,6 +22,11 @@ const (
 	// session for a headless run derive its title from this first line, so
 	// the marker is also how another recognizes its own leftovers later.
 	PromptMarker = "Name one AI coding session. Follow every rule below:"
+	// legacyPromptMarker opened the prompt before the contract was inlined.
+	// Sessions recorded back then are still on disk and still ours, so the
+	// marker outlives the prompt that produced it. Retiring a marker is not
+	// allowed: it would strand every leftover an older build created.
+	legacyPromptMarker = "Use the title-formatter skill to name one AI coding session."
 	// TempDirPrefix names the throwaway directory a suggestion runs in.
 	// Agents that record the working directory land here instead of a real
 	// project, which identifies their leftovers even when the title does not.
@@ -179,10 +184,20 @@ func BuildPrompt(req Request, lang Language) string {
 // It deliberately looks at the title's prefix rather than anywhere in the
 // content: a real session that discusses this prompt must stay visible.
 func IsGeneratedSession(title, projectPath string) bool {
-	if strings.HasPrefix(strings.TrimSpace(title), PromptMarker) {
-		return true
+	title = strings.TrimSpace(title)
+	for _, marker := range PromptMarkers() {
+		if strings.HasPrefix(title, marker) {
+			return true
+		}
 	}
 	return strings.HasPrefix(projectName(projectPath), TempDirPrefix)
+}
+
+// PromptMarkers lists every first line another has ever sent, current first.
+// Callers that match stored titles must check all of them; an agent that
+// records a headless run keeps the title it derived at the time.
+func PromptMarkers() []string {
+	return []string{PromptMarker, legacyPromptMarker}
 }
 
 // ResolveLanguage makes Auto deterministic from the first meaningful user

@@ -147,6 +147,9 @@ func TestIsGeneratedSessionRecognizesOwnLeftovers(t *testing.T) {
 		{"title from our prompt", titler.PromptMarker + "  Follow these rules…", "", true},
 		{"title with leading space", "  " + titler.PromptMarker, "", true},
 		{"throwaway working directory", "Session title suggestion", "/var/folders/x/T/another-titler-123", true},
+		// agy records the run but not its working directory, so a retired
+		// marker is the only thing left identifying those leftovers.
+		{"title from a retired prompt", "Use the title-formatter skill to name one AI coding session.", "", true},
 		{"real session in a real project", "0903｜修复｜删除条目快捷键冲突", "/Users/x/GitHub/another", false},
 		{"real session that discusses the prompt", "0903｜设计｜标题提示词改写", "/Users/x/GitHub/another", false},
 		{"marker in the middle is not ours", "为什么 " + titler.PromptMarker, "/Users/x/GitHub/another", false},
