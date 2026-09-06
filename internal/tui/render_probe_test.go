@@ -56,8 +56,15 @@ func TestRenderProbe(t *testing.T) {
 	}
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
 	shown := updated.(modelState)
-	fmt.Println("======== list")
+	fmt.Println("======== list (project scope)")
 	fmt.Println(shown.View())
+	// The project column only exists in the global scope, so the probe has to
+	// show both or it never shows that column at all.
+	global := shown
+	global.projectOnly = false
+	global.layout()
+	fmt.Println("======== list (all projects)")
+	fmt.Println(global.View())
 	shown.overlay = overlaySource
 	shown.layout()
 	fmt.Println("======== source picker")

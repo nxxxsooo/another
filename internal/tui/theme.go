@@ -31,16 +31,68 @@ var twinTheme = theme{
 	info:           lipgloss.Color("#62D8FF"),
 }
 
+// providerColors keeps every agent out of the hues this interface has already
+// spent on meaning: brand purple is "source", mint is "target" and "done", red
+// is "danger", pale cyan is "info". An agent painted in one of those reads as a
+// state instead of a name. What is left is divided by hue rather than by brand
+// fidelity, so ten labels stay apart in one dense column; a brand color is only
+// used where it happens to land in a free hue. OpenCode and OpenCode 2 share a
+// hue at two lightnesses because they are the same agent's two generations.
 var providerColors = map[string]lipgloss.Color{
-	"claude-code": charm(charmtone.Coral),
-	"codex":       charm(charmtone.Julep),
-	"cursor":      charm(charmtone.Malibu),
-	"opencode":    charm(charmtone.Charple),
-	"opencode2":   charm(charmtone.Dolly),
-	"commandcode": charm(charmtone.Tang),
-	"hermes":      charm(charmtone.Guppy),
-	"pi":          lipgloss.Color("#62D8FF"),
-	"agy":         charm(charmtone.Mustard),
+	"claude-code": charm(charmtone.Tang),    // orange
+	"codex":       charm(charmtone.Smoke),   // neutral silver
+	"cursor":      charm(charmtone.Thunder), // blue
+	"opencode":    charm(charmtone.Pony),    // magenta
+	"opencode2":   charm(charmtone.Cheeky),  // magenta, lighter
+	"commandcode": charm(charmtone.Zest),    // lime
+	"hermes":      charm(charmtone.Malibu),  // azure
+	"pi":          charm(charmtone.Turtle),  // cyan
+	"qwen":        charm(charmtone.Mauve),   // violet
+	"agy":         charm(charmtone.Mustard), // yellow
+}
+
+// providerFallbacks colors an agent this build does not know about. Registry
+// entries can outlive this map, and a single uncolored label in a colored
+// column reads as a rendering fault rather than as a new provider.
+var providerFallbacks = []lipgloss.Color{
+	charm(charmtone.Yam), charm(charmtone.Salmon), charm(charmtone.Lichen),
+	charm(charmtone.Anchovy), charm(charmtone.Orchid), charm(charmtone.Cumin),
+}
+
+// projectColors identifies a project by hue so repeated paths are recognized
+// before they are read. These are only ever drawn as a one-cell bar, never as a
+// fill, so they may sit closer together than the agent palette does.
+var projectColors = []lipgloss.Color{
+	charm(charmtone.Malibu), charm(charmtone.Guac), charm(charmtone.Tang),
+	charm(charmtone.Cheeky), charm(charmtone.Citron), charm(charmtone.Violet),
+	charm(charmtone.Sardine), charm(charmtone.Uni), charm(charmtone.Turtle),
+	charm(charmtone.Hazy), charm(charmtone.Zest), charm(charmtone.Tuna),
+}
+
+// providerColor never fails, so no row can lose its agent color.
+func providerColor(id string) lipgloss.Color {
+	if c, ok := providerColors[id]; ok {
+		return c
+	}
+	return providerFallbacks[int(hashKey(id)%uint32(len(providerFallbacks)))]
+}
+
+// projectColor is stable across runs and across processes: the same project
+// keeps its bar color for as long as its path does.
+func projectColor(path string) lipgloss.Color {
+	return projectColors[int(hashKey(path)%uint32(len(projectColors)))]
+}
+
+// hashKey is FNV-1a, written out to keep this file free of a hash import for
+// one call site and to pin the mapping to something that will not change under
+// us the way a runtime map seed would.
+func hashKey(s string) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return h
 }
 
 var (
@@ -64,5 +116,11 @@ var (
 	chipActive        = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.border).Padding(0, 1)
 	chipMuted         = lipgloss.NewStyle().Foreground(twinTheme.textSubtle).Padding(0, 1)
 	selectedRow       = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.intersection)
-	dangerChoice      = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.danger).Padding(0, 1)
+	// The project cell is two readings at once: the bar answers "which project"
+	// at a glance, the leaf answers "which directory" on a second look, and the
+	// parent path stays behind both. A background fill would win the row from
+	// the title and, per the note above, break on nested resets.
+	projectLeafStyle   = lipgloss.NewStyle().Foreground(twinTheme.textSubtle)
+	projectParentStyle = lipgloss.NewStyle().Foreground(twinTheme.textMostSubtle)
+	dangerChoice       = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.danger).Padding(0, 1)
 )

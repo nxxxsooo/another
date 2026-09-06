@@ -41,15 +41,58 @@ func TestTwinThemeAssignsDistinctInteractionRoles(t *testing.T) {
 	}
 }
 
-func TestPiAndOpenCode2ProviderColorsStayDistinct(t *testing.T) {
-	piColor := fmt.Sprint(providerColors["pi"])
-	o2Color := fmt.Sprint(providerColors["opencode2"])
-	cursorColor := fmt.Sprint(providerColors["cursor"])
-	if piColor != "#62D8FF" {
-		t.Fatalf("pi color = %s, want cold blue", piColor)
+// Agent colors name an agent. The theme's role colors name a state. An agent
+// painted in a role color is read as that state, so the two sets must not
+// overlap, and no two agents may share a color either.
+func TestProviderColorsAreDistinctAndAvoidRoleColors(t *testing.T) {
+	roles := map[string]string{
+		"source":       string(twinTheme.source),
+		"target":       string(twinTheme.target),
+		"intersection": string(twinTheme.intersection),
+		"danger":       string(twinTheme.danger),
+		"info":         string(twinTheme.info),
+		"success":      string(twinTheme.success),
 	}
-	if piColor == o2Color || piColor == cursorColor || o2Color == cursorColor {
-		t.Fatalf("provider colors are not distinct: pi=%s o2=%s cursor=%s", piColor, o2Color, cursorColor)
+	seen := map[string]string{}
+	for id, color := range providerColors {
+		hex := fmt.Sprint(color)
+		for role, roleHex := range roles {
+			if hex == roleHex {
+				t.Errorf("provider %s uses the %s role color %s", id, role, hex)
+			}
+		}
+		if other, ok := seen[hex]; ok {
+			t.Errorf("providers %s and %s share color %s", other, id, hex)
+		}
+		seen[hex] = id
+	}
+}
+
+// Every registered agent carries a color; an uncolored label in a colored
+// column reads as a rendering fault.
+func TestProviderColorCoversEveryKnownAgent(t *testing.T) {
+	for _, id := range []string{
+		"claude-code", "codex", "cursor", "opencode", "opencode2",
+		"commandcode", "hermes", "pi", "qwen", "agy",
+	} {
+		if _, ok := providerColors[id]; !ok {
+			t.Errorf("provider %s has no explicit color", id)
+		}
+	}
+	if providerColor("a-provider-this-build-does-not-know") == "" {
+		t.Fatal("unknown provider fell through without a color")
+	}
+}
+
+// The project bar must be stable across runs, or a project changes identity
+// between two launches of the same browser.
+func TestProjectColorIsStablePerPath(t *testing.T) {
+	first := projectColor("/Users/mingjian/Documents/sync/GitHub/another")
+	if second := projectColor("/Users/mingjian/Documents/sync/GitHub/another"); first != second {
+		t.Fatalf("project color changed within a run: %s then %s", first, second)
+	}
+	if first == projectColor("/Users/mingjian/Documents/sync/GitHub/other-project") {
+		t.Log("two sample projects collided; acceptable, palette is finite")
 	}
 }
 

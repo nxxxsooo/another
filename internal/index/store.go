@@ -15,6 +15,7 @@ import (
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/registry"
+	"github.com/nxxxsooo/another/internal/titler"
 	"github.com/nxxxsooo/another/internal/util"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -880,6 +881,7 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 		if err != nil {
 			return total, fmt.Errorf("%s: %w", p.ID(), err)
 		}
+		summaries = dropTitlerSessions(summaries)
 		seen := make(map[string]struct{}, len(summaries))
 		for _, sm := range summaries {
 			seen[sm.StoragePath] = struct{}{}
@@ -889,6 +891,9 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 		}
 		_ = recordDiscoverMeta(store, p.ID(), summaries)
 		total += len(summaries)
+	}
+	if n, err := store.PruneTitlerSessions(); err == nil {
+		total -= n
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_ = store.SetMeta("last_rebuild", now)
@@ -925,6 +930,10 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 		if err != nil {
 			return total, fmt.Errorf("%s: %w", pid, err)
 		}
+		// Dropping them from seen as well is what removes rows indexed
+		// before this filter existed: reconcile deletes any indexed path the
+		// scan did not claim.
+		summaries = dropTitlerSessions(summaries)
 		for _, sm := range summaries {
 			seen[sm.StoragePath] = struct{}{}
 		}
@@ -938,8 +947,91 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 			_ = store.SetMeta(discoverCountMetaKey(pid), strconv.Itoa(n))
 		}
 	}
+	// An unchanged file is skipped before it is ever examined, so leftovers
+	// indexed by an older build would otherwise never be reconsidered.
+	if n, err := store.PruneTitlerSessions(); err == nil {
+		total -= n
+	}
 	_ = store.SetMeta("last_update", time.Now().UTC().Format(time.RFC3339))
 	return total, nil
+}
+
+// dropTitlerSessions removes the sessions another created itself while asking
+// an agent for a title. Several agents record a headless run with no way to
+// opt out, so their leftovers are dropped on the way into the index instead of
+// cluttering the list another exists to tidy.
+func dropTitlerSessions(summaries []model.Summary) []model.Summary {
+	out := summaries[:0]
+	for _, sm := range summaries {
+		if titler.IsGeneratedSession(sm.Title, sm.ProjectPath) {
+			continue
+		}
+		out = append(out, sm)
+	}
+	return out
+}
+
+// PruneTitlerSessions evicts title-generation leftovers that were indexed
+// before they were filtered, or that an incremental scan skipped as unchanged
+// and therefore never re-examined. It only touches another's own index: the
+// agent's session files stay where that agent put them.
+func (s *Store) PruneTitlerSessions() (int, error) {
+	rows, err := s.db.Query(
+		`SELECT provider, storage_path FROM session_sources WHERE title LIKE ? OR project_path LIKE ?`,
+		titler.PromptMarker+"%", "%/"+titler.TempDirPrefix+"%")
+	if err != nil {
+		return 0, err
+	}
+	byProvider := map[string][]string{}
+	total := 0
+	for rows.Next() {
+		var providerID, path string
+		if err := rows.Scan(&providerID, &path); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		byProvider[providerID] = append(byProvider[providerID], path)
+		total++
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	for providerID, paths := range byProvider {
+		if err := s.dropProviderSources(providerID, paths); err != nil {
+			return 0, err
+		}
+	}
+	return total, nil
+}
+
+// dropProviderSources deletes indexed sources and repairs everything derived
+// from them, in one transaction.
+func (s *Store) dropProviderSources(providerID string, paths []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := dropSources(tx, providerID, paths); err != nil {
+		return err
+	}
+	if err := rebuildProviderSessions(tx, providerID); err != nil {
+		return err
+	}
+	if err := pruneDerived(tx, providerID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func dropSources(tx *sql.Tx, providerID string, paths []string) error {
+	for _, path := range paths {
+		if _, err := tx.Exec(`DELETE FROM session_sources WHERE provider = ? AND storage_path = ?`, providerID, path); err != nil {
+			return err
+		}
+		_, _ = tx.Exec(`DELETE FROM source_files WHERE provider = ? AND storage_path = ?`, providerID, path)
+	}
+	return nil
 }
 
 func (s *Store) reconcileProvider(providerID string, changed []model.Summary, seen map[string]struct{}) error {
@@ -974,16 +1066,22 @@ func (s *Store) reconcileProvider(providerID string, changed []model.Summary, se
 	if err := rows.Close(); err != nil {
 		return err
 	}
-	for _, path := range stale {
-		if _, err := tx.Exec(`DELETE FROM session_sources WHERE provider = ? AND storage_path = ?`, providerID, path); err != nil {
-			return err
-		}
-		_, _ = tx.Exec(`DELETE FROM source_files WHERE provider = ? AND storage_path = ?`, providerID, path)
+	if err := dropSources(tx, providerID, stale); err != nil {
+		return err
 	}
 	if err := rebuildProviderSessions(tx, providerID); err != nil {
 		return err
 	}
-	// Search rows must not survive deletion or a change of canonical source.
+	if err := pruneDerived(tx, providerID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// pruneDerived drops search and content rows that no longer match a live
+// session row: they must not survive a deletion or a change of canonical
+// source.
+func pruneDerived(tx *sql.Tx, providerID string) error {
 	if _, err := tx.Exec(`DELETE FROM session_fts
 WHERE provider = ? AND NOT EXISTS (
   SELECT 1 FROM sessions s JOIN content_index c
@@ -995,7 +1093,7 @@ WHERE provider = ? AND NOT EXISTS (
 )`, providerID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM content_index
+	_, err := tx.Exec(`DELETE FROM content_index
 WHERE provider = ? AND NOT EXISTS (
   SELECT 1 FROM sessions s
   WHERE s.provider=content_index.provider AND s.id=content_index.session_id
@@ -1004,8 +1102,6 @@ WHERE provider = ? AND NOT EXISTS (
 	    AND s.source_size=content_index.source_size
 	    AND s.updated_at=content_index.session_updated
 	    AND s.message_count=content_index.message_count
-)`, providerID); err != nil {
-		return err
-	}
-	return tx.Commit()
+)`, providerID)
+	return err
 }

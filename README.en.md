@@ -155,7 +155,9 @@ The second setup page picks the title language with `←→`: **中文** (defaul
 
 For more than one title at a time, mark sessions with `x` and press `Ctrl+T`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `Ctrl+T` retries exactly those.
 
-The batch header names the agent and model this run uses. Once generation finishes or is cancelled, `m` swaps the model for this batch only — empty means that CLI's default — and `Enter` re-runs the same sessions on it. The override is never written back to config: a cheap model for forty old sessions should not become the default for the next single rename.
+The batch header names the agent, model, and language this run uses, and `m` opens the same picker setup uses.
+
+Generating titles leaves a trace of its own: Codex, Claude Code, Antigravity, and OpenCode record a session for every headless run with no way to opt out. another recognizes those leftovers and keeps them out of the index — the prompt's fixed first line, or the `another-titler-*` throwaway directory the run happened in, identifies them — and evicts any that an older build already indexed. Only another's index is touched; the agent's own session files stay where that agent put them. Once generation finishes or is cancelled, `m` swaps the model for this batch only — empty means that CLI's default — and `Enter` re-runs the same sessions on it. The override is never written back to config: a cheap model for forty old sessions should not become the default for the next single rename.
 
 ## CLI
 

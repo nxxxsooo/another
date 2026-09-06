@@ -301,6 +301,10 @@ func (m *modelState) resetBatch() {
 	m.batchMissing = nil
 	m.batchCfg = titler.Config{}
 	m.batchModelEditing = false
+	m.batchModelPicking = false
+	m.batchModelFilter = ""
+	m.batchModelErr = ""
+	m.batchModelCursor = 0
 	m.batchModelInput.Blur()
 	m.batchResults = nil
 	m.batchTotal = 0
@@ -314,6 +318,9 @@ func (m *modelState) resetBatch() {
 func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.batchModelEditing {
 		return m.updateBatchModelInput(msg)
+	}
+	if m.batchModelPicking {
+		return m.updateBatchModelPicker(msg)
 	}
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -361,17 +368,7 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = "先 esc 取消生成，再换模型"
 			return m, nil
 		}
-		if m.batchModelInput.Placeholder == "" {
-			// A batch overlay that was opened without startBatch never got
-			// a field; build one rather than rendering a zero value.
-			m.batchModelInput = newBatchModelInput()
-		}
-		m.batchModelEditing = true
-		m.batchModelInput.SetValue(m.batchConfig().Model)
-		m.batchModelInput.CursorEnd()
-		m.batchModelInput.Focus()
-		m.status = ""
-		return m, textinput.Blink
+		return m.openBatchModelPicker()
 	case "enter":
 		if m.batchRunning || m.batchCancelling {
 			return m, nil
@@ -459,22 +456,15 @@ func (m modelState) updateBatchModelInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.batchModelEditing = false
 		m.batchModelInput.Blur()
+		// Going back to the list is only possible when there is one; for a
+		// CLI that cannot list, esc leaves the override alone.
+		m.batchModelPicking = len(m.batchModelOpts) > 0
 		return m, nil
 	case "enter":
 		chosen := strings.TrimSpace(m.batchModelInput.Value())
 		m.batchModelEditing = false
 		m.batchModelInput.Blur()
-		cfg := m.batchConfig()
-		if chosen == cfg.Model {
-			m.status = "模型未变，保留现有结果"
-			return m, nil
-		}
-		cfg.Model = chosen
-		m.batchCfg = cfg
-		if len(m.batchItems) == 0 {
-			return m, nil
-		}
-		return m.rerunBatch()
+		return m.applyBatchModel(chosen)
 	}
 	var cmd tea.Cmd
 	m.batchModelInput, cmd = m.batchModelInput.Update(msg)
@@ -597,7 +587,14 @@ func (m modelState) batchView() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("批量命名会话") + "\n")
 	b.WriteString(ansi.Truncate(m.batchAgentLine(), inner, "…") + "\n")
+	if m.batchModelPicking {
+		b.WriteString(m.batchModelView(inner))
+		return b.String()
+	}
 	if m.batchModelEditing {
+		if m.batchModelErr != "" {
+			b.WriteString(mutedStyle.Render(m.batchModelErr) + "\n")
+		}
 		b.WriteString(mutedStyle.Render("模型") + "  " + m.batchModelInput.View() + "\n")
 		b.WriteString(mutedStyle.Render("enter 换模型并重跑  ·  esc 取消"))
 		return b.String()

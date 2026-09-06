@@ -172,7 +172,7 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 	// A throwaway working directory keeps the agent out of the user's project:
 	// no project-level instructions are loaded from untrusted checkouts, and
 	// whatever session the CLI records lands outside their real projects.
-	dir, err := os.MkdirTemp("", "another-titler-")
+	dir, err := os.MkdirTemp("", TempDirPrefix)
 	if err != nil {
 		return "", err
 	}

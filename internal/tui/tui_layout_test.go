@@ -917,3 +917,62 @@ func TestMarksSurviveAPageReload(t *testing.T) {
 		t.Fatal("the mark moved to a different session")
 	}
 }
+
+// The project cell is composed from a bar, a gap, and two differently styled
+// path halves, so its width is easy to get wrong by one cell — which would
+// push every column after it out of alignment on that row only.
+func TestProjectCellFillsExactlyItsColumn(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(previous)
+
+	paths := []string{
+		"/Users/mingjian/Documents/sync/GitHub/another",
+		"/tmp/p",
+		"~/x",
+		"/Users/mingjian/Documents/sync/GitHub/一个很长的中文项目名称目录",
+		"",
+	}
+	for _, path := range paths {
+		for width := 3; width <= 28; width++ {
+			if got := ansi.StringWidth(renderProjectCell(path, width)); got != width {
+				t.Errorf("project cell width for %q at %d = %d", path, width, got)
+			}
+		}
+	}
+}
+
+// The last path segment is the part being read, so it must survive truncation
+// even when the parent path cannot.
+func TestProjectCellKeepsTheLastSegment(t *testing.T) {
+	cell := ansi.Strip(renderProjectCell("/Users/mingjian/Documents/sync/GitHub/another", 20))
+	if !strings.Contains(cell, "another") {
+		t.Fatalf("project cell dropped its leaf: %q", cell)
+	}
+}
+
+// Scoped to one project, every row would repeat the same path; that width
+// belongs to the title instead. The column returns with the global scope.
+func TestProjectColumnFollowsScope(t *testing.T) {
+	render := func(showProject bool) string {
+		marked := map[string]bool{}
+		item := sessionItem{
+			summary: model.Summary{
+				ID: "session", Provider: "codex", Title: "A useful title",
+				ProjectPath: "/tmp/scope-fixture", MessageCount: 3,
+			},
+			providerLbl: "Codex",
+		}
+		d := sessionDelegate{marked: marked, showProject: showProject}
+		l := newBareList([]list.Item{item}, d, 120, 4)
+		var buf strings.Builder
+		d.Render(&buf, l, 0, item)
+		return ansi.Strip(buf.String())
+	}
+	if got := render(false); strings.Contains(got, "scope-fixture") {
+		t.Fatalf("project-scoped row still shows the project column: %q", got)
+	}
+	if got := render(true); !strings.Contains(got, "scope-fixture") {
+		t.Fatalf("global row lost the project column: %q", got)
+	}
+}

@@ -19,6 +19,15 @@ const (
 	// SkillName is the skill another asks the agent to apply.
 	SkillName = "title-formatter"
 
+	// PromptMarker opens every prompt another sends. Agents that record a
+	// session for a headless run derive its title from this first line, so
+	// the marker is also how another recognizes its own leftovers later.
+	PromptMarker = "Use the " + SkillName + " skill to name one AI coding session."
+	// TempDirPrefix names the throwaway directory a suggestion runs in.
+	// Agents that record the working directory land here instead of a real
+	// project, which identifies their leftovers even when the title does not.
+	TempDirPrefix = "another-titler-"
+
 	maxMessages     = 8
 	maxMessageRunes = 400
 	maxPromptRunes  = 2400
@@ -131,7 +140,7 @@ func BuildPrompt(req Request, lang Language) string {
 	date := MMDD(req.CreatedAt)
 	lang = NormalizeLanguage(lang)
 
-	fmt.Fprintf(&b, "Use the %s skill to name one AI coding session.\n\n", SkillName)
+	b.WriteString(PromptMarker + "\n\n")
 	b.WriteString("Follow these rules even if that skill is unavailable:\n")
 	b.WriteString("- Reply with exactly one line. No quotes, no markdown, no explanation, no preamble.\n")
 	fmt.Fprintf(&b, "- Format: MMDD%s类型%s主题\n", Separator, Separator)
@@ -168,6 +177,21 @@ func BuildPrompt(req Request, lang Language) string {
 	b.WriteString(renderMessages(req.Messages))
 	b.WriteString("\nSESSION\n")
 	return b.String()
+}
+
+// IsGeneratedSession reports whether a discovered session is one another
+// created itself while asking for a title. Several agents record a session for
+// a headless run and offer no way to turn that off, so their leftovers are
+// recognized after the fact instead: the title an agent derives from our first
+// prompt line, or the throwaway directory the run happened in.
+//
+// It deliberately looks at the title's prefix rather than anywhere in the
+// content: a real session that discusses this prompt must stay visible.
+func IsGeneratedSession(title, projectPath string) bool {
+	if strings.HasPrefix(strings.TrimSpace(title), PromptMarker) {
+		return true
+	}
+	return strings.HasPrefix(projectName(projectPath), TempDirPrefix)
 }
 
 func projectName(path string) string {

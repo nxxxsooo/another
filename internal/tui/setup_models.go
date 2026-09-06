@@ -52,9 +52,15 @@ func (m setupModel) openModelPage() (setupModel, tea.Cmd) {
 // survives the filter. The custom row lives at the end and is handled by
 // index rather than stored here, so it can never be filtered away.
 func (m setupModel) modelRows() []string {
+	return modelRowsFor(m.modelOpts, m.modelFilter)
+}
+
+// modelRowsFor is the pickable list shared by setup and the batch overlay: the
+// CLI's own default first, then whatever survives the filter.
+func modelRowsFor(opts []string, filter string) []string {
 	rows := []string{""}
-	needle := strings.ToLower(strings.TrimSpace(m.modelFilter))
-	for _, name := range m.modelOpts {
+	needle := strings.ToLower(strings.TrimSpace(filter))
+	for _, name := range opts {
 		if needle == "" || strings.Contains(strings.ToLower(name), needle) {
 			rows = append(rows, name)
 		}

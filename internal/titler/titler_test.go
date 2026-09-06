@@ -127,6 +127,39 @@ func TestNormalizeLanguageFallsBackToChinese(t *testing.T) {
 	}
 }
 
+// Several agents record a session for every headless run, so another has to
+// recognize its own leftovers instead of listing them back to the person.
+func TestIsGeneratedSessionRecognizesOwnLeftovers(t *testing.T) {
+	cases := []struct {
+		name, title, project string
+		want                 bool
+	}{
+		{"title from our prompt", titler.PromptMarker + "  Follow these rules…", "", true},
+		{"title with leading space", "  " + titler.PromptMarker, "", true},
+		{"throwaway working directory", "Session title suggestion", "/var/folders/x/T/another-titler-123", true},
+		{"real session in a real project", "0903｜修复｜删除条目快捷键冲突", "/Users/x/GitHub/another", false},
+		{"real session that discusses the prompt", "0903｜设计｜标题提示词改写", "/Users/x/GitHub/another", false},
+		{"marker in the middle is not ours", "为什么 " + titler.PromptMarker, "/Users/x/GitHub/another", false},
+		{"another project that merely starts with tmp", "whatever", "/Users/x/another-titler", false},
+		{"empty", "", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := titler.IsGeneratedSession(tc.title, tc.project); got != tc.want {
+				t.Fatalf("IsGeneratedSession(%q, %q) = %v", tc.title, tc.project, got)
+			}
+		})
+	}
+}
+
+// The marker must survive prompt edits: it is what identifies the leftovers.
+func TestPromptOpensWithTheMarker(t *testing.T) {
+	prompt := titler.BuildPrompt(titler.Request{CreatedAt: time.Now()}, titler.LangChinese)
+	if !strings.HasPrefix(prompt, titler.PromptMarker) {
+		t.Fatalf("prompt no longer opens with the marker:\n%s", prompt)
+	}
+}
+
 func TestMMDDUsesShanghaiCreationTime(t *testing.T) {
 	// 2026-09-03 23:30 UTC is already 2026-09-04 in Shanghai.
 	created := time.Date(2026, 9, 3, 23, 30, 0, 0, time.UTC)

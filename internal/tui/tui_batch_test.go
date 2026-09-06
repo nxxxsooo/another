@@ -250,23 +250,27 @@ func TestBatchModelOverrideRerunsWithoutTouchingConfig(t *testing.T) {
 	m.batchItems = []model.Summary{{ID: "session", Title: "A useful title"}}
 	startGen := m.batchGen
 
-	edited, _ := m.Update(runeKey('m'))
+	edited, cmd := m.Update(runeKey('m'))
 	m = edited.(modelState)
-	if !m.batchModelEditing {
-		t.Fatal("m did not open the model override")
+	if !m.batchModelPicking || !m.batchModelLoading || cmd == nil {
+		t.Fatalf("m did not open the model picker: picking=%v loading=%v cmd=%v", m.batchModelPicking, m.batchModelLoading, cmd)
 	}
+	loaded, _ := m.Update(batchModelsMsg{provider: "pi", models: []string{"anthropic/claude-haiku-4-5", "google/gemini-3-pro"}})
+	m = loaded.(modelState)
 	m = typeRunes(m, "haiku")
-	if view := m.View(); !strings.Contains(view, "haiku") {
-		t.Fatalf("the override field must show what was typed:\n%s", view)
+	if view := m.View(); !strings.Contains(view, "claude-haiku-4-5") {
+		t.Fatalf("the picker must show the filtered model:\n%s", view)
 	}
+	down, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = down.(modelState)
 
 	committed, cmd := m.Update(enterKey())
 	got := committed.(modelState)
-	if got.batchModelEditing {
-		t.Fatal("enter must close the override field")
+	if got.batchModelPicking || got.batchModelEditing {
+		t.Fatal("enter must close the picker")
 	}
-	if got.batchConfig().Model != "haiku" {
-		t.Fatalf("batch model = %q, want haiku", got.batchConfig().Model)
+	if got.batchConfig().Model != "anthropic/claude-haiku-4-5" {
+		t.Fatalf("batch model = %q, want the picked model", got.batchConfig().Model)
 	}
 	if got.titleCfg.Model != "" {
 		t.Fatalf("the configured default must stay untouched, got %q", got.titleCfg.Model)

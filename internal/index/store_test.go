@@ -15,6 +15,7 @@ import (
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/registry"
+	"github.com/nxxxsooo/another/internal/titler"
 )
 
 func TestKeepProvidersPrunesDisabledIndexWithoutNativeDeletion(t *testing.T) {
@@ -68,6 +69,52 @@ func TestStoreUpsertList(t *testing.T) {
 	}
 	if items[0].ID != "abc-123" {
 		t.Fatalf("id = %q", items[0].ID)
+	}
+}
+
+// The sessions another creates while asking an agent for a title must not
+// come back as sessions to manage, including the ones an older build already
+// indexed.
+func TestPruneTitlerSessionsEvictsOwnLeftovers(t *testing.T) {
+	store, err := index.Open(filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now()
+	rows := []model.Summary{
+		{ID: "real", Provider: "agy", Title: "0903｜修复｜快捷键冲突", ProjectPath: "/Users/x/GitHub/another",
+			UpdatedAt: now, MessageCount: 12, StoragePath: "/store/real.jsonl", SourceMtime: now.Unix()},
+		{ID: "byTitle", Provider: "agy", Title: titler.PromptMarker + "  Follow these rules…",
+			UpdatedAt: now, MessageCount: 2, StoragePath: "/store/noise-1.jsonl", SourceMtime: now.Unix()},
+		{ID: "byDir", Provider: "codex", Title: "Session title suggestion",
+			ProjectPath: "/private/var/folders/x/T/" + titler.TempDirPrefix + "42",
+			UpdatedAt:   now, MessageCount: 2, StoragePath: "/store/noise-2.jsonl", SourceMtime: now.Unix()},
+	}
+	for _, sm := range rows {
+		if err := store.Upsert(sm); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := store.PruneTitlerSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("pruned %d rows, want the two leftovers", n)
+	}
+	items, err := store.List(index.ListOpts{IncludeSubagents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != "real" {
+		t.Fatalf("prune kept the wrong rows: %+v", items)
+	}
+	// Pruning again is a no-op rather than an error.
+	if n, err := store.PruneTitlerSessions(); err != nil || n != 0 {
+		t.Fatalf("second prune = %d, %v", n, err)
 	}
 }
 

@@ -77,6 +77,10 @@ func (i sessionItem) FilterValue() string {
 type sessionDelegate struct {
 	marked  map[string]bool
 	spacing int
+	// showProject is off while the browser is scoped to one project, where
+	// every row would repeat the same path. The column only earns its width
+	// once the list can hold more than one project.
+	showProject bool
 }
 
 func (sessionDelegate) Height() int                         { return 1 }
@@ -119,7 +123,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	// The project column is what tells two similarly named sessions apart, but
 	// the title matters more; it only appears once the title still has room.
 	projW := 0
-	if width >= 92 {
+	if d.showProject && width >= 92 {
 		projW = min(28, width/4)
 	}
 	fixed := 3 + timeW + provW + msgW + 3
@@ -134,19 +138,56 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	if index == m.Index() {
 		title = selectedRow.Render(title)
 	}
-	provText := padRight(ansi.Truncate(lbl, provW, ""), provW)
-	if color, ok := providerColors[it.summary.Provider]; ok {
-		provText = lipgloss.NewStyle().Foreground(color).Render(provText)
-	}
+	provText := lipgloss.NewStyle().
+		Foreground(providerColor(it.summary.Provider)).
+		Render(padRight(ansi.Truncate(lbl, provW, ""), provW))
 
 	row := gutter +
 		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + " " +
 		provText + " " + title + " "
 	if projW > 0 {
-		row += mutedStyle.Render(padRight(truncateLeft(util.TildePath(it.summary.ProjectPath), projW), projW)) + " "
+		row += renderProjectCell(it.summary.ProjectPath, projW) + " "
 	}
 	row += mutedStyle.Render(padLeft(msgs, msgW))
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
+}
+
+// renderProjectCell draws the project column in exactly width cells: a colored
+// bar keyed to the path, then the path with its last segment lifted out of the
+// dim. The bar is one cell of foreground, not a filled chip, so it survives the
+// nested ANSI resets that make background-painted columns tear in Ghostty.
+func renderProjectCell(path string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if path == "" {
+		return strings.Repeat(" ", width)
+	}
+	if width < 3 {
+		return lipgloss.NewStyle().Foreground(projectColor(path)).Render("▌") +
+			strings.Repeat(" ", width-1)
+	}
+
+	shown := util.TildePath(path)
+	textW := width - 2
+	leaf := shown
+	parent := ""
+	if idx := strings.LastIndex(shown, "/"); idx >= 0 {
+		leaf, parent = shown[idx+1:], shown[:idx+1]
+	}
+
+	var text string
+	// The last segment is what the eye is actually looking for, so it keeps the
+	// column whenever the whole path cannot; the parent gives way first.
+	if parentW := textW - ansi.StringWidth(leaf); parentW > 0 && parent != "" {
+		text = projectParentStyle.Render(truncateLeft(parent, parentW)) +
+			projectLeafStyle.Render(leaf)
+	} else {
+		text = projectLeafStyle.Render(truncateLeft(leaf, textW))
+	}
+
+	bar := lipgloss.NewStyle().Foreground(projectColor(path)).Render("▌")
+	return padRight(bar+" "+text, width)
 }
 
 type targetItem struct{ id, name string }
@@ -170,8 +211,8 @@ func (targetDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		cursor = "› "
 		name = selectedRow.Render(name)
 	}
-	if color, ok := providerColors[it.id]; ok && index != m.Index() {
-		name = lipgloss.NewStyle().Foreground(color).Render(name)
+	if it.id != "" && index != m.Index() {
+		name = lipgloss.NewStyle().Foreground(providerColor(it.id)).Render(name)
 	}
 	fmt.Fprint(w, ansi.Truncate(cursor+name, max(4, m.Width()), ""))
 }
@@ -200,8 +241,8 @@ func (sourceDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if index == m.Index() {
 		cursor = "› "
 		name = selectedRow.Render(name)
-	} else if color, ok := providerColors[it.id]; ok {
-		name = lipgloss.NewStyle().Foreground(color).Render(name)
+	} else if it.id != "" {
+		name = lipgloss.NewStyle().Foreground(providerColor(it.id)).Render(name)
 	}
 	count := mutedStyle.Render(fmt.Sprintf("%d", it.count))
 	line := cursor + padRight(name, max(4, m.Width()-ansi.StringWidth(count)-3)) + " " + count
@@ -318,6 +359,14 @@ type modelState struct {
 	batchCfg          titler.Config
 	batchModelInput   textinput.Model
 	batchModelEditing bool
+	// batchModel* is the same picker setup uses, pulled from the agent's own
+	// CLI so a temporary override cannot be a name that CLI would reject.
+	batchModelPicking bool
+	batchModelLoading bool
+	batchModelOpts    []string
+	batchModelCursor  int
+	batchModelFilter  string
+	batchModelErr     string
 	// batchGen orphans a superseded run. Re-running on a different model
 	// leaves the previous engine draining in the background, and its results
 	// must not land in the new list.
@@ -333,6 +382,7 @@ type modelState struct {
 	cwd             string
 	projectScope    util.ProjectScope
 	projectOnly     bool
+	sessionSpacing  int
 	pageGen         uint64
 	lastResume      string
 	lastArchived    *model.Summary
@@ -984,6 +1034,23 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.finalizeBatch()
 		return m, nil
+	case batchModelsMsg:
+		if m.overlay != overlayBatchTitle || msg.provider != m.batchConfig().Provider {
+			return m, nil
+		}
+		m.batchModelLoading = false
+		if msg.err != nil {
+			// A CLI that cannot answer right now is not a dead end: the
+			// overlay says why and falls back to typing a name.
+			m.batchModelErr = msg.err.Error()
+			m.batchModelPicking = false
+			m.batchModelEditing = true
+			m.batchModelInput.Focus()
+			return m, textinput.Blink
+		}
+		m.batchModelOpts = msg.models
+		m.batchModelCursor = modelCursorFor(modelRowsFor(msg.models, ""), m.batchConfig().Model)
+		return m, nil
 	case batchAppliedMsg:
 		for _, id := range msg.appliedIDs {
 			delete(m.marked, id)
@@ -1415,6 +1482,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.projectOnly = !m.projectOnly
+		m.applySessionDelegate()
 		m.err = ""
 		m.status = ""
 		m.lastResume = ""
@@ -1596,6 +1664,18 @@ func dispatchPageLoadModel(m modelState) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// applySessionDelegate rebuilds the row renderer from current state. Scope can
+// change without a resize, so this is called from the scope toggle as well as
+// from layout; leaving it to layout alone would keep the project column visible
+// for a project-scoped list until the next window change.
+func (m *modelState) applySessionDelegate() {
+	m.sessions.SetDelegate(sessionDelegate{
+		marked:      m.marked,
+		spacing:     m.sessionSpacing,
+		showProject: !m.projectOnly,
+	})
+}
+
 func (m *modelState) layout() {
 	if m.width < 40 || m.height < 12 {
 		return
@@ -1608,11 +1688,11 @@ func (m *modelState) layout() {
 	footerH := lipgloss.Height(m.footerView())
 	paneOuterH := max(frameH+1, m.height-headerH-footerH)
 	contentH := max(1, paneOuterH-frameH)
-	sessionSpacing := 0
+	m.sessionSpacing = 0
 	if m.width >= 80 && contentH >= 14 {
-		sessionSpacing = 1
+		m.sessionSpacing = 1
 	}
-	m.sessions.SetDelegate(sessionDelegate{marked: m.marked, spacing: sessionSpacing})
+	m.applySessionDelegate()
 	m.sessions.SetSize(max(1, m.width-frameW), contentH)
 
 	modalInnerW := modalInnerWidth(m.width)
@@ -1876,6 +1956,9 @@ func (m modelState) help() string {
 		}
 		return " 输入新标题 · enter 保存 · esc 取消"
 	case overlayBatchTitle:
+		if m.batchModelPicking {
+			return " ↑↓ 选模型 · 输入过滤 · enter 换模型重跑 · esc 取消"
+		}
 		if m.batchModelEditing {
 			return " 输入模型名 · enter 换模型重跑 · esc 取消"
 		}
