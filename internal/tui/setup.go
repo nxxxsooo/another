@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -123,6 +124,9 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 	defer restoreInputSource()
 	final, err := program.Run()
 	restoreInputSource()
+	// Setup either hands over to the browser, which sets its own title, or
+	// returns to the shell; neither should inherit the setup screen's title.
+	restoreWindowTitle(os.Stdout)
 	if err != nil {
 		return nil, nil, config.TitlePolicy{}, false, err
 	}
@@ -213,7 +217,9 @@ func restoreTitleCursor(opts []titleOption, previous []titleOption) int {
 	return 0
 }
 
-func (m setupModel) Init() tea.Cmd { return tea.HideCursor }
+func (m setupModel) Init() tea.Cmd {
+	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle))
+}
 
 func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {

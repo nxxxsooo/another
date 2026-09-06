@@ -502,9 +502,13 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	done, ok := final.(modelState)
 	if ok && done.launch != "" {
 		// Handing the terminal to another agent: no goodbye screen, or it
-		// lands as noise right before that agent paints its own startup.
+		// lands as noise right before that agent paints its own startup. The
+		// title goes with the terminal, so it names the agent taking over
+		// rather than staying on another for that agent's whole session.
+		setWindowTitle(os.Stdout, registry.DisplayName(reg, done.launchTarget))
 		return launchResume(done.launch, done.launchTarget, done.launchProject)
 	}
+	restoreWindowTitle(os.Stdout)
 	if ok {
 		playFarewell(os.Stdout, done.width, done.height, true)
 	}
@@ -656,7 +660,7 @@ func targetItems(reg *registry.Registry, exclude string) []list.Item {
 }
 
 func (m modelState) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.HideCursor, m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen)}
+	cmds := []tea.Cmd{tea.HideCursor, tea.SetWindowTitle(windowTitle), m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen)}
 	if m.indexing {
 		cmds = append(cmds, backgroundIndexCmd(m.ctx, m.reg, m.idx))
 	} else {
