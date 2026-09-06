@@ -28,7 +28,7 @@ import (
 
 func layoutTestModel() modelState {
 	sm := model.Summary{ID: "session", Provider: "codex", Title: "A useful title", ProjectPath: "/tmp/project", MessageCount: 12}
-	item := sessionItem{summary: sm, providerLbl: "Codex"}
+	item := sessionItem{summary: sm}
 	marked := map[string]bool{}
 	return modelState{
 		reg:      registry.New(),
@@ -96,8 +96,7 @@ func TestSessionRowStaysOneLine(t *testing.T) {
 	m := layoutTestModel()
 	long := strings.Repeat("很长的中文标题", 20)
 	m.sessions.SetItems([]list.Item{sessionItem{
-		summary:     model.Summary{ID: "x", Provider: "pi", Title: long},
-		providerLbl: "pi",
+		summary: model.Summary{ID: "x", Provider: "pi", Title: long},
 	}})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = updated.(modelState)
@@ -268,8 +267,12 @@ func TestPickersUseStableCenteredModals(t *testing.T) {
 func TestProviderColumnPrecedesTitle(t *testing.T) {
 	m := layoutTestModel()
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
-	view := updated.(modelState).sessions.View()
-	if strings.Index(view, "Codex") >= strings.Index(view, "A useful title") {
+	view := ansi.Strip(updated.(modelState).sessions.View())
+	code := strings.Index(view, agentCode("codex"))
+	if code < 0 {
+		t.Fatalf("row does not name its agent at all: %q", view)
+	}
+	if code >= strings.Index(view, "A useful title") {
 		t.Fatalf("source provider still trails the title: %q", view)
 	}
 }
@@ -316,8 +319,8 @@ func TestNarrowHeaderKeepsBothDirectionControls(t *testing.T) {
 
 func TestWideSessionsBreatheButNarrowSessionsStayCompact(t *testing.T) {
 	items := []list.Item{
-		sessionItem{summary: model.Summary{ID: "one", Provider: "codex", Title: "First title"}, providerLbl: "Codex"},
-		sessionItem{summary: model.Summary{ID: "two", Provider: "pi", Title: "Second title"}, providerLbl: "pi"},
+		sessionItem{summary: model.Summary{ID: "one", Provider: "codex", Title: "First title"}},
+		sessionItem{summary: model.Summary{ID: "two", Provider: "pi", Title: "Second title"}},
 	}
 	m := layoutTestModel()
 	m.sessions.SetItems(items)
@@ -418,7 +421,6 @@ func TestSourceModalBordersStayInTheSameColumnsOverSessionRows(t *testing.T) {
 				ProjectPath:  "/Users/mingjian/Documents/sync/GitHub/another",
 				MessageCount: 20,
 			},
-			providerLbl: "OpenCode",
 		})
 	}
 	m.sessions.SetItems(sessions)
@@ -907,8 +909,8 @@ func TestMarksSurviveAPageReload(t *testing.T) {
 	// selection would follow whatever now sits in that position instead.
 	sm := model.Summary{ID: "other", Provider: "pi", Title: "Another session", ProjectPath: "/tmp/project"}
 	got.sessions.SetItems([]list.Item{
-		sessionItem{summary: sm, providerLbl: "pi"},
-		sessionItem{summary: model.Summary{ID: "session", Provider: "codex", Title: "A useful title", ProjectPath: "/tmp/project"}, providerLbl: "Codex"},
+		sessionItem{summary: sm},
+		sessionItem{summary: model.Summary{ID: "session", Provider: "codex", Title: "A useful title", ProjectPath: "/tmp/project"}},
 	})
 	if !got.marked["session"] {
 		t.Fatalf("the mark did not survive a page reload: %v", got.marked)
@@ -961,7 +963,6 @@ func TestProjectColumnFollowsScope(t *testing.T) {
 				ID: "session", Provider: "codex", Title: "A useful title",
 				ProjectPath: "/tmp/scope-fixture", MessageCount: 3,
 			},
-			providerLbl: "Codex",
 		}
 		d := sessionDelegate{marked: marked, showProject: showProject}
 		l := newBareList([]list.Item{item}, d, 120, 4)

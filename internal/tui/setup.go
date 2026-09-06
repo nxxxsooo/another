@@ -381,6 +381,9 @@ func (m setupModel) View() string {
 		if color, ok := providerColors[item.id]; ok {
 			name = lipgloss.NewStyle().Foreground(color).Bold(i == m.cursor).Render(name)
 		}
+		// Setup is where an agent is met for the first time, so the chip the
+		// session list will use is shown next to the name it stands for.
+		name = renderAgentChip(item.id) + " " + name
 		cli := "CLI 未安装"
 		if item.cli {
 			cli = "CLI 已安装"
@@ -428,6 +431,13 @@ func (m setupModel) titlePageBody(width int) string {
 		name := padRight(opt.name, 16)
 		if color, ok := providerColors[opt.id]; ok {
 			name = lipgloss.NewStyle().Foreground(color).Bold(i == m.titleCursor).Render(name)
+		}
+		if opt.id != "" {
+			name = renderAgentChip(opt.id) + " " + name
+		} else {
+			// "不启用" is a setting, not an agent; an empty chip-width gutter
+			// keeps its name on the same column as the agents below it.
+			name = strings.Repeat(" ", agentChipWidth+1) + name
 		}
 		line := cursor + mark + " " + name
 		if opt.command != "" {

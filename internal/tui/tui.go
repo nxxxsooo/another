@@ -47,9 +47,8 @@ const (
 )
 
 type sessionItem struct {
-	summary     model.Summary
-	providerLbl string
-	snippet     string
+	summary model.Summary
+	snippet string
 }
 
 func (i sessionItem) displayTitle() string {
@@ -106,10 +105,6 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	gutter := cursor + mark + " "
 
 	rel := util.FormatRelative(it.summary.UpdatedAt)
-	lbl := it.providerLbl
-	if lbl == "" {
-		lbl = it.summary.Provider
-	}
 	msgs := ""
 	if it.summary.MessageCount > 0 {
 		msgs = fmt.Sprintf("%d条", it.summary.MessageCount)
@@ -117,7 +112,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 	const (
 		timeW = 10
-		provW = 12
+		provW = agentChipWidth
 		msgW  = 7
 	)
 	// The project column is what tells two similarly named sessions apart, but
@@ -138,9 +133,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	if index == m.Index() {
 		title = selectedRow.Render(title)
 	}
-	provText := lipgloss.NewStyle().
-		Foreground(providerColor(it.summary.Provider)).
-		Render(padRight(ansi.Truncate(lbl, provW, ""), provW))
+	provText := renderAgentChip(it.summary.Provider)
 
 	row := gutter +
 		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + " " +
@@ -220,7 +213,10 @@ func (targetDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if it.id != "" && index != m.Index() {
 		name = lipgloss.NewStyle().Foreground(providerColor(it.id)).Render(name)
 	}
-	fmt.Fprint(w, ansi.Truncate(cursor+name, max(4, m.Width()), ""))
+	// The picker is where the chip and the spelled-out name are seen together,
+	// which is the only reason a three-letter code on a session row is
+	// readable at all. This is the legend.
+	fmt.Fprint(w, ansi.Truncate(cursor+renderAgentChip(it.id)+" "+name, max(4, m.Width()), ""))
 }
 
 // sourceChip is one choice in the left source drawer: "all" plus every
@@ -250,8 +246,15 @@ func (sourceDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	} else if it.id != "" {
 		name = lipgloss.NewStyle().Foreground(providerColor(it.id)).Render(name)
 	}
+	// "all" is not an agent, but it takes a chip too: one column of blocks
+	// reads as a column, one block among words reads as a mistake.
+	chip := renderAgentChip(it.id)
+	if it.id == "" {
+		chip = renderNeutralChip(allChipLabel)
+	}
 	count := mutedStyle.Render(fmt.Sprintf("%d", it.count))
-	line := cursor + padRight(name, max(4, m.Width()-ansi.StringWidth(count)-3)) + " " + count
+	nameW := max(4, m.Width()-ansi.StringWidth(count)-agentChipWidth-4)
+	line := cursor + chip + " " + padRight(name, nameW) + " " + count
 	fmt.Fprint(w, ansi.Truncate(line, max(4, m.Width()), ""))
 }
 
@@ -485,7 +488,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	}
 	m.contentIndexing = !m.indexing
 	if initial != nil {
-		sel := sessionItem{summary: *initial, providerLbl: registry.DisplayName(reg, initial.Provider)}
+		sel := sessionItem{summary: *initial}
 		m.selected = &sel
 		m.sessions.SetItems([]list.Item{sel})
 		m.targets.SetItems(targetItems(reg, initial.Provider))
@@ -706,7 +709,7 @@ func providerCountOpts(m modelState) index.ListOpts {
 }
 
 func loadSessionsPageCmd(m modelState, gen uint64) tea.Cmd {
-	reg, idx := m.reg, m.idx
+	idx := m.idx
 	opts := listOptsFor(m)
 	providerFilter := opts.Provider
 	return func() tea.Msg {
@@ -724,10 +727,7 @@ func loadSessionsPageCmd(m modelState, gen uint64) tea.Cmd {
 		}
 		var sitems []list.Item
 		for _, s := range summaries {
-			sitems = append(sitems, sessionItem{
-				summary:     s,
-				providerLbl: registry.DisplayName(reg, s.Provider),
-			})
+			sitems = append(sitems, sessionItem{summary: s})
 		}
 		return sessionsPageMsg{items: sitems, total: total, counts: counts, provider: providerFilter, gen: gen, err: err}
 	}
@@ -776,8 +776,7 @@ func searchCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, op
 		}
 		items := make([]list.Item, 0, len(hits))
 		for _, hit := range hits {
-			items = append(items, sessionItem{summary: hit.Session, snippet: hit.Snippet,
-				providerLbl: registry.DisplayName(reg, hit.Session.Provider)})
+			items = append(items, sessionItem{summary: hit.Session, snippet: hit.Snippet})
 		}
 		return searchResultsMsg{items: items, query: opts.Query, counts: counts, status: status, err: err}
 	}
@@ -1713,7 +1712,11 @@ func (m *modelState) layout() {
 	modalInnerW := modalInnerWidth(m.width)
 	modalListH := max(1, min(10, max(1, contentH-8)))
 	m.sourceList.SetSize(modalInnerW, min(len(m.sourceList.Items()), modalListH))
-	m.targets.SetSize(modalInnerW, min(len(m.targets.Items()), modalListH))
+	// The target box is the one modal with a width of its own, and lipgloss
+	// counts padding inside it. Sizing the list to the box would let a row wrap
+	// and make the modal a line taller than the pane it sits in.
+	m.targets.SetSize(max(1, targetModalWidth(m.width)-modalStyle.GetHorizontalPadding()),
+		min(len(m.targets.Items()), modalListH))
 
 	previewH := max(3, contentH-4)
 	m.preview.Width = max(10, m.width-modalStyle.GetHorizontalFrameSize())
@@ -1726,6 +1729,10 @@ func (m *modelState) layout() {
 func modalInnerWidth(width int) int {
 	return max(24, min(56, width-12)-modalStyle.GetHorizontalFrameSize())
 }
+
+// targetModalWidth keeps the box and the list inside it on one number: the
+// picker names agents, so it never needs to be as wide as the source drawer.
+func targetModalWidth(width int) int { return min(40, modalInnerWidth(width)) }
 
 func (m modelState) View() string {
 	if m.width < 40 || m.height < 12 {
@@ -1754,7 +1761,7 @@ func (m modelState) View() string {
 		box := sourceModalStyle.Render(accentStyle.Render("选择来源") + "\n" + mutedStyle.Render("会话来自哪个 agent？") + "\n\n" + m.sourceList.View())
 		pane = overlay(pane, box, m.width)
 	case overlayTarget:
-		box := targetModalStyle.Width(min(40, modalInnerWidth(m.width))).Render(okStyle.Render("选择去向") + "\n" + mutedStyle.Render("把这条会话带到哪个 agent？") + "\n\n" + m.targets.View())
+		box := targetModalStyle.Width(targetModalWidth(m.width)).Render(okStyle.Render("选择去向") + "\n" + mutedStyle.Render("把这条会话带到哪个 agent？") + "\n\n" + m.targets.View())
 		pane = overlay(pane, box, m.width)
 	case overlayPreview:
 		box := modalStyle.Render(m.preview.View())
@@ -2027,7 +2034,33 @@ func (m modelState) help() string {
 	if m.lastArchived != nil {
 		return " A 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览"
 	}
-	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围 · ctrl+r 重命名 · x 标记 · ctrl+t 批量 · A 归档 · ctrl+d 删除 · / 搜索 · r 刷新"
+	help := " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围"
+	rename, archive, delete := m.selectedSessionCapabilities()
+	if rename {
+		help += " · ctrl+r 重命名"
+	}
+	if archive {
+		help += " · A 归档"
+	}
+	if delete {
+		help += " · ctrl+d 删除"
+	}
+	return help + " · x 标记 · ctrl+t 批量 · / 搜索 · r 刷新"
+}
+
+func (m modelState) selectedSessionCapabilities() (rename, archive, delete bool) {
+	it, ok := m.sessions.SelectedItem().(sessionItem)
+	if !ok || m.reg == nil {
+		return false, false, false
+	}
+	p, err := m.reg.Get(it.summary.Provider)
+	if err != nil {
+		return false, false, false
+	}
+	_, rename = p.(provider.SessionRenamer)
+	_, archive = p.(provider.SessionArchiver)
+	_, delete = p.(provider.SessionDeleter)
+	return rename, archive, delete
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across

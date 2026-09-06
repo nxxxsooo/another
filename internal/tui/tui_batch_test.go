@@ -255,7 +255,7 @@ func TestBatchReviewNamesAgentAndModel(t *testing.T) {
 	m.overlay = overlayBatchTitle
 	m.batchResults = []titler.BatchResult{{SessionID: "a", Current: "old talk", Title: "0903｜修复｜快捷键冲突"}}
 
-	if view := m.View(); !strings.Contains(view, "pi") || !strings.Contains(view, "默认模型") {
+	if view := m.View(); !strings.Contains(view, "Pi") || !strings.Contains(view, "默认模型") {
 		t.Fatalf("review must name the agent and the default model:\n%s", view)
 	}
 

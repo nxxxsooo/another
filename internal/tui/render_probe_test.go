@@ -47,7 +47,7 @@ func TestRenderProbe(t *testing.T) {
 	}
 	var items []list.Item
 	for _, s := range summaries {
-		items = append(items, sessionItem{summary: s, providerLbl: registry.DisplayName(reg, s.Provider)})
+		items = append(items, sessionItem{summary: s})
 	}
 	sources := sourceChips(reg, counts)
 	marked := map[string]bool{}

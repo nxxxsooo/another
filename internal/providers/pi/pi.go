@@ -69,7 +69,7 @@ func New() *Provider {
 }
 
 func (p *Provider) ID() string          { return ProviderID }
-func (p *Provider) DisplayName() string { return "pi" }
+func (p *Provider) DisplayName() string { return "Pi" }
 
 func (p *Provider) Installed() bool {
 	st, err := os.Stat(p.sessionsRoot())

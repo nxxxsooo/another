@@ -32,7 +32,6 @@ func TestOverlayBordersHoldAcrossEveryWidth(t *testing.T) {
 						Title:       "Claude Code v2.1.260 发布说明摘要与后续动作",
 						ProjectPath: "/Users/mingjian/Documents/sync/GitHub/another",
 					},
-					providerLbl: "OpenCode",
 				})
 			}
 			m.sessions.SetItems(sessions)
