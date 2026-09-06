@@ -33,6 +33,7 @@ store, so you open it there and keep going.
 - **Native sessions:** resumes in the target agent's own format — not a pasted summary.
 - **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, Qwen Code, and Antigravity.
 - **One screen:** browse, search, preview, rename, archive, delete, and migrate without leaving the list.
+- **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
 - **Local and fast:** reads native local stores; the private SQLite index under `~/.cache/another/` skips unchanged sessions on re-scan.
 
@@ -103,6 +104,7 @@ Enter     resume the selected session in its native agent
 ←         choose a source agent
 ↑ / ↓     move through sessions or picker items
 Space     preview the conversation
+f         switch between the current project and all projects
 Ctrl+R    rename in the source agent's native title store
 Tab       accept the AI title suggestion, when one is configured and arrives
 A         archive; press A again for one-step undo
@@ -114,6 +116,8 @@ q         quit
 ```
 
 Migration shows the exact resume command first. Press `Enter` to hand the terminal to the target agent, `c` to copy the command, or `Esc` to keep browsing.
+
+The TUI starts scoped to the current project. A Git repository's main worktree, every registered linked worktree, and their subdirectories form one project; outside Git, the scope is an exact current-directory match. The header always shows the active scope, and search keeps that scope. An empty project view stays empty rather than silently switching global; press `f` to view all projects.
 
 ## Agents
 
@@ -143,7 +147,15 @@ another providers doctor
 
 ## AI title suggestions
 
-When setup names an agent, `Ctrl+R` opens the rename box on the original title and asks that agent, in the background, for one title using the fixed Chinese contract `MMDD｜类型｜主题` (`date|type|topic`) from the `title-formatter` skill. The date comes from the indexed creation time converted to `Asia/Shanghai`, never from the model. Suggestions that miss the contract, arrive after the box closes, or fail outright are discarded without touching what you typed. The agent runs in a throwaway directory, so your project's own instructions never reach it.
+When setup names an agent, `Ctrl+R` opens the rename box on the original title and asks that agent, in the background, for one title using the fixed contract `MMDD｜类型｜主题` (`date|type|topic`) from the `title-formatter` skill. The date comes from the indexed creation time converted to `Asia/Shanghai`, never from the model. Suggestions that miss the contract, arrive after the box closes, or fail outright are discarded without touching what you typed. The agent runs in a throwaway directory, so your project's own instructions never reach it.
+
+The second setup page picks the agent and the language; `Enter` opens a third page for the model. That list comes from the agent's own CLI (`pi --list-models`, `agy models`, `opencode models`, `opencode2 models`), typing filters it, the first row leaves the choice to the CLI, and the last row still accepts a name typed by hand. Claude Code, Codex, and Qwen have no listing command, so they go straight to typing with the reason shown — a guessed list of model IDs would only fail later, at rename time.
+
+The second setup page picks the title language with `←→`: **中文** (default, `0903｜修复｜删除条目快捷键冲突`), **English** (`0903｜Fix｜delete shortcut conflict`), or **follow the session**, which lets each conversation's own language decide. The date and the `｜` separator are identical in every language, so the list still sorts and scans the same way, and the eight types map one to one. An unset language means Chinese — the behaviour from before this setting existed — so re-run `another setup` if English sessions should keep English titles.
+
+For more than one title at a time, mark sessions with `x` and press `Ctrl+T`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `Ctrl+T` retries exactly those.
+
+The batch header names the agent and model this run uses. Once generation finishes or is cancelled, `m` swaps the model for this batch only — empty means that CLI's default — and `Enter` re-runs the same sessions on it. The override is never written back to config: a cheap model for forty old sessions should not become the default for the next single rename.
 
 ## CLI
 

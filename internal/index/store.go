@@ -430,7 +430,8 @@ type ListOpts struct {
 	Provider         string
 	ProjectFilter    string
 	ProjectExact     string
-	ProjectCWD       string // sessions whose project_path equals this directory exactly
+	ProjectCWD       string   // sessions whose project_path equals this directory exactly
+	ProjectRoots     []string // sessions at or below any root (used for one Git repository's worktrees)
 	Limit            int
 	Offset           int
 	Query            string
@@ -447,7 +448,28 @@ func (s *Store) listWhere(opts ListOpts) (string, []any) {
 	if !opts.IncludeSubagents {
 		q += ` AND kind = 'root'`
 	}
-	if opts.ProjectCWD != "" {
+	if len(opts.ProjectRoots) > 0 {
+		q += ` AND (`
+		added := 0
+		seen := make(map[string]bool)
+		for _, root := range opts.ProjectRoots {
+			root = util.NormalizeProjectPath(root)
+			if root == "" || seen[root] {
+				continue
+			}
+			if added > 0 {
+				q += ` OR `
+			}
+			q += `(project_path = ? OR project_path LIKE ? ESCAPE '\')`
+			args = append(args, root, util.EscapeLike(root)+`/%`)
+			seen[root] = true
+			added++
+		}
+		if added == 0 {
+			q += `0`
+		}
+		q += `)`
+	} else if opts.ProjectCWD != "" {
 		norm := util.NormalizeProjectPath(opts.ProjectCWD)
 		home := util.HomeDir()
 		if home != "" && norm == home {
@@ -636,7 +658,14 @@ func (s *Store) scanSummaryFromRow(row *sql.Row) (*model.Summary, error) {
 }
 
 func (s *Store) CountByProvider() (map[string]int, error) {
-	rows, err := s.db.Query(`SELECT provider, COUNT(*) FROM sessions GROUP BY provider`)
+	return s.CountByProviderFiltered(ListOpts{IncludeSubagents: true})
+}
+
+// CountByProviderFiltered counts sessions in the same scope used by List.
+func (s *Store) CountByProviderFiltered(opts ListOpts) (map[string]int, error) {
+	opts.Provider = ""
+	where, args := s.listWhere(opts)
+	rows, err := s.db.Query(`SELECT provider, COUNT(*)`+where+` GROUP BY provider`, args...)
 	if err != nil {
 		return nil, err
 	}

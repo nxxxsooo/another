@@ -41,6 +41,7 @@ A neighboring tool could copy the browser. It could not truthfully copy "the oth
 
 - Ten providers: `pi`, `codex`, `claude-code`, `cursor`, `opencode`, `opencode2`, `commandcode`, `hermes`, `qwen`, `agy`. OpenCode V1 and OpenCode 2 are parallel providers, not versions of one — isolated databases, CLIs, and schemas.
 - Actions: browse, search (FTS5 over titles and normalized message text), preview, native resume, cross-agent migrate, rename, archive and unarchive, delete, JSON export and import.
+- The TUI opens scoped to the current Git project, combining its main worktree and all registered linked worktrees; `f` switches visibly between that project and all projects. Non-Git directories use an exact current-directory scope.
 - Capability is per provider and deliberately unequal. Unsupported actions are reported, never simulated.
 - Migration carries real user and assistant text. It does not compress into a summary; reasoning and tool noise are dropped.
 - A migration never mutates the source session.

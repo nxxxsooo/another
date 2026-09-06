@@ -23,6 +23,7 @@ import (
 	"github.com/nxxxsooo/another/internal/providers/pi"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/titler"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 func layoutTestModel() modelState {
@@ -136,6 +137,52 @@ func TestSearchKeyFocusesInput(t *testing.T) {
 	m = updated.(modelState)
 	if !m.searching || !m.searchInput.Focused() {
 		t.Fatal("/ did not focus search")
+	}
+}
+
+func TestScopeKeyTogglesProjectFilter(t *testing.T) {
+	m := layoutTestModel()
+	m.cwd = "/repo"
+	m.projectOnly = true
+	m.projectScope = util.ProjectScope{CWD: "/repo", Root: "/repo", Git: true, Worktrees: []string{"/repo", "/tmp/feature"}}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = updated.(modelState)
+	if m.projectOnly || cmd == nil {
+		t.Fatalf("scope did not switch to all: projectOnly=%v cmd=%v", m.projectOnly, cmd)
+	}
+	updated, _ = m.Update(sessionsPageMsg{gen: m.pageGen})
+	m = updated.(modelState)
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = updated.(modelState)
+	if !m.projectOnly || cmd == nil {
+		t.Fatalf("scope did not switch back to project: projectOnly=%v cmd=%v", m.projectOnly, cmd)
+	}
+}
+
+func TestScopeKeyRerunsActiveSearch(t *testing.T) {
+	m := layoutTestModel()
+	m.cwd = "/repo"
+	m.searchQuery = "needle"
+	m.projectScope = util.ProjectScope{CWD: "/repo", Root: "/repo", Git: true, Worktrees: []string{"/repo"}}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = updated.(modelState)
+	if !m.projectOnly || !m.loading || cmd == nil {
+		t.Fatalf("active search was not rerun: projectOnly=%v loading=%v cmd=%v", m.projectOnly, m.loading, cmd)
+	}
+}
+
+func TestHeaderAndEmptyViewExposeProjectScope(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 24
+	m.projectOnly = true
+	m.projectScope = util.ProjectScope{CWD: "/repo", Root: "/repo", Git: true, Worktrees: []string{"/repo"}}
+	header := ansi.Strip(m.headerView())
+	if !strings.Contains(header, "当前项目") || !strings.Contains(header, "/repo") {
+		t.Fatalf("header hides project scope: %q", header)
+	}
+	m.sessions.SetItems(nil)
+	if empty := ansi.Strip(m.emptySessionsView()); !strings.Contains(empty, "按 f 查看全部") {
+		t.Fatalf("empty view = %q", empty)
 	}
 }
 

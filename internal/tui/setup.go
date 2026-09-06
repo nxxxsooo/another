@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -14,12 +15,14 @@ import (
 	"github.com/nxxxsooo/another/internal/titler"
 )
 
-// Setup runs as two pages: which agents another manages, then which of those
-// agents writes title suggestions. The second page can only offer agents the
-// first one kept, so it is built on the way in rather than up front.
+// Setup runs as three pages: which agents another manages, which of those
+// agents writes title suggestions, then which model it writes them with. Each
+// page can only offer what the previous one kept, so they are built on the way
+// in rather than up front.
 const (
 	setupPageAgents = iota
 	setupPageTitle
+	setupPageModel
 )
 
 type setupItem struct {
@@ -50,7 +53,41 @@ type setupModel struct {
 	titleOpts   []titleOption
 	titleCursor int
 	modelInput  textinput.Model
+	langCursor  int
+
+	// model* is the picker page. modelOpts is what the agent CLI itself
+	// reported; typing filters it, and the last row falls back to a name
+	// typed by hand for CLIs that cannot list or models too new to appear.
+	modelOpts    []string
+	modelCursor  int
+	modelFilter  string
+	modelErr     string
+	modelLoading bool
+	modelTyping  bool
+	// modelFor is the agent the current listing belongs to, so a slow
+	// listing cannot land on a page that has since changed agents.
+	modelFor string
 }
+
+// modelsLoadedMsg carries one finished listing.
+type modelsLoadedMsg struct {
+	provider string
+	models   []string
+	err      error
+}
+
+// listModelsCmd asks the agent CLI for its own model list. A failure is not
+// fatal: the page falls back to typing a name.
+func listModelsCmd(provider string) tea.Cmd {
+	return func() tea.Msg {
+		models, err := titler.ListModels(context.Background(), provider)
+		return modelsLoadedMsg{provider: provider, models: models, err: err}
+	}
+}
+
+// languages is the order the title page cycles through. Chinese stays first
+// so an existing setup re-saves what it already had unless someone moves it.
+var languages = []titler.Language{titler.LangChinese, titler.LangEnglish, titler.LangAuto}
 
 // RunSetup lets a person choose which agents another should index and expose.
 // The caller persists the returned IDs only after the program exits cleanly.
@@ -85,6 +122,7 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 		start.modelInput.SetValue(initialTitle.Model)
 		start.titleCursor = -1 // resolved once the option list exists
 		start.titleOpts = []titleOption{{id: initialTitle.Provider}}
+		start.langCursor = languageCursor(titler.Language(initialTitle.Language))
 	}
 	program := tea.NewProgram(start, tea.WithAltScreen())
 	final, err := program.Run()
@@ -114,7 +152,30 @@ func (m setupModel) titleModel() *config.TitleModel {
 	if opt.id == "" {
 		return nil
 	}
-	return &config.TitleModel{Provider: opt.id, Model: strings.TrimSpace(m.modelInput.Value())}
+	return &config.TitleModel{
+		Provider: opt.id,
+		Model:    m.selectedModel(),
+		Language: string(m.language()),
+	}
+}
+
+// language reads the chosen title language back out.
+func (m setupModel) language() titler.Language {
+	if m.langCursor < 0 || m.langCursor >= len(languages) {
+		return titler.LangChinese
+	}
+	return languages[m.langCursor]
+}
+
+// languageCursor puts the cursor back on a previously saved language.
+func languageCursor(lang titler.Language) int {
+	want := titler.NormalizeLanguage(lang)
+	for i, l := range languages {
+		if l == want {
+			return i
+		}
+	}
+	return 0
 }
 
 // titleOptions offers only agents that survived page one and can actually run
@@ -151,9 +212,28 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
+	case modelsLoadedMsg:
+		if msg.provider != m.modelFor {
+			return m, nil
+		}
+		m.modelLoading = false
+		if msg.err != nil {
+			// A CLI that cannot answer right now is not a dead end: the page
+			// says why and falls back to typing a name.
+			m.modelErr = msg.err.Error()
+			m.modelTyping = true
+			m.modelInput.Focus()
+			return m, textinput.Blink
+		}
+		m.modelOpts = msg.models
+		m.modelCursor = modelCursorFor(m.modelRows(), m.modelInput.Value())
+		return m, nil
 	case tea.KeyMsg:
-		if m.page == setupPageTitle {
+		switch m.page {
+		case setupPageTitle:
 			return m.updateTitlePage(msg)
+		case setupPageModel:
+			return m.updateModelPage(msg)
 		}
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
@@ -205,8 +285,8 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateTitlePage keeps the model name field permanently focused so there is
-// no focus to juggle: arrows pick the agent, everything else is typing.
+// updateTitlePage picks the agent and the language. The model moved to its own
+// page once it became a list pulled from the CLI rather than a typed string.
 func (m setupModel) updateTitlePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
@@ -227,17 +307,24 @@ func (m setupModel) updateTitlePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.titleCursor = (m.titleCursor + 1) % n
 		}
 		return m, nil
-	case "enter":
-		m.done = true
-		return m, tea.Quit
-	}
-	if m.titleCursor <= 0 {
-		// Nothing to name a model for while the feature is off.
+	case "left":
+		// Arrows pick the language so the model field can keep every
+		// printable key for typing.
+		m.langCursor = (m.langCursor - 1 + len(languages)) % len(languages)
 		return m, nil
+	case "right":
+		m.langCursor = (m.langCursor + 1) % len(languages)
+		return m, nil
+	case "enter":
+		if m.titleCursor <= 0 {
+			// Suggestions are off, so there is no model to choose.
+			m.done = true
+			return m, tea.Quit
+		}
+		next, cmd := m.openModelPage()
+		return next, cmd
 	}
-	var cmd tea.Cmd
-	m.modelInput, cmd = m.modelInput.Update(msg)
-	return m, cmd
+	return m, nil
 }
 
 func selectedCount(selected map[string]bool) int {
@@ -255,8 +342,12 @@ func (m setupModel) View() string {
 		return ansi.Truncate("Terminal too small — resize to at least 48x20", max(1, m.width), "")
 	}
 	width := min(72, m.width-8)
-	if m.page == setupPageTitle {
+	switch m.page {
+	case setupPageTitle:
 		panel := modalStyle.Width(width - modalStyle.GetHorizontalFrameSize()).Render(m.titlePageBody(width))
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
+	case setupPageModel:
+		panel := modalStyle.Width(width - modalStyle.GetHorizontalFrameSize()).Render(m.modelPageBody(width))
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
 	}
 	var body strings.Builder
@@ -332,13 +423,33 @@ func (m setupModel) titlePageBody(width int) string {
 	}
 	body.WriteString("\n")
 	if m.titleCursor > 0 {
-		body.WriteString(mutedStyle.Render("模型") + "  " + m.modelInput.View() + "\n\n")
+		body.WriteString(mutedStyle.Render("语言") + "  " + m.languageRow() + "\n\n")
 	} else {
 		body.WriteString(mutedStyle.Render("重命名弹窗不会调用任何模型。") + "\n\n")
 	}
 	if m.err != "" {
 		body.WriteString(errStyle.Render("✗ "+m.err) + "\n")
 	}
-	body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  输入模型名  ·  enter 保存  ·  esc 返回"))
+	if m.titleCursor > 0 {
+		body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  ←→ 选语言  ·  enter 选模型  ·  esc 返回"))
+	} else {
+		body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  enter 保存  ·  esc 返回"))
+	}
 	return body.String()
+}
+
+// languageRow shows the three choices at once. The list is short enough that
+// hiding two of them behind a cycle would only make the setting harder to see.
+func (m setupModel) languageRow() string {
+	labels := make([]string, 0, len(languages))
+	for i, l := range languages {
+		label := titler.LanguageLabel(l)
+		if i == m.langCursor {
+			label = okStyle.Render("[" + label + "]")
+		} else {
+			label = mutedStyle.Render(" " + label + " ")
+		}
+		labels = append(labels, label)
+	}
+	return strings.Join(labels, " ")
 }

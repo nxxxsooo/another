@@ -211,6 +211,7 @@ func (sourceDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 type sessionsPageMsg struct {
 	items    []list.Item
 	total    int
+	counts   map[string]int
 	provider string
 	gen      uint64
 	err      error
@@ -251,6 +252,7 @@ type archiveDoneMsg struct {
 }
 type indexRefreshedMsg struct {
 	counts     map[string]int
+	project    *util.ProjectScope
 	err        error
 	updated    int
 	reloadPage bool
@@ -262,6 +264,7 @@ type contentIndexedMsg struct {
 type searchResultsMsg struct {
 	items  []list.Item
 	query  string
+	counts map[string]int
 	status index.ContentIndexStatus
 	err    error
 }
@@ -301,6 +304,7 @@ type modelState struct {
 	// engine starts. The channel and cancel func are nil outside a run.
 	batchItems      []model.Summary
 	batchByID       map[string]model.Summary
+	batchMissing    []titler.BatchResult
 	batchResults    []titler.BatchResult
 	batchTotal      int
 	batchCh         <-chan titler.BatchResult
@@ -308,6 +312,16 @@ type modelState struct {
 	batchRunning    bool
 	batchCancelling bool
 	batchExpanded   bool
+	// batchCfg is titleCfg plus any model chosen for this batch alone. The
+	// override is deliberately not persisted: a cheap model for forty old
+	// sessions should not become the default for the next single rename.
+	batchCfg          titler.Config
+	batchModelInput   textinput.Model
+	batchModelEditing bool
+	// batchGen orphans a superseded run. Re-running on a different model
+	// leaves the previous engine draining in the background, and its results
+	// must not land in the new list.
+	batchGen uint64
 
 	selected        *sessionItem
 	loading         bool
@@ -317,6 +331,8 @@ type modelState struct {
 	searchQuery     string
 	totalSessions   int
 	cwd             string
+	projectScope    util.ProjectScope
+	projectOnly     bool
 	pageGen         uint64
 	lastResume      string
 	lastArchived    *model.Summary
@@ -358,8 +374,10 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	if err == nil {
 		cwd = util.NormalizeProjectPath(cwd)
 	}
-
-	counts, _ := idx.CountByProvider()
+	projectScope := util.DiscoverProjectScope(context.Background(), cwd)
+	initialOpts := index.ListOpts{IncludeSubagents: false}
+	applyProjectScope(&initialOpts, projectScope)
+	counts, _ := idx.CountByProviderFiltered(initialOpts)
 
 	// One map instance is shared with the delegate; see sessionDelegate.
 	marked := map[string]bool{}
@@ -385,7 +403,11 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	// leaves the feature off.
 	var titleCfg titler.Config
 	if settings, err := config.LoadSettings(); err == nil && settings.TitleModel != nil {
-		titleCfg = titler.Config{Provider: settings.TitleModel.Provider, Model: settings.TitleModel.Model}
+		titleCfg = titler.Config{
+			Provider: settings.TitleModel.Provider,
+			Model:    settings.TitleModel.Model,
+			Language: titler.NormalizeLanguage(titler.Language(settings.TitleModel.Language)),
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -396,9 +418,12 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		marked:   marked,
 		sessions: sessList, sourceList: sourceList, targets: targetList,
 		preview: vp, searchInput: search, renameInput: rename, spinner: sp,
-		sources: sources, cwd: cwd,
+		sources: sources, cwd: cwd, projectScope: projectScope, projectOnly: cwd != "",
 		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
+	}
+	if err != nil {
+		m.err = "无法读取当前目录，已显示全部会话：" + err.Error()
 	}
 	m.contentIndexing = !m.indexing
 	if initial != nil {
@@ -544,6 +569,20 @@ func (m modelState) currentSource() sourceChip {
 	return m.sources[m.sourceIdx]
 }
 
+func (m *modelState) updateSourceCounts(counts map[string]int) {
+	selectedID := m.sourceID()
+	m.sources = sourceChips(m.reg, counts)
+	m.sourceIdx = 0
+	for i := range m.sources {
+		if m.sources[i].id == selectedID {
+			m.sourceIdx = i
+			break
+		}
+	}
+	m.sourceList.SetItems(sourceItems(m.sources))
+	m.sourceList.Select(m.sourceIdx)
+}
+
 func targetItems(reg *registry.Registry, exclude string) []list.Item {
 	var items []list.Item
 	for _, p := range reg.All() {
@@ -571,15 +610,34 @@ func dispatchPageLoad(m modelState) (modelState, tea.Cmd) {
 	return m, tea.Batch(m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen))
 }
 
-// listOptsFor browses everywhere by default. Scoping to the working directory
-// is a CLI concern (`another list --cwd`); in the browser it only hid sessions
-// people were looking for.
 func listOptsFor(m modelState) index.ListOpts {
-	return index.ListOpts{
+	opts := index.ListOpts{
 		Provider:         m.sourceID(),
 		Limit:            maxShowAllPage,
 		IncludeSubagents: false,
 	}
+	if m.projectOnly {
+		applyProjectScope(&opts, m.projectScope)
+	}
+	return opts
+}
+
+func applyProjectScope(opts *index.ListOpts, scope util.ProjectScope) {
+	if scope.Git && len(scope.Worktrees) > 0 {
+		opts.ProjectRoots = append([]string(nil), scope.Worktrees...)
+		return
+	}
+	if scope.CWD != "" {
+		opts.ProjectExact = scope.CWD
+	}
+}
+
+func providerCountOpts(m modelState) index.ListOpts {
+	opts := listOptsFor(m)
+	opts.Provider = ""
+	opts.Limit = 0
+	opts.Offset = 0
+	return opts
 }
 
 func loadSessionsPageCmd(m modelState, gen uint64) tea.Cmd {
@@ -595,6 +653,10 @@ func loadSessionsPageCmd(m modelState, gen uint64) tea.Cmd {
 		if err == nil {
 			err = lerr
 		}
+		counts, countErr := idx.CountByProviderFiltered(providerCountOpts(m))
+		if err == nil {
+			err = countErr
+		}
 		var sitems []list.Item
 		for _, s := range summaries {
 			sitems = append(sitems, sessionItem{
@@ -602,7 +664,7 @@ func loadSessionsPageCmd(m modelState, gen uint64) tea.Cmd {
 				providerLbl: registry.DisplayName(reg, s.Provider),
 			})
 		}
-		return sessionsPageMsg{items: sitems, total: total, provider: providerFilter, gen: gen, err: err}
+		return sessionsPageMsg{items: sitems, total: total, counts: counts, provider: providerFilter, gen: gen, err: err}
 	}
 }
 
@@ -625,29 +687,47 @@ func contentIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Sto
 	}
 }
 
-func searchCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, query, providerFilter string) tea.Cmd {
+func searchOptsFor(m modelState, query string) index.SearchOpts {
+	opts := index.SearchOpts{Query: query, Provider: m.sourceID(), Limit: maxShowAllPage}
+	if m.projectOnly {
+		listOpts := index.ListOpts{}
+		applyProjectScope(&listOpts, m.projectScope)
+		opts.ProjectExact = listOpts.ProjectExact
+		opts.ProjectRoots = listOpts.ProjectRoots
+	}
+	return opts
+}
+
+func searchCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, opts index.SearchOpts, countOpts index.ListOpts) tea.Cmd {
 	return func() tea.Msg {
-		hits, err := idx.Search(index.SearchOpts{
-			Query: query, Provider: providerFilter, Limit: maxShowAllPage,
-		})
+		hits, err := idx.Search(opts)
 		status, statusErr := idx.ContentStatus()
 		if err == nil {
 			err = statusErr
+		}
+		counts, countErr := idx.CountByProviderFiltered(countOpts)
+		if err == nil {
+			err = countErr
 		}
 		items := make([]list.Item, 0, len(hits))
 		for _, hit := range hits {
 			items = append(items, sessionItem{summary: hit.Session, snippet: hit.Snippet,
 				providerLbl: registry.DisplayName(reg, hit.Session.Provider)})
 		}
-		return searchResultsMsg{items: items, query: query, status: status, err: err}
+		return searchResultsMsg{items: items, query: opts.Query, counts: counts, status: status, err: err}
 	}
 }
 
-func refreshIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, providerFilter string, reloadPage bool) tea.Cmd {
+func refreshIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, providerFilter, scopeCWD string, reloadPage bool) tea.Cmd {
 	return func() tea.Msg {
 		n, err := index.UpdateIncremental(ctx, reg, idx, providerFilter)
 		counts, _ := idx.CountByProvider()
-		return indexRefreshedMsg{counts: counts, err: err, updated: n, reloadPage: reloadPage}
+		var project *util.ProjectScope
+		if scopeCWD != "" {
+			discovered := util.DiscoverProjectScope(ctx, scopeCWD)
+			project = &discovered
+		}
+		return indexRefreshedMsg{counts: counts, project: project, err: err, updated: n, reloadPage: reloadPage}
 	}
 }
 
@@ -810,6 +890,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.sessions.SetItems(msg.items)
 		m.totalSessions = msg.total
+		m.updateSourceCounts(msg.counts)
 		m.layout()
 		return m, nil
 	case previewLoadedMsg:
@@ -869,6 +950,9 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = dispatchPageLoad(m)
 		return m, cmd
 	case batchReadyMsg:
+		if msg.gen != m.batchGen {
+			return m, nil
+		}
 		m.batchResults = append(m.batchResults, msg.frozen...)
 		if len(msg.items) == 0 {
 			m.finalizeBatch()
@@ -881,18 +965,21 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithCancel(parent)
 		m.batchCancel = cancel
 		m.batchTotal = len(m.batchResults) + len(msg.items)
-		m.batchCh = titler.SuggestBatch(ctx, m.titleCfg, msg.items, titler.DefaultConcurrency)
+		m.batchCh = titler.SuggestBatch(ctx, m.batchConfig(), msg.items, titler.DefaultConcurrency)
 		m.batchRunning = true
-		return m, batchNextCmd(m.batchCh)
+		return m, batchNextCmd(m.batchGen, m.batchCh)
 	case batchResultMsg:
+		if msg.gen != m.batchGen {
+			return m, nil
+		}
 		m.batchResults = append(m.batchResults, msg.res)
 		if m.batchCh != nil && len(m.batchResults) < m.batchTotal {
-			return m, batchNextCmd(m.batchCh)
+			return m, batchNextCmd(m.batchGen, m.batchCh)
 		}
 		m.finalizeBatch()
 		return m, nil
 	case batchFinishedMsg:
-		if !m.batchRunning {
+		if msg.gen != m.batchGen || !m.batchRunning {
 			return m, nil
 		}
 		m.finalizeBatch()
@@ -909,7 +996,9 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if detail == "" {
 				detail = "部分行失败"
 			}
-			m.err = fmt.Sprintf("已重命名 %d 条，失败 %d 条：%s", msg.applied, msg.failed, detail)
+			// Only the applied rows lose their mark, so ctrl+t reopens the
+			// batch on exactly the rows that failed.
+			m.err = fmt.Sprintf("已重命名 %d 条，失败 %d 条：%s · 失败行仍有标记，ctrl+t 重试", msg.applied, msg.failed, detail)
 		case msg.applied > 0:
 			m.status = okStyle.Render(fmt.Sprintf("已重命名 %d 条", msg.applied))
 		case msg.failed > 0:
@@ -917,7 +1006,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if detail == "" {
 				detail = "全部失败"
 			}
-			m.err = fmt.Sprintf("批量重命名失败 %d 条：%s", msg.failed, detail)
+			m.err = fmt.Sprintf("批量重命名失败 %d 条：%s · 标记保留，ctrl+t 重试", msg.failed, detail)
 		default:
 			m.status = "没有应用任何标题变更"
 		}
@@ -978,12 +1067,10 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 			return m, nil
 		}
-		m.sources = sourceChips(m.reg, msg.counts)
-		if m.sourceIdx >= len(m.sources) {
-			m.sourceIdx = 0
+		if msg.project != nil {
+			m.projectScope = *msg.project
 		}
-		m.sourceList.SetItems(sourceItems(m.sources))
-		m.sourceList.Select(m.sourceIdx)
+		m.updateSourceCounts(msg.counts)
 		if msg.reloadPage {
 			m.contentIndexing = true
 			var cmd tea.Cmd
@@ -1004,7 +1091,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.layout()
 		if m.searchQuery != "" {
-			return m, searchCmd(m.ctx, m.reg, m.idx, m.searchQuery, m.sourceID())
+			return m, searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, m.searchQuery), providerCountOpts(m))
 		}
 		return m, nil
 	case searchResultsMsg:
@@ -1016,6 +1103,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions.SetItems(msg.items)
 		m.searchQuery = msg.query
 		m.totalSessions = len(msg.items)
+		m.updateSourceCounts(msg.counts)
 		m.status = fmt.Sprintf("%d results for %q", len(msg.items), msg.query)
 		if msg.status.Pending > 0 {
 			m.status += mutedStyle.Render(fmt.Sprintf(" · %d sessions not indexed yet", msg.status.Pending))
@@ -1060,7 +1148,12 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.renameInput, cmd = m.renameInput.Update(msg)
 	case overlayBatchTitle:
 		// The batch overlay owns its keys; ticks and cursor blinks die here
-		// instead of leaking into the session list underneath.
+		// instead of leaking into the session list underneath. The model
+		// override field is the one part that needs its cursor to blink.
+		if m.batchModelEditing {
+			m.batchModelInput, cmd = m.batchModelInput.Update(msg)
+			return m, cmd
+		}
 		return m, nil
 	default:
 		m.sessions, cmd = m.sessions.Update(msg)
@@ -1088,7 +1181,7 @@ func (m modelState) updateSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searching = false
 		m.searchInput.Blur()
 		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, searchCmd(m.ctx, m.reg, m.idx, query, m.sourceID()))
+		return m, tea.Batch(m.spinner.Tick, searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, query), providerCountOpts(m)))
 	}
 	var cmd tea.Cmd
 	m.searchInput, cmd = m.searchInput.Update(msg)
@@ -1316,6 +1409,21 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.lastArchived = nil
 		m.status = ""
 		return m, nil
+	case "f":
+		if m.cwd == "" {
+			m.err = "无法确定当前项目"
+			return m, nil
+		}
+		m.projectOnly = !m.projectOnly
+		m.err = ""
+		m.status = ""
+		m.lastResume = ""
+		if m.searchQuery != "" {
+			m.loading = true
+			return m, tea.Batch(m.spinner.Tick,
+				searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, m.searchQuery), providerCountOpts(m)))
+		}
+		return dispatchPageLoadModel(m)
 	case "enter":
 		// Enter is the default action on the current object: resume it in its
 		// native agent. Crossing to another agent is spatially mapped to right.
@@ -1466,7 +1574,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.indexing = true
 		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, refreshIndexCmd(m.ctx, m.reg, m.idx, m.sourceID(), true))
+		return m, tea.Batch(m.spinner.Tick, refreshIndexCmd(m.ctx, m.reg, m.idx, m.sourceID(), m.cwd, true))
 	}
 	var cmd tea.Cmd
 	m.sessions, cmd = m.sessions.Update(msg)
@@ -1494,6 +1602,7 @@ func (m *modelState) layout() {
 	}
 	m.searchInput.Width = max(8, m.width-4)
 	m.renameInput.Width = max(18, min(60, m.width-20))
+	m.batchModelInput.Width = max(12, min(40, m.width-24))
 	frameW, frameH := paneStyle.GetHorizontalFrameSize(), paneStyle.GetVerticalFrameSize()
 	headerH := lipgloss.Height(m.headerView())
 	footerH := lipgloss.Height(m.footerView())
@@ -1536,10 +1645,14 @@ func (m modelState) View() string {
 	// columns on top. Passing the full frame size here would shrink the content
 	// area below the list width and wrap every row.
 	paneW := max(1, m.width-paneStyle.GetHorizontalBorderSize())
+	listView := m.sessions.View()
+	if len(m.sessions.Items()) == 0 && !m.loading {
+		listView = m.emptySessionsView()
+	}
 	pane := paneStyle.
 		Width(paneW).Height(contentH).
 		MaxWidth(m.width).MaxHeight(contentH + frameH).
-		Render(m.sessions.View())
+		Render(listView)
 
 	switch m.overlay {
 	case overlaySource:
@@ -1662,18 +1775,54 @@ func (m modelState) headerView() string {
 	}
 	left := brand + "  " + mutedStyle.Render("← 来源 ") + sourceChipStyle.Render(sourceName)
 	right := targetChipStyle.Render("去向 →")
+	var first string
 	if m.width >= 64 {
-		header := left + mutedStyle.Render(fmt.Sprintf("   │   %d 个会话   │   ", m.totalSessions)) + right
-		return ansi.Truncate(header, m.width, "…")
+		header := left + mutedStyle.Render(fmt.Sprintf("   │   %d 个会话   │   ", m.totalSessions)) + right +
+			mutedStyle.Render("   │   ") + m.scopeView(true)
+		first = ansi.Truncate(header, m.width, "…")
+	} else {
+		brand = sourceChipStyle.Render("项目")
+		if !m.projectOnly {
+			brand = sourceChipStyle.Render("全部")
+		}
+		left = brand + " " + mutedStyle.Render("← 来源 ") + sourceChipStyle.Render(sourceName)
+		left = ansi.Truncate(left, max(0, m.width-ansi.StringWidth(right)-2), "…")
+		gap := max(2, m.width-ansi.StringWidth(left)-ansi.StringWidth(right))
+		first = ansi.Truncate(left+strings.Repeat(" ", gap)+right, m.width, "…")
 	}
-	left = ansi.Truncate(left, max(0, m.width-ansi.StringWidth(right)-2), "…")
-	gap := max(2, m.width-ansi.StringWidth(left)-ansi.StringWidth(right))
-	header := left + strings.Repeat(" ", gap) + right
-	lines := []string{ansi.Truncate(header, m.width, "…")}
+	lines := []string{first}
 	if m.searching {
 		lines = append(lines, m.searchInput.View())
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m modelState) scopeView(showPath bool) string {
+	path := m.projectScope.Root
+	if path == "" {
+		path = m.cwd
+	}
+	path = util.TildePath(path)
+	var line string
+	if m.projectOnly {
+		line = sourceChipStyle.Render("当前项目")
+	} else {
+		line = sourceChipStyle.Render("全部")
+	}
+	if showPath && path != "" {
+		line += mutedStyle.Render("  ·  " + path)
+	}
+	return line
+}
+
+func (m modelState) emptySessionsView() string {
+	if m.searchQuery != "" {
+		return mutedStyle.Render("\n  没有匹配的会话")
+	}
+	if m.projectOnly {
+		return mutedStyle.Render("\n  当前项目没有会话\n  按 f 查看全部")
+	}
+	return mutedStyle.Render("\n  没有会话")
 }
 
 func (m modelState) footerView() string {
@@ -1727,10 +1876,13 @@ func (m modelState) help() string {
 		}
 		return " 输入新标题 · enter 保存 · esc 取消"
 	case overlayBatchTitle:
+		if m.batchModelEditing {
+			return " 输入模型名 · enter 换模型重跑 · esc 取消"
+		}
 		if m.batchRunning {
 			return " 生成中 · esc 取消剩余任务"
 		}
-		return " enter 应用变更 · e 展开其余 · esc 关闭"
+		return " enter 应用变更 · r 重试失败 · m 换模型 · e 展开其余 · esc 关闭"
 	}
 	if m.searching {
 		return " enter 搜索 · esc 取消"
@@ -1741,7 +1893,7 @@ func (m modelState) help() string {
 	if m.lastArchived != nil {
 		return " A 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览"
 	}
-	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · ctrl+r 重命名 · x 标记 · ctrl+t 批量 · A 归档 · ctrl+d 删除 · / 搜索 · r 刷新"
+	return " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围 · ctrl+r 重命名 · x 标记 · ctrl+t 批量 · A 归档 · ctrl+d 删除 · / 搜索 · r 刷新"
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across

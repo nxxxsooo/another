@@ -88,7 +88,7 @@ for i, (when, agent, title, color) in enumerate(dim_rows):
 modal_x, modal_w = 350, 770
 row_svg = []
 for i, (old, new) in enumerate(changed):
-    y = 300 + i * 34
+    y = 312 + i * 34
     row_svg.append(
         f'<text x="{modal_x + 40}" y="{y}" font-family="{FONT}" font-size="16" xml:space="preserve">'
         f'<tspan fill="{C["muted"]}">{escape(old)}</tspan>'
@@ -109,11 +109,12 @@ batch = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" vi
 {''.join(batch_svg)}
 <rect x="{modal_x}" y="196" width="{modal_w}" height="330" rx="10" fill="{C['bg']}" stroke="{C['line']}" stroke-width="2"/>
 <text x="{modal_x + 40}" y="238" fill="{C['text']}" font-family="{FONT}" font-size="19" font-weight="700">批量命名会话</text>
-<text x="{modal_x + 40}" y="266" fill="{C['muted']}" font-family="{FONT}" font-size="15">可应用 5 条 · 冻结 2 · 失败 0 · 无变化 1</text>
+<text x="{modal_x + 40}" y="264" fill="{C['muted']}" font-family="{FONT}" font-size="15" xml:space="preserve">模型来源  <tspan fill="{C['text']}">pi</tspan> · <tspan fill="{C['text']}">claude-sonnet-4-5</tspan><tspan fill="{C['subtle']}">  本次临时</tspan></text>
+<text x="{modal_x + 40}" y="290" fill="{C['muted']}" font-family="{FONT}" font-size="15">可应用 5 条 · 冻结 2 · 失败 0 · 无变化 1</text>
 {''.join(row_svg)}
 <text x="{modal_x + 40}" y="486" fill="{C['muted']}" font-family="{FONT}" font-size="14">e 展开其余行</text>
 <line x1="52" y1="556" x2="1148" y2="556" stroke="{C['line']}" stroke-width="2"/>
-<text x="52" y="590" fill="{C['muted']}" font-family="{FONT}" font-size="14">enter 应用变更 · e 展开其余 · esc 关闭</text>
+<text x="52" y="590" fill="{C['muted']}" font-family="{FONT}" font-size="14">enter 应用变更 · r 重试失败 · m 换模型 · e 展开其余 · esc 关闭</text>
 </svg>'''
 write("tui-batch.svg", batch)
 print(ASSETS / "tui-batch.svg")

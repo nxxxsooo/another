@@ -1,18 +1,21 @@
 package tui
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
-// The browser lists everywhere. Scoping to the working directory is a CLI
-// concern; in the TUI it silently hid the sessions people came to find.
-func TestListOptsBrowsesEverywhere(t *testing.T) {
-	m := modelState{cwd: "/home/user/proj"}
+func TestListOptsDefaultsToCurrentGitProject(t *testing.T) {
+	m := modelState{cwd: "/home/user/proj", projectOnly: true, projectScope: util.ProjectScope{
+		CWD: "/home/user/proj", Root: "/home/user/proj", Git: true,
+		Worktrees: []string{"/home/user/proj", "/tmp/proj-feature"},
+	}}
 	opts := listOptsFor(m)
-	if opts.ProjectCWD != "" {
-		t.Fatalf("ProjectCWD = %q, want empty so the browser spans every project", opts.ProjectCWD)
+	if !reflect.DeepEqual(opts.ProjectRoots, m.projectScope.Worktrees) {
+		t.Fatalf("ProjectRoots = %#v, want %#v", opts.ProjectRoots, m.projectScope.Worktrees)
 	}
 	if opts.IncludeSubagents {
 		t.Fatal("subagent sessions must stay out of the browser")
@@ -21,6 +24,33 @@ func TestListOptsBrowsesEverywhere(t *testing.T) {
 		t.Fatalf("Limit = %d, want the single-fetch cap %d", opts.Limit, maxShowAllPage)
 	}
 	var _ index.ListOpts = opts
+}
+
+func TestListOptsNonGitScopeIsExactAndToggleShowsAll(t *testing.T) {
+	m := modelState{cwd: "/tmp/notes", projectOnly: true,
+		projectScope: util.ProjectScope{CWD: "/tmp/notes", Root: "/tmp/notes"}}
+	if got := listOptsFor(m).ProjectExact; got != "/tmp/notes" {
+		t.Fatalf("ProjectExact = %q", got)
+	}
+	m.projectOnly = false
+	opts := listOptsFor(m)
+	if opts.ProjectExact != "" || len(opts.ProjectRoots) != 0 {
+		t.Fatalf("all-project opts still scoped: %+v", opts)
+	}
+}
+
+func TestSearchOptsFollowActiveProjectScope(t *testing.T) {
+	m := modelState{projectOnly: true, projectScope: util.ProjectScope{
+		CWD: "/repo", Root: "/repo", Git: true, Worktrees: []string{"/repo", "/tmp/feature"},
+	}}
+	opts := searchOptsFor(m, "needle")
+	if opts.Query != "needle" || !reflect.DeepEqual(opts.ProjectRoots, m.projectScope.Worktrees) {
+		t.Fatalf("search opts = %+v", opts)
+	}
+	m.projectOnly = false
+	if got := searchOptsFor(m, "needle"); len(got.ProjectRoots) != 0 || got.ProjectExact != "" {
+		t.Fatalf("global search is still scoped: %+v", got)
+	}
 }
 
 func TestListOptsFollowsSelectedSource(t *testing.T) {

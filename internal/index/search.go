@@ -18,7 +18,9 @@ type SearchOpts struct {
 	Query            string
 	Provider         string
 	ProjectFilter    string
+	ProjectExact     string
 	ProjectCWD       string
+	ProjectRoots     []string
 	IncludeSubagents bool
 	Limit            int
 	Offset           int
@@ -190,7 +192,8 @@ func (s *Store) Search(opts SearchOpts) ([]SearchHit, error) {
 		offset = 0
 	}
 	where, args := s.listWhere(ListOpts{
-		Provider: opts.Provider, ProjectFilter: opts.ProjectFilter, ProjectCWD: opts.ProjectCWD,
+		Provider: opts.Provider, ProjectFilter: opts.ProjectFilter, ProjectExact: opts.ProjectExact,
+		ProjectCWD: opts.ProjectCWD, ProjectRoots: opts.ProjectRoots,
 		IncludeSubagents: opts.IncludeSubagents,
 	})
 	like := "%" + util.EscapeLike(rawQuery) + "%"

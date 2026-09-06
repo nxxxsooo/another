@@ -95,7 +95,92 @@ func TestBatchFreezesRowsWithoutACreationTime(t *testing.T) {
 	}
 }
 
+// fastRetries removes the retry backoff so a test spends no wall-clock time
+// on it. The policy under test is how many attempts happen, not how long the
+// pause is.
+func fastRetries(t *testing.T) {
+	t.Helper()
+	previous := retryDelay
+	retryDelay = 0
+	t.Cleanup(func() { retryDelay = previous })
+}
+
+// A transient agent failure is the common case over dozens of rows: the row
+// must get a second attempt before it lands in the failed column.
+func TestTransientFailureIsRetriedOnce(t *testing.T) {
+	fastRetries(t)
+	var calls int64
+	suggest := func(context.Context, Config, Request) (string, error) {
+		if atomic.AddInt64(&calls, 1) == 1 {
+			return "", errors.New("pi: 生成超时")
+		}
+		return "0903｜修复｜第二次成功", nil
+	}
+
+	got := byID(drain(suggestBatch(context.Background(), Config{}, []BatchItem{item("a", "old", created)}, 1, suggest)))
+
+	if got["a"].Err != nil {
+		t.Fatalf("a retried row still reported failure: %v", got["a"].Err)
+	}
+	if got["a"].Title != "0903｜修复｜第二次成功" {
+		t.Fatalf("retry result was dropped: %+v", got["a"])
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want one retry", calls)
+	}
+}
+
+// Retrying a missing CLI or an agent that cannot generate titles only spends
+// another timeout to print the same line.
+func TestPermanentFailureIsNotRetried(t *testing.T) {
+	fastRetries(t)
+	var calls int64
+	suggest := func(context.Context, Config, Request) (string, error) {
+		atomic.AddInt64(&calls, 1)
+		return "", permanent(errors.New("pi 未安装"))
+	}
+
+	got := byID(drain(suggestBatch(context.Background(), Config{}, []BatchItem{item("a", "old", created)}, 1, suggest)))
+
+	if got["a"].Err == nil {
+		t.Fatal("a permanently failing row must still report the failure")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want no retry", calls)
+	}
+}
+
+// Retries must not outlive the batch: esc means stop now, not stop after every
+// failing row has tried again.
+func TestRetriesStopOnCancellation(t *testing.T) {
+	previous := retryDelay
+	retryDelay = time.Hour
+	t.Cleanup(func() { retryDelay = previous })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var calls int64
+	suggest := func(context.Context, Config, Request) (string, error) {
+		atomic.AddInt64(&calls, 1)
+		cancel()
+		return "", errors.New("pi: 生成超时")
+	}
+
+	done := make(chan []BatchResult)
+	go func() {
+		done <- drain(suggestBatch(ctx, Config{}, []BatchItem{item("a", "old", created)}, 1, suggest))
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a cancelled batch waited out the retry backoff")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want no retry after cancellation", calls)
+	}
+}
+
 func TestOneFailureLeavesTheRestOfTheBatchIntact(t *testing.T) {
+	fastRetries(t)
 	suggest := func(_ context.Context, _ Config, req Request) (string, error) {
 		if req.Title == "boom" {
 			return "", errors.New("pi 生成超时")

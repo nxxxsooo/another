@@ -205,3 +205,30 @@ func TestSearchFiltersBeforePagination(t *testing.T) {
 		t.Fatalf("negative offset: hits=%+v err=%v", hits, err)
 	}
 }
+
+func TestSearchFiltersAcrossProjectWorktrees(t *testing.T) {
+	store, err := index.Open(filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now()
+	for _, row := range []struct{ id, path string }{
+		{"main", "/repo/src"}, {"linked", "/tmp/repo-feature/pkg"}, {"similar", "/repo-old"},
+	} {
+		sm := model.Summary{ID: row.id, Provider: "codex", ProjectPath: row.path, Title: "scope needle",
+			UpdatedAt: now, StoragePath: "/sessions/" + row.id, SourceMtime: now.Unix()}
+		if err := store.Upsert(sm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hits, err := store.Search(index.SearchOpts{Query: "scope needle", ProjectRoots: []string{"/repo", "/tmp/repo-feature"}})
+	if err != nil || len(hits) != 2 {
+		t.Fatalf("hits=%+v err=%v", hits, err)
+	}
+	for _, hit := range hits {
+		if hit.Session.ID == "similar" {
+			t.Fatalf("similar path leaked into project scope: %+v", hits)
+		}
+	}
+}

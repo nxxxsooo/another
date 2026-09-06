@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/registry"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 // TestRenderProbe prints the real screen against the local index. An alt-screen
@@ -26,8 +27,12 @@ func TestRenderProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer idx.Close()
-	counts, _ := idx.CountByProvider()
-	summaries, err := idx.List(index.ListOpts{Limit: 12})
+	cwd, _ := os.Getwd()
+	project := util.DiscoverProjectScope(t.Context(), cwd)
+	opts := index.ListOpts{Limit: 12}
+	applyProjectScope(&opts, project)
+	counts, _ := idx.CountByProviderFiltered(opts)
+	summaries, err := idx.List(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +50,9 @@ func TestRenderProbe(t *testing.T) {
 		targets:       newTargetList(targetItems(reg, "pi")),
 		sources:       sources,
 		totalSessions: sources[0].count,
+		cwd:           project.CWD,
+		projectScope:  project,
+		projectOnly:   true,
 	}
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
 	shown := updated.(modelState)

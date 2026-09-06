@@ -27,11 +27,71 @@ const (
 	keepMarker = "KEEP"
 )
 
-// types is the skill's fixed vocabulary. A suggestion outside it is discarded
-// rather than shown, so a drifting model cannot invent a ninth category.
-var types = []string{"功能", "设计", "修复", "优化", "发布", "探索", "文档", "研究"}
+// Language selects the vocabulary a suggestion is written in. The date and the
+// separator never change: they are what makes the titles sort and scan the
+// same way whatever language the sessions are in.
+type Language string
 
-var titlePattern = regexp.MustCompile(`^[0-9]{4}｜(?:功能|设计|修复|优化|发布|探索|文档|研究)｜\S`)
+const (
+	// LangChinese is the title-formatter skill's own vocabulary and the
+	// default, so an existing config keeps producing what it produced before
+	// this setting existed.
+	LangChinese Language = "zh"
+	// LangEnglish names English sessions in English.
+	LangEnglish Language = "en"
+	// LangAuto lets the session decide. An English conversation renamed into
+	// Chinese is harder to find again, which is the whole point of the title.
+	LangAuto Language = "auto"
+)
+
+// NormalizeLanguage maps stored and typed values onto the three supported
+// ones. Anything unrecognized, including empty, falls back to Chinese.
+func NormalizeLanguage(l Language) Language {
+	switch Language(strings.ToLower(strings.TrimSpace(string(l)))) {
+	case LangEnglish, "english", "eng":
+		return LangEnglish
+	case LangAuto, "follow":
+		return LangAuto
+	default:
+		return LangChinese
+	}
+}
+
+// LanguageLabel names a language for the setup page and the batch header.
+func LanguageLabel(l Language) string {
+	switch NormalizeLanguage(l) {
+	case LangEnglish:
+		return "English"
+	case LangAuto:
+		return "跟随会话"
+	default:
+		return "中文"
+	}
+}
+
+// types is the skill's fixed vocabulary per language. A suggestion outside it
+// is discarded rather than shown, so a drifting model cannot invent a ninth
+// category. The English list is a one-to-one translation, so a batch that
+// mixes languages still groups by the same eight kinds of work.
+var types = map[Language][]string{
+	LangChinese: {"功能", "设计", "修复", "优化", "发布", "探索", "文档", "研究"},
+	LangEnglish: {"Feature", "Design", "Fix", "Polish", "Release", "Explore", "Docs", "Research"},
+}
+
+var titlePatterns = map[Language]*regexp.Regexp{
+	LangChinese: regexp.MustCompile(`^[0-9]{4}｜(?:功能|设计|修复|优化|发布|探索|文档|研究)｜\S`),
+	LangEnglish: regexp.MustCompile(`^[0-9]{4}｜(?:Feature|Design|Fix|Polish|Release|Explore|Docs|Research)｜\S`),
+}
+
+// accepts reports whether a line satisfies the contract for this language.
+// Auto accepts either vocabulary: which one is right depends on the session,
+// and that judgement was delegated to the model on purpose.
+func accepts(lang Language, line string) bool {
+	if NormalizeLanguage(lang) == LangAuto {
+		return titlePatterns[LangChinese].MatchString(line) || titlePatterns[LangEnglish].MatchString(line)
+	}
+	return titlePatterns[NormalizeLanguage(lang)].MatchString(line)
+}
 
 // ansiPattern strips colour codes some CLIs emit even with NO_COLOR set.
 var ansiPattern = regexp.MustCompile("\x1b\\[[0-9;?]*[ -~]")
@@ -66,18 +126,32 @@ func MMDD(t time.Time) string {
 // BuildPrompt names the skill and restates its hard contract inline. Naming it
 // alone is not enough: headless CLIs do not all load skills, and the inline
 // rules keep the output usable when the skill never loads.
-func BuildPrompt(req Request) string {
+func BuildPrompt(req Request, lang Language) string {
 	var b strings.Builder
 	date := MMDD(req.CreatedAt)
+	lang = NormalizeLanguage(lang)
 
 	fmt.Fprintf(&b, "Use the %s skill to name one AI coding session.\n\n", SkillName)
 	b.WriteString("Follow these rules even if that skill is unavailable:\n")
 	b.WriteString("- Reply with exactly one line. No quotes, no markdown, no explanation, no preamble.\n")
 	fmt.Fprintf(&b, "- Format: MMDD%s类型%s主题\n", Separator, Separator)
 	fmt.Fprintf(&b, "- MMDD is fixed to %s. Do not compute, verify, or change it.\n", date)
-	fmt.Fprintf(&b, "- Use %q (U+FF5C) as the separator.\n", Separator)
-	fmt.Fprintf(&b, "- 类型 must be exactly one of: %s\n", strings.Join(types, " "))
-	b.WriteString("- 主题 is a short concrete Chinese topic, at most 16 characters, distinct from the project name.\n")
+	fmt.Fprintf(&b, "- Use %q (U+FF5C) as the separator, whatever language the title is in.\n", Separator)
+	switch lang {
+	case LangEnglish:
+		fmt.Fprintf(&b, "- 类型 must be exactly one of: %s\n", strings.Join(types[LangEnglish], " "))
+		b.WriteString("- 主题 is a short concrete English topic, at most 6 words, distinct from the project name.\n")
+		b.WriteString("- Write the title in English even if the session below is in another language.\n")
+	case LangAuto:
+		fmt.Fprintf(&b, "- 类型 must be exactly one of: %s\n", strings.Join(types[LangChinese], " "))
+		fmt.Fprintf(&b, "  or, for an English session, exactly one of: %s\n", strings.Join(types[LangEnglish], " "))
+		b.WriteString("- 主题 is a short concrete topic distinct from the project name: at most 16 characters in Chinese, at most 6 words in English.\n")
+		b.WriteString("- Match the dominant language of the session below: a mainly Chinese session gets the Chinese words, anything else gets the English ones. Use one language for both 类型 and 主题.\n")
+	default:
+		fmt.Fprintf(&b, "- 类型 must be exactly one of: %s\n", strings.Join(types[LangChinese], " "))
+		b.WriteString("- 主题 is a short concrete Chinese topic, at most 16 characters, distinct from the project name.\n")
+		b.WriteString("- Write the title in Chinese even if the session below is in another language.\n")
+	}
 	fmt.Fprintf(&b, "- If the type or the topic cannot be determined from the content below, reply with exactly %s.\n", keepMarker)
 	b.WriteString("- Do not read files, run commands, or use tools. Answer from the content below only.\n\n")
 
@@ -149,7 +223,7 @@ func truncateRunes(s string, limit int) string {
 // a model that explains itself before answering would otherwise poison the
 // result. A line that is exactly KEEP means the model declined, which is a
 // valid answer and returns "".
-func Clean(raw string) string {
+func Clean(raw string, lang Language) string {
 	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := normalizeLine(lines[i])
@@ -159,7 +233,7 @@ func Clean(raw string) string {
 		if line == keepMarker {
 			return ""
 		}
-		if !titlePattern.MatchString(line) {
+		if !accepts(lang, line) {
 			continue
 		}
 		if len([]rune(line)) > maxTitleRunes {

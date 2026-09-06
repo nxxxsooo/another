@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/titler"
@@ -209,6 +210,207 @@ func TestEnterWithoutChangesAppliesNothing(t *testing.T) {
 	}
 	if !strings.Contains(got.status, "没有可应用") {
 		t.Fatalf("missing no-change hint: %q", got.status)
+	}
+}
+
+func runeKey(r rune) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}} }
+
+func typeRunes(m modelState, s string) modelState {
+	for _, r := range s {
+		updated, _ := m.Update(runeKey(r))
+		m = updated.(modelState)
+	}
+	return m
+}
+
+// The review list cannot show which model wrote the titles, so the overlay
+// must name the agent and the model it ran on.
+func TestBatchReviewNamesAgentAndModel(t *testing.T) {
+	m := batchTestModel()
+	m.overlay = overlayBatchTitle
+	m.batchResults = []titler.BatchResult{{SessionID: "a", Current: "old talk", Title: "0903｜修复｜快捷键冲突"}}
+
+	if view := m.View(); !strings.Contains(view, "pi") || !strings.Contains(view, "默认模型") {
+		t.Fatalf("review must name the agent and the default model:\n%s", view)
+	}
+
+	m.batchCfg = titler.Config{Provider: "pi", Model: "claude-sonnet-4-5"}
+	if view := m.View(); !strings.Contains(view, "claude-sonnet-4-5") || !strings.Contains(view, "本次临时") {
+		t.Fatalf("review must name the overridden model as temporary:\n%s", view)
+	}
+}
+
+// The override is per batch: it changes what this run calls and never touches
+// the configured default.
+func TestBatchModelOverrideRerunsWithoutTouchingConfig(t *testing.T) {
+	m := batchTestModel()
+	m.marked["session"] = true
+	opened, _ := m.Update(ctrlTKey())
+	m = opened.(modelState)
+	m.batchItems = []model.Summary{{ID: "session", Title: "A useful title"}}
+	startGen := m.batchGen
+
+	edited, _ := m.Update(runeKey('m'))
+	m = edited.(modelState)
+	if !m.batchModelEditing {
+		t.Fatal("m did not open the model override")
+	}
+	m = typeRunes(m, "haiku")
+	if view := m.View(); !strings.Contains(view, "haiku") {
+		t.Fatalf("the override field must show what was typed:\n%s", view)
+	}
+
+	committed, cmd := m.Update(enterKey())
+	got := committed.(modelState)
+	if got.batchModelEditing {
+		t.Fatal("enter must close the override field")
+	}
+	if got.batchConfig().Model != "haiku" {
+		t.Fatalf("batch model = %q, want haiku", got.batchConfig().Model)
+	}
+	if got.titleCfg.Model != "" {
+		t.Fatalf("the configured default must stay untouched, got %q", got.titleCfg.Model)
+	}
+	if got.batchGen == startGen {
+		t.Fatal("a model change must supersede the previous run")
+	}
+	if cmd == nil || got.batchResults != nil {
+		t.Fatalf("enter must re-run the batch: cmd=%v results=%+v", cmd, got.batchResults)
+	}
+}
+
+// Results from a superseded run must not land in the new list: they were
+// written by the model the person just replaced.
+func TestBatchDropsResultsFromSupersededRun(t *testing.T) {
+	m := batchTestModel()
+	m.overlay = overlayBatchTitle
+	m.batchGen = 7
+	m.batchTotal = 2
+	m.batchRunning = true
+
+	stale, _ := m.Update(batchResultMsg{gen: 6, res: titler.BatchResult{SessionID: "a", Title: "旧模型的标题"}})
+	got := stale.(modelState)
+	if len(got.batchResults) != 0 {
+		t.Fatalf("stale result landed in the new list: %+v", got.batchResults)
+	}
+
+	done, _ := got.Update(batchFinishedMsg{gen: 6})
+	if !done.(modelState).batchRunning {
+		t.Fatal("a stale finish must not end the current run")
+	}
+}
+
+// The override field is drawn inside the same modal as the review list, so it
+// has to survive the narrow terminals the rest of the overlays are tested at.
+func TestBatchModelOverrideFitsNarrowTerminals(t *testing.T) {
+	for _, size := range [][2]int{{40, 12}, {60, 16}, {100, 30}} {
+		m := batchTestModel()
+		m.overlay = overlayBatchTitle
+		m.batchModelInput = newBatchModelInput()
+		m.batchModelEditing = true
+		m.batchModelInput.SetValue("claude-sonnet-4-5")
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		view := updated.(modelState).View()
+		if got := lipgloss.Width(view); got > size[0] {
+			t.Errorf("%dx%d override width = %d", size[0], size[1], got)
+		}
+		if got := lipgloss.Height(view); got > size[1] {
+			t.Errorf("%dx%d override height = %d", size[0], size[1], got)
+		}
+	}
+}
+
+// A retry must cost only the rows that failed: the suggestions that landed
+// were a model call each, and re-running them invites a different answer for
+// a row the person already reviewed.
+func TestRetryRerunsOnlyFailedRows(t *testing.T) {
+	m := batchTestModel()
+	m.overlay = overlayBatchTitle
+	m.batchItems = []model.Summary{
+		{ID: "ok", Title: "old ok"},
+		{ID: "bad", Title: "old bad"},
+		{ID: "cancelled", Title: "old cancelled"},
+		{ID: "frozen", Title: "old frozen"},
+	}
+	m.batchByID = map[string]model.Summary{}
+	for _, sm := range m.batchItems {
+		m.batchByID[sm.ID] = sm
+	}
+	m.batchResults = []titler.BatchResult{
+		{SessionID: "ok", Current: "old ok", Title: "0903｜修复｜已有结果"},
+		{SessionID: "bad", Current: "old bad", Err: errBatchTest},
+		{SessionID: "cancelled", Current: "old cancelled", Frozen: "已取消"},
+		{SessionID: "frozen", Current: "old frozen", Frozen: "缺少创建时间"},
+	}
+	startGen := m.batchGen
+
+	if view := m.View(); !strings.Contains(view, "r 重试 2 行") {
+		t.Fatalf("review must offer a retry for the failed and cancelled rows:\n%s", view)
+	}
+
+	updated, cmd := m.Update(runeKey('r'))
+	got := updated.(modelState)
+	if cmd == nil {
+		t.Fatal("r scheduled no retry")
+	}
+	if got.batchGen == startGen {
+		t.Fatal("the retry must supersede the previous run")
+	}
+	kept := map[string]bool{}
+	for _, r := range got.batchResults {
+		kept[r.SessionID] = true
+	}
+	if !kept["ok"] || !kept["frozen"] {
+		t.Fatalf("a retry threw away rows it did not re-run: %+v", got.batchResults)
+	}
+	if kept["bad"] || kept["cancelled"] {
+		t.Fatalf("retried rows must leave the list until they land again: %+v", got.batchResults)
+	}
+
+	// The re-run covers exactly the retried rows, and its results merge back
+	// into the kept ones.
+	ready, ok := cmd().(batchReadyMsg)
+	if !ok {
+		t.Fatalf("retry produced %T, want batchReadyMsg", cmd())
+	}
+	if ready.gen != got.batchGen {
+		t.Fatalf("retry generation = %d, want %d", ready.gen, got.batchGen)
+	}
+	merged, _ := got.Update(ready)
+	final := merged.(modelState)
+	if len(final.batchResults) != 4 {
+		t.Fatalf("retry lost rows: %+v", final.batchResults)
+	}
+}
+
+func TestRetryWithNothingToRetrySaysSo(t *testing.T) {
+	m := batchTestModel()
+	m.overlay = overlayBatchTitle
+	m.batchResults = []titler.BatchResult{{SessionID: "a", Current: "x", Frozen: "缺少创建时间"}}
+
+	updated, cmd := m.Update(runeKey('r'))
+	got := updated.(modelState)
+	if cmd != nil {
+		t.Fatal("a frozen row must not be retried")
+	}
+	if !strings.Contains(got.status, "没有可重试") {
+		t.Fatalf("missing hint: %q", got.status)
+	}
+}
+
+// Swapping models mid-run would leave the list half-written by each model.
+func TestBatchModelOverrideRefusedWhileRunning(t *testing.T) {
+	m := batchTestModel()
+	m.overlay = overlayBatchTitle
+	m.batchRunning = true
+
+	updated, _ := m.Update(runeKey('m'))
+	got := updated.(modelState)
+	if got.batchModelEditing {
+		t.Fatal("the override must wait for the run to stop")
+	}
+	if !strings.Contains(got.status, "esc") {
+		t.Fatalf("missing cancel-first hint: %q", got.status)
 	}
 }
 

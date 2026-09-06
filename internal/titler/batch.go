@@ -3,6 +3,7 @@ package titler
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 // DefaultConcurrency bounds how many agent CLIs run at once. Each suggestion
@@ -11,6 +12,19 @@ import (
 // batch is unusable when serialized, and unfriendly to the machine when not
 // bounded at all.
 const DefaultConcurrency = 4
+
+// maxAttempts bounds how many times one row may call a model. Agent CLIs fail
+// transiently often enough to matter over dozens of rows — a cold start that
+// runs past the timeout, a rate limit, a process that dies once — and a second
+// attempt is cheap next to making the person re-run the whole batch. It stays
+// at two so a systematically broken setup fails fast instead of burning
+// minutes per row.
+const maxAttempts = 2
+
+// retryDelay spaces the retry. Immediate retries are the wrong answer to the
+// most common transient failure here, which is an agent that is busy or rate
+// limited. It is a variable so tests do not have to wait it out.
+var retryDelay = 2 * time.Second
 
 // BatchItem pairs a session identity with the request that names it.
 type BatchItem struct {
@@ -108,13 +122,40 @@ func runOne(ctx context.Context, cfg Config, item BatchItem, suggest suggestFunc
 		res.Frozen = "已取消"
 		return res
 	}
-	title, err := suggest(ctx, cfg, item.Request)
-	if err != nil {
-		res.Err = err
-		return res
+	var last error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 && !wait(ctx, retryDelay) {
+			break
+		}
+		title, err := suggest(ctx, cfg, item.Request)
+		if err == nil {
+			res.Title = title
+			return res
+		}
+		last = err
+		// A permanent failure and a cancelled batch both mean the next
+		// attempt cannot do better than this one.
+		if Permanent(err) || ctx.Err() != nil {
+			break
+		}
 	}
-	res.Title = title
+	res.Err = last
 	return res
+}
+
+// wait sleeps unless the batch is cancelled first.
+func wait(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // FreezeDuplicates freezes every row that proposes a title another row in the

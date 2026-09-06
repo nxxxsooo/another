@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nxxxsooo/another/internal/index"
@@ -24,17 +25,21 @@ const maxBatchPreviewRows = 12
 // rows never will. The overlay opens before this arrives, so a slow local
 // preview load shows progress rather than a dead key.
 type batchReadyMsg struct {
+	gen    uint64
 	items  []titler.BatchItem
 	frozen []titler.BatchResult
 }
 
 // batchResultMsg streams one finished suggestion. Results arrive out of order;
 // the confirmation list is re-sorted into mark order at finalize time.
-type batchResultMsg struct{ res titler.BatchResult }
+type batchResultMsg struct {
+	gen uint64
+	res titler.BatchResult
+}
 
 // batchFinishedMsg means the engine channel closed. On cancellation some rows
 // may never have reported; finalize synthesizes them as cancelled.
-type batchFinishedMsg struct{}
+type batchFinishedMsg struct{ gen uint64 }
 
 // batchAppliedMsg reports the confirmed rename pass. appliedIDs leave the
 // batch selection; everything else stays marked for another attempt.
@@ -68,6 +73,13 @@ func (m modelState) startBatch() (tea.Model, tea.Cmd) {
 	m.overlay = overlayBatchTitle
 	m.batchItems = summaries
 	m.batchByID = byID
+	m.batchMissing = missing
+	// The run starts from the configured agent and model, but the model can
+	// be overridden for this batch alone; nothing here is written back to
+	// config.json.
+	m.batchCfg = m.titleCfg
+	m.batchModelInput = newBatchModelInput()
+	m.batchModelEditing = false
 	m.batchResults = nil
 	m.batchTotal = 0
 	m.batchCh = nil
@@ -75,9 +87,56 @@ func (m modelState) startBatch() (tea.Model, tea.Cmd) {
 	m.batchRunning = false
 	m.batchCancelling = false
 	m.batchExpanded = false
+	m.batchGen++
 	m.err = ""
 	m.layout()
-	return m, batchPrepareCmd(m.ctx, m.reg, summaries, missing)
+	return m, batchPrepareCmd(m.ctx, m.batchGen, m.reg, summaries, missing)
+}
+
+// newBatchModelInput builds the per-batch model override field. It is created
+// with the flow rather than with the program: it only ever exists while the
+// batch overlay is open.
+func newBatchModelInput() textinput.Model {
+	in := textinput.New()
+	in.Prompt = ""
+	in.Placeholder = "留空用该 CLI 的默认模型"
+	in.CharLimit = 120
+	in.Width = 32
+	return in
+}
+
+// batchConfig is the agent and model this batch runs on. It falls back to the
+// configured pair so a batch opened without going through startBatch still
+// reports what would run.
+func (m modelState) batchConfig() titler.Config {
+	if m.batchCfg.Provider == "" {
+		return m.titleCfg
+	}
+	return m.batchCfg
+}
+
+// rerunBatch throws away the current suggestions and asks the engine again,
+// which is what a model change means: the old titles came from a model the
+// person just rejected. Bumping the generation orphans the previous run's
+// in-flight results instead of letting them land in the new list.
+func (m modelState) rerunBatch() (tea.Model, tea.Cmd) {
+	if m.batchCancel != nil {
+		m.batchCancel()
+		m.batchCancel = nil
+	}
+	m.batchResults = nil
+	m.batchTotal = 0
+	m.batchCh = nil
+	m.batchRunning = false
+	m.batchCancelling = false
+	m.batchExpanded = false
+	m.batchGen++
+	m.err = ""
+	ctx := m.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return m, batchPrepareCmd(ctx, m.batchGen, m.reg, m.batchItems, m.batchMissing)
 }
 
 // markedSummaries resolves the batch selection in visible order. Marks are
@@ -119,7 +178,7 @@ func (m modelState) findSummary(id string) (*model.Summary, error) {
 // batchPrepareCmd loads the recent messages for every row and freezes the
 // rows that must never reach a model. Preview loads are local reads, so they
 // run up front; the slow model calls stream later through SuggestBatch.
-func batchPrepareCmd(ctx context.Context, reg *registry.Registry, summaries []model.Summary, seed []titler.BatchResult) tea.Cmd {
+func batchPrepareCmd(ctx context.Context, gen uint64, reg *registry.Registry, summaries []model.Summary, seed []titler.BatchResult) tea.Cmd {
 	return func() tea.Msg {
 		frozen := append([]titler.BatchResult{}, seed...)
 		var items []titler.BatchItem
@@ -176,19 +235,19 @@ func batchPrepareCmd(ctx context.Context, reg *registry.Registry, summaries []mo
 				}})
 			}
 		}
-		return batchReadyMsg{items: items, frozen: frozen}
+		return batchReadyMsg{gen: gen, items: items, frozen: frozen}
 	}
 }
 
 // batchNextCmd waits for one engine result. Each arrival re-arms the next
 // wait, so progress streams instead of blocking until the slowest row lands.
-func batchNextCmd(ch <-chan titler.BatchResult) tea.Cmd {
+func batchNextCmd(gen uint64, ch <-chan titler.BatchResult) tea.Cmd {
 	return func() tea.Msg {
 		res, ok := <-ch
 		if !ok {
-			return batchFinishedMsg{}
+			return batchFinishedMsg{gen: gen}
 		}
-		return batchResultMsg{res: res}
+		return batchResultMsg{gen: gen, res: res}
 	}
 }
 
@@ -239,6 +298,10 @@ func (m *modelState) finalizeBatch() {
 func (m *modelState) resetBatch() {
 	m.batchItems = nil
 	m.batchByID = nil
+	m.batchMissing = nil
+	m.batchCfg = titler.Config{}
+	m.batchModelEditing = false
+	m.batchModelInput.Blur()
 	m.batchResults = nil
 	m.batchTotal = 0
 	m.batchCh = nil
@@ -249,6 +312,9 @@ func (m *modelState) resetBatch() {
 }
 
 func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.batchModelEditing {
+		return m.updateBatchModelInput(msg)
+	}
 	switch msg.String() {
 	case "ctrl+c", "q":
 		if m.batchCancel != nil {
@@ -277,6 +343,35 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.batchExpanded = !m.batchExpanded
 		}
 		return m, nil
+	case "r", "R":
+		if m.batchRunning || m.batchCancelling {
+			return m, nil
+		}
+		retry := batchRetryable(m.batchResults)
+		if len(retry) == 0 {
+			m.status = "没有可重试的行"
+			return m, nil
+		}
+		return m.retryBatch(retry)
+	case "m", "M":
+		// Changing the model mid-run would leave half the list written by
+		// one model and half by another, so the override waits for the run
+		// to stop. esc already cancels it.
+		if m.batchRunning || m.batchCancelling {
+			m.status = "先 esc 取消生成，再换模型"
+			return m, nil
+		}
+		if m.batchModelInput.Placeholder == "" {
+			// A batch overlay that was opened without startBatch never got
+			// a field; build one rather than rendering a zero value.
+			m.batchModelInput = newBatchModelInput()
+		}
+		m.batchModelEditing = true
+		m.batchModelInput.SetValue(m.batchConfig().Model)
+		m.batchModelInput.CursorEnd()
+		m.batchModelInput.Focus()
+		m.status = ""
+		return m, textinput.Blink
 	case "enter":
 		if m.batchRunning || m.batchCancelling {
 			return m, nil
@@ -293,6 +388,97 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, batchApplyCmd(ctx, m.reg, m.idx, m.batchByID, changed)
 	}
 	return m, nil
+}
+
+// batchRetryable selects the rows a retry could still change. Failures and
+// rows cut short by a cancel are worth another attempt; a frozen row was
+// refused on a rule that a second run would apply identically, and an
+// unchanged row already got its answer.
+func batchRetryable(results []titler.BatchResult) map[string]bool {
+	retry := map[string]bool{}
+	for _, r := range results {
+		if r.Err != nil || r.Frozen == "已取消" {
+			retry[r.SessionID] = true
+		}
+	}
+	return retry
+}
+
+// retryBatch runs the engine again over the failed rows only. Suggestions that
+// already landed are kept: they cost a model call each, and re-running them
+// would also invite a different title for a row the person already reviewed.
+func (m modelState) retryBatch(retry map[string]bool) (tea.Model, tea.Cmd) {
+	var again []model.Summary
+	for _, sm := range m.batchItems {
+		if retry[sm.ID] {
+			again = append(again, sm)
+		}
+	}
+	if len(again) == 0 {
+		m.status = "重试的会话都不在这批里了"
+		return m, nil
+	}
+	kept := make([]titler.BatchResult, 0, len(m.batchResults))
+	for _, r := range m.batchResults {
+		if !retry[r.SessionID] {
+			kept = append(kept, r)
+		}
+	}
+	if m.batchCancel != nil {
+		m.batchCancel()
+		m.batchCancel = nil
+	}
+	m.batchResults = kept
+	m.batchTotal = 0
+	m.batchCh = nil
+	m.batchRunning = false
+	m.batchCancelling = false
+	m.batchGen++
+	m.err = ""
+	m.status = ""
+	ctx := m.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return m, batchPrepareCmd(ctx, m.batchGen, m.reg, again, nil)
+}
+
+// updateBatchModelInput owns the keyboard while the per-batch model override
+// is open. Enter re-runs this batch on the new model; esc leaves the previous
+// suggestions and the previous model untouched.
+func (m modelState) updateBatchModelInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		if m.batchCancel != nil {
+			m.batchCancel()
+		}
+		if m.cancel != nil {
+			m.cancel()
+		}
+		return m, tea.Quit
+	case "esc":
+		m.batchModelEditing = false
+		m.batchModelInput.Blur()
+		return m, nil
+	case "enter":
+		chosen := strings.TrimSpace(m.batchModelInput.Value())
+		m.batchModelEditing = false
+		m.batchModelInput.Blur()
+		cfg := m.batchConfig()
+		if chosen == cfg.Model {
+			m.status = "模型未变，保留现有结果"
+			return m, nil
+		}
+		cfg.Model = chosen
+		m.batchCfg = cfg
+		if len(m.batchItems) == 0 {
+			return m, nil
+		}
+		return m.rerunBatch()
+	}
+	var cmd tea.Cmd
+	m.batchModelInput, cmd = m.batchModelInput.Update(msg)
+	return m, cmd
 }
 
 // providerLookup is the seam that keeps apply tests off real agents.
@@ -410,6 +596,12 @@ func (m modelState) batchView() string {
 	}
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("批量命名会话") + "\n")
+	b.WriteString(ansi.Truncate(m.batchAgentLine(), inner, "…") + "\n")
+	if m.batchModelEditing {
+		b.WriteString(mutedStyle.Render("模型") + "  " + m.batchModelInput.View() + "\n")
+		b.WriteString(mutedStyle.Render("enter 换模型并重跑  ·  esc 取消"))
+		return b.String()
+	}
 	if m.batchRunning {
 		note := fmt.Sprintf("正在生成 %d/%d · esc 取消", len(m.batchResults), m.batchTotal)
 		if m.batchCancelling {
@@ -454,10 +646,39 @@ func (m modelState) batchView() string {
 		if rest > shown {
 			fmt.Fprintf(&b, "%s\n", mutedStyle.Render(fmt.Sprintf("+ 还有 %d 条", rest-shown)))
 		}
-	} else if rest > 0 {
-		b.WriteString(mutedStyle.Render("e 展开其余行") + "\n")
+	}
+	var hints []string
+	if rest > 0 && !m.batchExpanded {
+		hints = append(hints, "e 展开其余行")
+	}
+	if n := len(batchRetryable(m.batchResults)); n > 0 {
+		hints = append(hints, fmt.Sprintf("r 重试 %d 行", n))
+	}
+	if len(hints) > 0 {
+		b.WriteString(ansi.Truncate(mutedStyle.Render(strings.Join(hints, "  ·  ")), inner, "…") + "\n")
 	}
 	return b.String()
+}
+
+// batchAgentLine names the agent and model this batch actually runs on. It is
+// the one thing the review list cannot show by itself: two runs over the same
+// sessions look identical until you know which model wrote the titles.
+func (m modelState) batchAgentLine() string {
+	cfg := m.batchConfig()
+	name := registry.DisplayName(m.reg, cfg.Provider)
+	if cmd := titler.Command(cfg.Provider); cmd != "" && !strings.EqualFold(cmd, name) {
+		name += " (" + cmd + ")"
+	}
+	modelName := cfg.Model
+	if modelName == "" {
+		modelName = "默认模型"
+	}
+	line := mutedStyle.Render("模型来源") + "  " + name + mutedStyle.Render(" · ") + modelName +
+		mutedStyle.Render(" · ") + titler.LanguageLabel(cfg.Language)
+	if cfg.Model != m.titleCfg.Model {
+		line += mutedStyle.Render("  本次临时")
+	}
+	return line
 }
 
 func batchRestLine(r titler.BatchResult) string {

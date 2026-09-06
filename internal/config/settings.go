@@ -25,6 +25,10 @@ type Settings struct {
 type TitleModel struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model,omitempty"`
+	// Language is the vocabulary suggested titles are written in: "zh",
+	// "en", or "auto" to follow each session. Absent means Chinese, which is
+	// what another produced before the setting existed.
+	Language string `json:"language,omitempty"`
 }
 
 func SettingsPath() string { return filepath.Join(ConfigDir(), "config.json") }

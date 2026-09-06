@@ -374,6 +374,59 @@ func TestListProjectCWD(t *testing.T) {
 	}
 }
 
+func TestListProjectRootsIncludeWorktreeDescendantsOnly(t *testing.T) {
+	dir := t.TempDir()
+	store, err := index.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now()
+	rows := []struct{ id, provider, path string }{
+		{"main", "codex", "/repo"},
+		{"main-sub", "codex", "/repo/src"},
+		{"linked", "pi", "/worktrees/feature"},
+		{"linked-sub", "pi", "/worktrees/feature/pkg"},
+		{"similar", "codex", "/repo-old"},
+		{"sibling", "pi", "/worktrees/other"},
+	}
+	for _, row := range rows {
+		if err := store.Upsert(model.Summary{ID: row.id, Provider: row.provider, ProjectPath: row.path,
+			UpdatedAt: now, StoragePath: "/tmp/" + row.id, SourceMtime: now.Unix()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opts := index.ListOpts{ProjectRoots: []string{"/repo", "/worktrees/feature"}}
+	items, err := store.List(opts)
+	if err != nil || len(items) != 4 {
+		t.Fatalf("items=%v err=%v", items, err)
+	}
+	counts, err := store.CountByProviderFiltered(opts)
+	if err != nil || counts["codex"] != 2 || counts["pi"] != 2 {
+		t.Fatalf("counts=%v err=%v", counts, err)
+	}
+}
+
+func TestListProjectRootsEscapeLikeWildcards(t *testing.T) {
+	dir := t.TempDir()
+	store, err := index.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now()
+	for _, row := range []struct{ id, path string }{{"wanted", "/repo%_x/sub"}, {"other", "/repoABx/sub"}} {
+		if err := store.Upsert(model.Summary{ID: row.id, Provider: "codex", ProjectPath: row.path,
+			UpdatedAt: now, StoragePath: "/tmp/" + row.id, SourceMtime: now.Unix()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := store.List(index.ListOpts{ProjectRoots: []string{"/repo%_x"}})
+	if err != nil || len(items) != 1 || items[0].ID != "wanted" {
+		t.Fatalf("items=%v err=%v", items, err)
+	}
+}
+
 func TestFindByIDAmbiguousPrefix(t *testing.T) {
 	dir := t.TempDir()
 	store, err := index.Open(filepath.Join(dir, "test.db"))

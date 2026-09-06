@@ -16,11 +16,31 @@ import (
 // is already typing a title by hand.
 const Timeout = 60 * time.Second
 
+// permanentError marks a failure that a second attempt cannot fix: a missing
+// CLI, an agent that cannot generate titles, a session without a provable
+// date. Retrying those only spends another minute to print the same line.
+type permanentError struct{ err error }
+
+func (e permanentError) Error() string { return e.err.Error() }
+func (e permanentError) Unwrap() error { return e.err }
+
+// permanent wraps err so callers can tell it apart from a transient failure.
+func permanent(err error) error { return permanentError{err: err} }
+
+// Permanent reports whether retrying err is pointless. Everything else —
+// timeouts, a busy or rate-limited agent, a CLI that died once — is treated as
+// worth one more attempt.
+func Permanent(err error) bool {
+	var p permanentError
+	return errors.As(err, &p)
+}
+
 // Config selects which installed agent CLI generates the title. An empty
 // Provider means the feature is off. An empty Model uses that CLI's default.
 type Config struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model,omitempty"`
+	Provider string   `json:"provider"`
+	Model    string   `json:"model,omitempty"`
+	Language Language `json:"language,omitempty"`
 }
 
 // Enabled reports whether a suggestion should be attempted at all.
@@ -138,15 +158,15 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 	// check runs before anything that could spend a model call, and before the
 	// CLI lookup so the refusal never depends on what is installed.
 	if req.CreatedAt.Unix() <= 0 {
-		return "", errors.New("会话缺少创建时间")
+		return "", permanent(errors.New("会话缺少创建时间"))
 	}
 	l, ok := launchers[NormalizeID(cfg.Provider)]
 	if !ok {
-		return "", fmt.Errorf("%s 不能生成标题", cfg.Provider)
+		return "", permanent(fmt.Errorf("%s 不能生成标题", cfg.Provider))
 	}
 	bin, err := exec.LookPath(l.command)
 	if err != nil {
-		return "", fmt.Errorf("%s 未安装", l.command)
+		return "", permanent(fmt.Errorf("%s 未安装", l.command))
 	}
 
 	// A throwaway working directory keeps the agent out of the user's project:
@@ -161,7 +181,7 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, bin, l.args(cfg, BuildPrompt(req))...)
+	cmd := exec.CommandContext(ctx, bin, l.args(cfg, BuildPrompt(req, cfg.Language))...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "NO_COLOR=1", "CLICOLOR=0", "TERM=dumb")
 	var stdout, stderr bytes.Buffer
@@ -172,7 +192,7 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 		}
 		return "", fmt.Errorf("%s: %s", l.command, failureReason(stderr.String(), stdout.String(), err))
 	}
-	return Clean(stdout.String()), nil
+	return Clean(stdout.String(), cfg.Language), nil
 }
 
 // failureReason picks the one line worth showing in a status bar.

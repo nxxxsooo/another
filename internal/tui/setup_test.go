@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nxxxsooo/another/internal/titler"
 )
+
+var errListing = errors.New("pi 获取模型超时")
 
 func TestSetupRenderProbe(t *testing.T) {
 	if os.Getenv("RENDER_PROBE") == "" {
@@ -135,17 +139,171 @@ func TestSetupTitlePageOffersOnlyInstalledCapableAgents(t *testing.T) {
 	}
 }
 
-func TestSetupTitlePageRecordsAgentAndModel(t *testing.T) {
+// modelPageFixture selects pi on the title page and lands on the model picker
+// with a listing already delivered, without running any CLI.
+func modelPageFixture(t *testing.T) setupModel {
+	t.Helper()
 	m := titlePageFixture(t)
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = next.(setupModel)
-	for _, r := range "sonnet" {
+
+	opened, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = opened.(setupModel)
+	if m.page != setupPageModel {
+		t.Fatalf("enter did not open the model page: page=%d", m.page)
+	}
+	if !m.modelLoading || cmd == nil {
+		t.Fatalf("model page did not ask the CLI for a listing: loading=%v cmd=%v", m.modelLoading, cmd)
+	}
+	loaded, _ := m.Update(modelsLoadedMsg{
+		provider: "pi",
+		models:   []string{"anthropic/claude-sonnet-4-5", "anthropic/claude-haiku-4-5", "google/gemini-3-pro"},
+	})
+	return loaded.(setupModel)
+}
+
+// The model is chosen from what the agent CLI itself reports, so a typo can no
+// longer reach the rename path as a model name.
+func TestSetupModelPagePicksFromTheCliListing(t *testing.T) {
+	m := modelPageFixture(t)
+	if m.modelLoading {
+		t.Fatal("listing arrived but the page still shows loading")
+	}
+	if cfg := m.titleModel(); cfg == nil || cfg.Model != "" {
+		t.Fatalf("the picker must start on the CLI default: %+v", cfg)
+	}
+	if body := m.modelPageBody(72); !strings.Contains(body, "默认模型") || !strings.Contains(body, "claude-sonnet-4-5") {
+		t.Fatalf("model page does not list what the CLI reported:\n%s", body)
+	}
+
+	down, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = down.(setupModel)
+	if cfg := m.titleModel(); cfg == nil || cfg.Model != "anthropic/claude-sonnet-4-5" {
+		t.Fatalf("cursor did not select the first listed model: %+v", cfg)
+	}
+
+	final, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	done := final.(setupModel)
+	if !done.done || cmd == nil {
+		t.Fatalf("enter did not finish setup: done=%v cmd=%v", done.done, cmd)
+	}
+	if cfg := done.titleModel(); cfg.Provider != "pi" || cfg.Model != "anthropic/claude-sonnet-4-5" {
+		t.Fatalf("saved title model = %+v", cfg)
+	}
+}
+
+// A long catalog is only usable if it can be narrowed down.
+func TestSetupModelPageFiltersByTyping(t *testing.T) {
+	m := modelPageFixture(t)
+	for _, r := range "haiku" {
 		typed, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		m = typed.(setupModel)
 	}
-	cfg := m.titleModel()
-	if cfg == nil || cfg.Provider != "pi" || cfg.Model != "sonnet" {
-		t.Fatalf("title model = %+v", cfg)
+	rows := m.modelRows()
+	if len(rows) != 2 || rows[1] != "anthropic/claude-haiku-4-5" {
+		t.Fatalf("filter did not narrow the list: %v", rows)
+	}
+	down, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if cfg := down.(setupModel).titleModel(); cfg.Model != "anthropic/claude-haiku-4-5" {
+		t.Fatalf("filtered selection = %+v", cfg)
+	}
+	back, _ := down.(setupModel).Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := back.(setupModel).modelFilter; got != "haik" {
+		t.Fatalf("backspace did not edit the filter: %q", got)
+	}
+}
+
+// A model too new to be listed, or a CLI that cannot list at all, still has to
+// be reachable.
+func TestSetupModelPageKeepsACustomName(t *testing.T) {
+	m := modelPageFixture(t)
+	m.modelCursor = m.customRow()
+	typing, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = typing.(setupModel)
+	if !m.modelTyping {
+		t.Fatal("the custom row must open the input")
+	}
+	for _, r := range "some-new-model" {
+		typed, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = typed.(setupModel)
+	}
+	final, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	done := final.(setupModel)
+	if !done.done {
+		t.Fatal("enter did not finish setup from the custom row")
+	}
+	if cfg := done.titleModel(); cfg.Model != "some-new-model" {
+		t.Fatalf("custom model = %+v", cfg)
+	}
+}
+
+// A CLI that cannot list must say so and let a name be typed, not dead-end.
+func TestSetupModelPageFallsBackWhenListingFails(t *testing.T) {
+	m := modelPageFixture(t)
+	m.modelOpts = nil
+	failed, _ := m.Update(modelsLoadedMsg{provider: "pi", err: errListing})
+	got := failed.(setupModel)
+	if !got.modelTyping || got.modelLoading {
+		t.Fatalf("a failed listing must fall back to typing: typing=%v loading=%v", got.modelTyping, got.modelLoading)
+	}
+	if body := got.modelPageBody(72); !strings.Contains(body, "pi 获取模型超时") {
+		t.Fatalf("the page must say why the listing failed:\n%s", body)
+	}
+}
+
+// A listing that arrives after the agent changed must not populate the page.
+func TestSetupModelPageIgnoresAStaleListing(t *testing.T) {
+	m := modelPageFixture(t)
+	stale, _ := m.Update(modelsLoadedMsg{provider: "codex", models: []string{"gpt-5"}})
+	if rows := stale.(setupModel).modelRows(); len(rows) != 4 {
+		t.Fatalf("a listing for another agent landed on the page: %v", rows)
+	}
+}
+
+// An English session renamed into Chinese is harder to find again, so the
+// language has to be a setting rather than a constant in the prompt.
+func TestSetupTitlePageRecordsLanguage(t *testing.T) {
+	m := titlePageFixture(t)
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = next.(setupModel)
+
+	if cfg := m.titleModel(); cfg == nil || cfg.Language != string(titler.LangChinese) {
+		t.Fatalf("default language = %+v, want zh", cfg)
+	}
+	if body := m.titlePageBody(72); !strings.Contains(body, "中文") || !strings.Contains(body, "跟随会话") {
+		t.Fatalf("the title page must show the language choices:\n%s", body)
+	}
+
+	right, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = right.(setupModel)
+	if cfg := m.titleModel(); cfg == nil || cfg.Language != string(titler.LangEnglish) {
+		t.Fatalf("→ did not select English: %+v", cfg)
+	}
+	right, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = right.(setupModel)
+	if cfg := m.titleModel(); cfg == nil || cfg.Language != string(titler.LangAuto) {
+		t.Fatalf("→ did not select auto: %+v", cfg)
+	}
+	// The arrows must not leak into the model name.
+	if m.modelInput.Value() != "" {
+		t.Fatalf("language keys typed into the model field: %q", m.modelInput.Value())
+	}
+	left, _ := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if cfg := left.(setupModel).titleModel(); cfg == nil || cfg.Language != string(titler.LangEnglish) {
+		t.Fatalf("← did not go back to English: %+v", cfg)
+	}
+}
+
+// Re-running setup must not silently rewrite a language that was already
+// chosen.
+func TestSetupRestoresSavedLanguage(t *testing.T) {
+	start := setupFixture()
+	start.langCursor = languageCursor(titler.Language("auto"))
+	if got := start.language(); got != titler.LangAuto {
+		t.Fatalf("saved language = %q, want auto", got)
+	}
+	if got := languageCursor(titler.Language("")); got != 0 {
+		t.Fatalf("an unset language must fall back to Chinese, got cursor %d", got)
 	}
 }
 
