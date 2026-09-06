@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.9.3
 	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260902165432-6f6ad8b37b0a
 	github.com/charmbracelet/x/term v0.2.1
+	github.com/ebitengine/purego v0.9.1
 	github.com/google/uuid v1.6.0
 	github.com/muesli/termenv v0.15.2
 	github.com/spf13/cobra v1.8.1

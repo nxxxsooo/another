@@ -492,7 +492,10 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		m.overlay = overlayTarget
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
+	restoreInputSource := temporarilyUseASCIIInputSource()
+	defer restoreInputSource()
 	final, runErr := p.Run()
+	restoreInputSource()
 	if runErr != nil {
 		return runErr
 	}

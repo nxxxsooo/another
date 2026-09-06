@@ -126,7 +126,10 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 		start.langCursor = languageCursor(titler.Language(initialTitle.Language))
 	}
 	program := tea.NewProgram(start, tea.WithAltScreen())
+	restoreInputSource := temporarilyUseASCIIInputSource()
+	defer restoreInputSource()
 	final, err := program.Run()
+	restoreInputSource()
 	if err != nil {
 		return nil, nil, config.TitlePolicy{}, false, err
 	}
