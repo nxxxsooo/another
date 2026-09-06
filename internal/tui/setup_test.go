@@ -69,6 +69,16 @@ func TestSetupSpaceTogglesAvailableAgent(t *testing.T) {
 	}
 }
 
+func TestFirstSetupRequiresManualAgentSelection(t *testing.T) {
+	if selected := initialSetupSelection(nil); len(selected) != 0 {
+		t.Fatalf("first setup preselected agents: %v", selected)
+	}
+	selected := initialSetupSelection([]string{"o2", "QWEN"})
+	if !selected["opencode2"] || !selected["qwen"] || len(selected) != 2 {
+		t.Fatalf("existing setup selection was not preserved: %v", selected)
+	}
+}
+
 func TestSetupShiftArrowsReorderAgentsWithoutChangingSelection(t *testing.T) {
 	m := setupFixture()
 	m.cursor = 1

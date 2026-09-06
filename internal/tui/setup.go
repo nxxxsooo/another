@@ -92,11 +92,7 @@ var languages = []titler.Language{titler.LangAuto, titler.LangEnglish, titler.La
 // RunSetup lets a person choose which agents another should index and expose.
 // The caller persists the returned IDs only after the program exits cleanly.
 func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, initialTitle *config.TitleModel, initialPolicy config.TitlePolicy) ([]string, *config.TitleModel, config.TitlePolicy, bool, error) {
-	chosen := make(map[string]bool, len(initial))
-	for _, id := range initial {
-		chosen[registry.NormalizeID(id)] = true
-	}
-	firstRun := len(initial) == 0
+	chosen := initialSetupSelection(initial)
 	var items []setupItem
 	for _, p := range reg.All() {
 		data := p.Installed()
@@ -106,9 +102,6 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 			sessions: counts[p.ID()], data: data, cli: cli, available: data || cli,
 		}
 		items = append(items, item)
-		if firstRun && item.available {
-			chosen[item.id] = true
-		}
 	}
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -144,6 +137,17 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 		}
 	}
 	return enabled, model.titleModel(), config.TitlePolicy{Language: string(model.language())}, model.done, nil
+}
+
+// initialSetupSelection preserves an existing explicit configuration. A first
+// run starts empty: detecting an agent on disk is evidence that it is available,
+// not that the person wants another to index and expose it.
+func initialSetupSelection(initial []string) map[string]bool {
+	chosen := make(map[string]bool, len(initial))
+	for _, id := range initial {
+		chosen[registry.NormalizeID(id)] = true
+	}
+	return chosen
 }
 
 // titleModel reads the chosen suggestion agent back out. Row 0 is "off", and
