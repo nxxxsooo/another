@@ -437,18 +437,23 @@ func (a *App) runSetup(ctx context.Context) (bool, error) {
 	counts, _ := a.Index.CountByProvider()
 	var initial []string
 	var initialTitle *config.TitleModel
+	var initialPolicy config.TitlePolicy
 	if settings, err := config.LoadSettings(); err == nil {
 		initial = settings.EnabledProviders
 		initialTitle = settings.TitleModel
+		initialPolicy = settings.TitlePolicy
+		if initialTitle != nil && initialTitle.Language == "" {
+			initialTitle.Language = settings.TitlePolicy.Language
+		}
 	} else if !os.IsNotExist(err) {
 		return false, fmt.Errorf("load config: %w", err)
 	}
 	all := registry.NewOrdered(initial)
-	enabled, titleModel, saved, err := tui.RunSetup(all, counts, initial, initialTitle)
+	enabled, titleModel, titlePolicy, saved, err := tui.RunSetup(all, counts, initial, initialTitle, initialPolicy)
 	if err != nil || !saved {
 		return false, err
 	}
-	if err := config.SaveSettings(config.Settings{EnabledProviders: enabled, TitleModel: titleModel}); err != nil {
+	if err := config.SaveSettings(config.Settings{EnabledProviders: enabled, TitleModel: titleModel, TitlePolicy: titlePolicy}); err != nil {
 		return false, fmt.Errorf("save config: %w", err)
 	}
 	if err := a.Index.KeepProviders(enabled); err != nil {

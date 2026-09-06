@@ -16,6 +16,14 @@ type Settings struct {
 	// absent until a person picks one, and absent means the feature is off:
 	// another never calls a model on its own initiative.
 	TitleModel *TitleModel `json:"title_model,omitempty"`
+	// TitlePolicy is shared with native-client adapters such as OpenCode 2
+	// and Pi. It remains available even when another's suggestion model is
+	// disabled. Missing language means the new default, auto.
+	TitlePolicy TitlePolicy `json:"title_policy,omitempty"`
+}
+
+type TitlePolicy struct {
+	Language string `json:"language,omitempty"`
 }
 
 // TitleModel names an installed agent CLI, not an API credential. another
@@ -26,8 +34,7 @@ type TitleModel struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model,omitempty"`
 	// Language is the vocabulary suggested titles are written in: "zh",
-	// "en", or "auto" to follow each session. Absent means Chinese, which is
-	// what another produced before the setting existed.
+	// "en", or "auto" to follow each session. Absent means auto.
 	Language string `json:"language,omitempty"`
 }
 
@@ -45,6 +52,14 @@ func LoadSettings() (Settings, error) {
 	if settings.Version != SettingsVersion {
 		return Settings{}, errors.New("unsupported another config version")
 	}
+	// Migrate either representation in memory. Keeping the policy separate
+	// lets native clients share it when TitleModel is nil.
+	if settings.TitlePolicy.Language == "" && settings.TitleModel != nil {
+		settings.TitlePolicy.Language = settings.TitleModel.Language
+	}
+	if settings.TitleModel != nil && settings.TitleModel.Language == "" {
+		settings.TitleModel.Language = settings.TitlePolicy.Language
+	}
 	return settings, nil
 }
 
@@ -56,6 +71,12 @@ func SaveSettings(settings Settings) error {
 		return err
 	}
 	settings.Version = SettingsVersion
+	if settings.TitleModel != nil {
+		if settings.TitlePolicy.Language == "" {
+			settings.TitlePolicy.Language = settings.TitleModel.Language
+		}
+		settings.TitleModel.Language = settings.TitlePolicy.Language
+	}
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err

@@ -51,3 +51,40 @@ func TestLoadSettingsRejectsUnknownVersion(t *testing.T) {
 		t.Fatal("unknown config version was accepted")
 	}
 }
+
+func TestTitlePolicyAndModelLanguageStayInSync(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", root)
+	want := config.Settings{
+		EnabledProviders: []string{"pi"},
+		TitleModel:       &config.TitleModel{Provider: "pi", Language: "en"},
+	}
+	if err := config.SaveSettings(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TitlePolicy.Language != "en" || got.TitleModel == nil || got.TitleModel.Language != "en" {
+		t.Fatalf("language representations drifted: %+v", got)
+	}
+}
+
+func TestLegacyTitlePolicyMigratesIntoModel(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := os.MkdirAll(config.ConfigDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"version":1,"enabled_providers":["agy"],"title_model":{"provider":"agy"},"title_policy":{"language":"auto"}}`
+	if err := os.WriteFile(config.SettingsPath(), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TitleModel == nil || got.TitleModel.Language != "auto" {
+		t.Fatalf("shared policy did not migrate into title model: %+v", got)
+	}
+}

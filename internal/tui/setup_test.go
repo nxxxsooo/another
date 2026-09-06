@@ -267,10 +267,10 @@ func TestSetupTitlePageRecordsLanguage(t *testing.T) {
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = next.(setupModel)
 
-	if cfg := m.titleModel(); cfg == nil || cfg.Language != string(titler.LangChinese) {
-		t.Fatalf("default language = %+v, want zh", cfg)
+	if cfg := m.titleModel(); cfg == nil || cfg.Language != string(titler.LangAuto) {
+		t.Fatalf("default language = %+v, want auto", cfg)
 	}
-	if body := m.titlePageBody(72); !strings.Contains(body, "中文") || !strings.Contains(body, "跟随会话") {
+	if body := m.titlePageBody(72); !strings.Contains(body, "中文") || !strings.Contains(body, "Auto") {
 		t.Fatalf("the title page must show the language choices:\n%s", body)
 	}
 
@@ -281,8 +281,8 @@ func TestSetupTitlePageRecordsLanguage(t *testing.T) {
 	}
 	right, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	m = right.(setupModel)
-	if cfg := m.titleModel(); cfg == nil || cfg.Language != string(titler.LangAuto) {
-		t.Fatalf("→ did not select auto: %+v", cfg)
+	if cfg := m.titleModel(); cfg == nil || cfg.Language != string(titler.LangChinese) {
+		t.Fatalf("→ did not select Chinese: %+v", cfg)
 	}
 	// The arrows must not leak into the model name.
 	if m.modelInput.Value() != "" {
@@ -303,7 +303,7 @@ func TestSetupRestoresSavedLanguage(t *testing.T) {
 		t.Fatalf("saved language = %q, want auto", got)
 	}
 	if got := languageCursor(titler.Language("")); got != 0 {
-		t.Fatalf("an unset language must fall back to Chinese, got cursor %d", got)
+		t.Fatalf("an unset language must fall back to Auto, got cursor %d", got)
 	}
 }
 

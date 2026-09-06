@@ -75,7 +75,7 @@ func TestCleanFollowsTheConfiguredLanguage(t *testing.T) {
 		{"auto takes english", titler.LangAuto, en, en},
 		{"english still needs a known type", titler.LangEnglish, "0903｜Misc｜cleanup", ""},
 		{"english still needs the separator", titler.LangEnglish, "0903|Fix|cleanup", ""},
-		{"unset means chinese", titler.Language(""), en, ""},
+		{"unset means auto", titler.Language(""), en, en},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -97,12 +97,17 @@ func TestBuildPromptStatesTheLanguageContract(t *testing.T) {
 		t.Fatalf("english prompt does not pin the language:\n%s", english)
 	}
 
-	auto := titler.BuildPrompt(req, titler.LangAuto)
-	if !strings.Contains(auto, "功能 设计 修复") || !strings.Contains(auto, "Feature Design Fix") {
-		t.Fatalf("auto prompt must offer both vocabularies:\n%s", auto)
+	zhReq := req
+	zhReq.Messages = []model.Message{{Role: model.RoleUser, Content: "修复登录问题"}}
+	auto := titler.BuildPrompt(zhReq, titler.LangAuto)
+	if !strings.Contains(auto, "功能 设计 修复") || strings.Contains(auto, "Feature Design Fix") {
+		t.Fatalf("auto did not resolve the first Chinese message:\n%s", auto)
 	}
-	if !strings.Contains(auto, "dominant language") {
-		t.Fatalf("auto prompt does not say what decides the language:\n%s", auto)
+	enReq := req
+	enReq.Messages = []model.Message{{Role: model.RoleUser, Content: "fix login issue"}}
+	autoEnglish := titler.BuildPrompt(enReq, titler.LangAuto)
+	if !strings.Contains(autoEnglish, "Feature Design Fix") || strings.Contains(autoEnglish, "功能 设计 修复") {
+		t.Fatalf("auto did not resolve the first English message:\n%s", autoEnglish)
 	}
 
 	// The parts that make titles sortable are the same in every language.
@@ -113,8 +118,13 @@ func TestBuildPromptStatesTheLanguageContract(t *testing.T) {
 	}
 }
 
-func TestNormalizeLanguageFallsBackToChinese(t *testing.T) {
-	for _, in := range []titler.Language{"", "  ", "nonsense", "ZH", "中文"} {
+func TestNormalizeLanguageDefaultsToAuto(t *testing.T) {
+	for _, in := range []titler.Language{"", "  ", "nonsense"} {
+		if got := titler.NormalizeLanguage(in); got != titler.LangAuto {
+			t.Fatalf("NormalizeLanguage(%q) = %q", in, got)
+		}
+	}
+	for _, in := range []titler.Language{"ZH", "中文"} {
 		if got := titler.NormalizeLanguage(in); got != titler.LangChinese {
 			t.Fatalf("NormalizeLanguage(%q) = %q", in, got)
 		}
@@ -183,7 +193,7 @@ func TestBuildPromptPinsDateAndFencesContent(t *testing.T) {
 		},
 	}, titler.LangChinese)
 	for _, want := range []string{
-		titler.SkillName,
+		"Name one AI coding session",
 		"MMDD is fixed to 0903",
 		"Project: another",
 		"Current title: old title",
@@ -197,6 +207,9 @@ func TestBuildPromptPinsDateAndFencesContent(t *testing.T) {
 	}
 	if strings.Contains(prompt, "system noise") {
 		t.Fatal("system messages must not reach the prompt")
+	}
+	if strings.Contains(strings.ToLower(prompt), "skill") {
+		t.Fatalf("prompt still depends on a skill:\n%s", prompt)
 	}
 }
 

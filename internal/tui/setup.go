@@ -85,13 +85,13 @@ func listModelsCmd(provider string) tea.Cmd {
 	}
 }
 
-// languages is the order the title page cycles through. Chinese stays first
-// so an existing setup re-saves what it already had unless someone moves it.
-var languages = []titler.Language{titler.LangChinese, titler.LangEnglish, titler.LangAuto}
+// languages is the order the title page cycles through. Auto is the product
+// default: titles follow the first meaningful user message unless overridden.
+var languages = []titler.Language{titler.LangAuto, titler.LangEnglish, titler.LangChinese}
 
 // RunSetup lets a person choose which agents another should index and expose.
 // The caller persists the returned IDs only after the program exits cleanly.
-func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, initialTitle *config.TitleModel) ([]string, *config.TitleModel, bool, error) {
+func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, initialTitle *config.TitleModel, initialPolicy config.TitlePolicy) ([]string, *config.TitleModel, config.TitlePolicy, bool, error) {
 	chosen := make(map[string]bool, len(initial))
 	for _, id := range initial {
 		chosen[registry.NormalizeID(id)] = true
@@ -118,6 +118,7 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 	modelInput.Placeholder = "留空用该 CLI 的默认模型"
 	modelInput.CharLimit = 120
 	start := setupModel{items: items, selected: chosen, spinner: sp, modelInput: modelInput}
+	start.langCursor = languageCursor(titler.Language(initialPolicy.Language))
 	if initialTitle != nil {
 		start.modelInput.SetValue(initialTitle.Model)
 		start.titleCursor = -1 // resolved once the option list exists
@@ -127,11 +128,11 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 	program := tea.NewProgram(start, tea.WithAltScreen())
 	final, err := program.Run()
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, config.TitlePolicy{}, false, err
 	}
 	model, ok := final.(setupModel)
 	if !ok || model.cancelled {
-		return nil, nil, false, nil
+		return nil, nil, config.TitlePolicy{}, false, nil
 	}
 	var enabled []string
 	for _, item := range model.items {
@@ -139,7 +140,7 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 			enabled = append(enabled, item.id)
 		}
 	}
-	return enabled, model.titleModel(), model.done, nil
+	return enabled, model.titleModel(), config.TitlePolicy{Language: string(model.language())}, model.done, nil
 }
 
 // titleModel reads the chosen suggestion agent back out. Row 0 is "off", and
@@ -422,18 +423,18 @@ func (m setupModel) titlePageBody(width int) string {
 		body.WriteString(ansi.Truncate(line, width, "…") + "\n")
 	}
 	body.WriteString("\n")
-	if m.titleCursor > 0 {
-		body.WriteString(mutedStyle.Render("语言") + "  " + m.languageRow() + "\n\n")
-	} else {
-		body.WriteString(mutedStyle.Render("重命名弹窗不会调用任何模型。") + "\n\n")
+	body.WriteString(mutedStyle.Render("语言") + "  " + m.languageRow() + "\n")
+	if m.titleCursor <= 0 {
+		body.WriteString(mutedStyle.Render("建议模型关闭；语言仍供 O2／Pi 原生命名共用。") + "\n")
 	}
+	body.WriteString("\n")
 	if m.err != "" {
 		body.WriteString(errStyle.Render("✗ "+m.err) + "\n")
 	}
 	if m.titleCursor > 0 {
 		body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  ←→ 选语言  ·  enter 选模型  ·  esc 返回"))
 	} else {
-		body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  enter 保存  ·  esc 返回"))
+		body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  ←→ 选语言  ·  enter 保存  ·  esc 返回"))
 	}
 	return body.String()
 }

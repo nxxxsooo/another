@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nxxxsooo/another/internal/model"
 )
@@ -16,18 +17,15 @@ import (
 const (
 	// Separator is the full-width vertical bar the skill defaults to.
 	Separator = "｜"
-	// SkillName is the skill another asks the agent to apply.
-	SkillName = "title-formatter"
 
 	// PromptMarker opens every prompt another sends. Agents that record a
 	// session for a headless run derive its title from this first line, so
 	// the marker is also how another recognizes its own leftovers later.
-	PromptMarker = "Use the " + SkillName + " skill to name one AI coding session."
+	PromptMarker = "Name one AI coding session. Follow every rule below:"
 	// TempDirPrefix names the throwaway directory a suggestion runs in.
 	// Agents that record the working directory land here instead of a real
 	// project, which identifies their leftovers even when the title does not.
-	TempDirPrefix = "another-titler-"
-
+	TempDirPrefix   = "another-titler-"
 	maxMessages     = 8
 	maxMessageRunes = 400
 	maxPromptRunes  = 2400
@@ -42,9 +40,7 @@ const (
 type Language string
 
 const (
-	// LangChinese is the title-formatter skill's own vocabulary and the
-	// default, so an existing config keeps producing what it produced before
-	// this setting existed.
+	// LangChinese writes Chinese titles.
 	LangChinese Language = "zh"
 	// LangEnglish names English sessions in English.
 	LangEnglish Language = "en"
@@ -54,15 +50,17 @@ const (
 )
 
 // NormalizeLanguage maps stored and typed values onto the three supported
-// ones. Anything unrecognized, including empty, falls back to Chinese.
+// ones. Anything unrecognized, including empty, uses Auto.
 func NormalizeLanguage(l Language) Language {
 	switch Language(strings.ToLower(strings.TrimSpace(string(l)))) {
 	case LangEnglish, "english", "eng":
 		return LangEnglish
 	case LangAuto, "follow":
 		return LangAuto
-	default:
+	case LangChinese, "chinese", "中文":
 		return LangChinese
+	default:
+		return LangAuto
 	}
 }
 
@@ -72,7 +70,7 @@ func LanguageLabel(l Language) string {
 	case LangEnglish:
 		return "English"
 	case LangAuto:
-		return "跟随会话"
+		return "Auto"
 	default:
 		return "中文"
 	}
@@ -84,12 +82,12 @@ func LanguageLabel(l Language) string {
 // mixes languages still groups by the same eight kinds of work.
 var types = map[Language][]string{
 	LangChinese: {"功能", "设计", "修复", "优化", "发布", "探索", "文档", "研究"},
-	LangEnglish: {"Feature", "Design", "Fix", "Polish", "Release", "Explore", "Docs", "Research"},
+	LangEnglish: {"Feature", "Design", "Fix", "Optimize", "Release", "Explore", "Docs", "Research"},
 }
 
 var titlePatterns = map[Language]*regexp.Regexp{
 	LangChinese: regexp.MustCompile(`^[0-9]{4}｜(?:功能|设计|修复|优化|发布|探索|文档|研究)｜\S`),
-	LangEnglish: regexp.MustCompile(`^[0-9]{4}｜(?:Feature|Design|Fix|Polish|Release|Explore|Docs|Research)｜\S`),
+	LangEnglish: regexp.MustCompile(`^[0-9]{4}｜(?:Feature|Design|Fix|Optimize|Release|Explore|Docs|Research)｜\S`),
 }
 
 // accepts reports whether a line satisfies the contract for this language.
@@ -132,16 +130,14 @@ func MMDD(t time.Time) string {
 	return t.In(shanghai()).Format("0102")
 }
 
-// BuildPrompt names the skill and restates its hard contract inline. Naming it
-// alone is not enough: headless CLIs do not all load skills, and the inline
-// rules keep the output usable when the skill never loads.
+// BuildPrompt states the complete product contract inline. It deliberately
+// does not depend on a Skill: headless CLIs do not consistently load Skills.
 func BuildPrompt(req Request, lang Language) string {
 	var b strings.Builder
 	date := MMDD(req.CreatedAt)
-	lang = NormalizeLanguage(lang)
+	lang = ResolveLanguage(lang, req.Messages)
 
 	b.WriteString(PromptMarker + "\n\n")
-	b.WriteString("Follow these rules even if that skill is unavailable:\n")
 	b.WriteString("- Reply with exactly one line. No quotes, no markdown, no explanation, no preamble.\n")
 	fmt.Fprintf(&b, "- Format: MMDD%s类型%s主题\n", Separator, Separator)
 	fmt.Fprintf(&b, "- MMDD is fixed to %s. Do not compute, verify, or change it.\n", date)
@@ -151,11 +147,6 @@ func BuildPrompt(req Request, lang Language) string {
 		fmt.Fprintf(&b, "- 类型 must be exactly one of: %s\n", strings.Join(types[LangEnglish], " "))
 		b.WriteString("- 主题 is a short concrete English topic, at most 6 words, distinct from the project name.\n")
 		b.WriteString("- Write the title in English even if the session below is in another language.\n")
-	case LangAuto:
-		fmt.Fprintf(&b, "- 类型 must be exactly one of: %s\n", strings.Join(types[LangChinese], " "))
-		fmt.Fprintf(&b, "  or, for an English session, exactly one of: %s\n", strings.Join(types[LangEnglish], " "))
-		b.WriteString("- 主题 is a short concrete topic distinct from the project name: at most 16 characters in Chinese, at most 6 words in English.\n")
-		b.WriteString("- Match the dominant language of the session below: a mainly Chinese session gets the Chinese words, anything else gets the English ones. Use one language for both 类型 and 主题.\n")
 	default:
 		fmt.Fprintf(&b, "- 类型 must be exactly one of: %s\n", strings.Join(types[LangChinese], " "))
 		b.WriteString("- 主题 is a short concrete Chinese topic, at most 16 characters, distinct from the project name.\n")
@@ -192,6 +183,26 @@ func IsGeneratedSession(title, projectPath string) bool {
 		return true
 	}
 	return strings.HasPrefix(projectName(projectPath), TempDirPrefix)
+}
+
+// ResolveLanguage makes Auto deterministic from the first meaningful user
+// message: any Han character selects Chinese; otherwise English.
+func ResolveLanguage(preference Language, messages []model.Message) Language {
+	if lang := NormalizeLanguage(preference); lang != LangAuto {
+		return lang
+	}
+	for _, msg := range messages {
+		if msg.Role != model.RoleUser || strings.TrimSpace(msg.PlainText()) == "" {
+			continue
+		}
+		for _, r := range msg.PlainText() {
+			if unicode.Is(unicode.Han, r) {
+				return LangChinese
+			}
+		}
+		return LangEnglish
+	}
+	return LangEnglish
 }
 
 func projectName(path string) string {

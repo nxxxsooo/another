@@ -181,7 +181,8 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, bin, l.args(cfg, BuildPrompt(req, cfg.Language))...)
+	lang := ResolveLanguage(cfg.Language, req.Messages)
+	cmd := exec.CommandContext(ctx, bin, l.args(cfg, BuildPrompt(req, lang))...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "NO_COLOR=1", "CLICOLOR=0", "TERM=dumb")
 	var stdout, stderr bytes.Buffer
@@ -192,7 +193,7 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 		}
 		return "", fmt.Errorf("%s: %s", l.command, failureReason(stderr.String(), stdout.String(), err))
 	}
-	return Clean(stdout.String(), cfg.Language), nil
+	return Clean(stdout.String(), lang), nil
 }
 
 // failureReason picks the one line worth showing in a status bar.
