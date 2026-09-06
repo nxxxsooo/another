@@ -71,6 +71,42 @@ func TestRenameAppendsNativeCustomTitle(t *testing.T) {
 	}
 }
 
+// Claude Code writes its generated title as an `ai-title` row; it must beat the
+// first user prompt, and a user rename (`custom-title`) must still win.
+func TestAITitleBeatsFirstPromptAndLosesToCustomTitle(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	dir := filepath.Join(root, "projects", "-home-user-proj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{
+		`{"type":"user","sessionId":"s1","cwd":"/home/user/proj","timestamp":"2025-06-01T10:00:00Z","message":{"role":"user","content":"看一下目前这个Worktree的进展。"}}`,
+		`{"type":"assistant","sessionId":"s1","timestamp":"2025-06-01T10:00:05Z","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}`,
+		`{"type":"ai-title","aiTitle":"当前 worktree 的进展","sessionId":"s1"}`,
+	}
+	path := filepath.Join(dir, "s1.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := claude.New()
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 1 || sums[0].Title != "当前 worktree 的进展" {
+		t.Fatalf("discover title=%+v err=%v", sums, err)
+	}
+	conv, err := p.Load(context.Background(), provider.SessionRef{ID: "s1", StoragePath: path})
+	if err != nil || conv.Title != "当前 worktree 的进展" {
+		t.Fatalf("load title=%q err=%v", conv.Title, err)
+	}
+	if err := p.RenameSession(context.Background(), provider.SessionRef{ID: "s1", StoragePath: path}, "native name"); err != nil {
+		t.Fatal(err)
+	}
+	sums, err = p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 1 || sums[0].Title != "native name" {
+		t.Fatalf("renamed title=%+v err=%v", sums, err)
+	}
+}
+
 func TestWriteMatchesClaudeResumeContract(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", root)

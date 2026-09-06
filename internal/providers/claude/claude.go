@@ -96,6 +96,7 @@ type claudeLine struct {
 	IsSidechain bool   `json:"isSidechain"`
 	IsMeta      bool   `json:"isMeta"`
 	CustomTitle string `json:"customTitle"`
+	AITitle     string `json:"aiTitle"`
 	Message     *struct {
 		Role    string `json:"role"`
 		Content any    `json:"content"`
@@ -120,7 +121,7 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 	var migration *model.MigrationMeta
 	var msgCount int
 	var first, last time.Time
-	var customTitle string
+	var customTitle, aiTitle string
 	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
 		if meta, ok := model.ParseMigrationMeta(line); ok {
 			migration = meta
@@ -140,6 +141,9 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 		}
 		if row.Type == "custom-title" && strings.TrimSpace(row.CustomTitle) != "" {
 			customTitle = strings.TrimSpace(row.CustomTitle)
+		}
+		if row.Type == "ai-title" && strings.TrimSpace(row.AITitle) != "" {
+			aiTitle = strings.TrimSpace(row.AITitle)
 		}
 		if row.Type != "user" && row.Type != "assistant" {
 			if kind == model.SessionKindRoot && row.SessionID != "" {
@@ -173,6 +177,9 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 		last = st.ModTime()
 	}
 	title := customTitle
+	if title == "" {
+		title = aiTitle
+	}
 	if title == "" {
 		title = picker.TitleOr("(no title)")
 	}
@@ -228,6 +235,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	conv := &model.Conversation{
 		ID: ref.ID, Provider: ProviderID, ProjectPath: project, StoragePath: path,
 	}
+	var aiTitle string
 	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
 		if meta, ok := model.ParseMigrationMeta(line); ok {
 			conv.Migration = meta
@@ -244,6 +252,9 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		}
 		if row.Type == "custom-title" && strings.TrimSpace(row.CustomTitle) != "" {
 			conv.Title = strings.TrimSpace(row.CustomTitle)
+		}
+		if row.Type == "ai-title" && strings.TrimSpace(row.AITitle) != "" {
+			aiTitle = strings.TrimSpace(row.AITitle)
 		}
 		if row.Type != "user" && row.Type != "assistant" {
 			return nil
@@ -274,6 +285,9 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	conv.MessageCount = len(conv.Messages)
 	conv.CreatedAt = conv.Messages[0].Timestamp
 	conv.UpdatedAt = conv.Messages[len(conv.Messages)-1].Timestamp
+	if conv.Title == "" {
+		conv.Title = aiTitle
+	}
 	if conv.Title == "" {
 		picker := util.NewTitlePicker(80)
 		for _, m := range conv.Messages {
