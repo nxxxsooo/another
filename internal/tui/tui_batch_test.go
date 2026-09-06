@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nxxxsooo/another/internal/model"
@@ -26,8 +27,32 @@ func batchTestModel() modelState {
 	m.width, m.height = 100, 30
 	m.titleCfg = titler.Config{Provider: "pi"}
 	m.ctx = context.Background()
+	m.spinner = spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	m.layout()
 	return m
+}
+
+func TestBatchProgressAnimatesWithoutMovingTheText(t *testing.T) {
+	m := batchTestModel()
+	m.overlay = overlayBatchTitle
+	m.batchRunning = true
+	m.batchTotal = 8
+	m.batchResults = make([]titler.BatchResult, 3)
+
+	before := m.spinner.View()
+	updated, next := m.Update(m.spinner.Tick())
+	got := updated.(modelState)
+	after := got.spinner.View()
+	if before == after || next == nil {
+		t.Fatalf("batch spinner did not advance: before=%q after=%q next=%v", before, after, next)
+	}
+	view := got.batchView()
+	if !strings.Contains(view, "正在生成 3/8") || !strings.Contains(view, "4 路并发") {
+		t.Fatalf("animated progress lost stable status text:\n%s", view)
+	}
+	if len([]rune(before)) != len([]rune(after)) {
+		t.Fatalf("spinner changed width: %q -> %q", before, after)
+	}
 }
 
 func TestBatchRequiresTitleModel(t *testing.T) {

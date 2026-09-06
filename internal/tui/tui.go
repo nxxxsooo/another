@@ -445,7 +445,9 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	rename.Placeholder = "新的会话标题"
 	rename.CharLimit = 200
 	sp := spinner.New()
-	sp.Spinner = spinner.Dot
+	// OpenCode 2's compact braille spinner stays one cell wide, so the
+	// progress counter and modal never shift between animation frames.
+	sp.Spinner = spinner.MiniDot
 	sp.Style = accentStyle
 
 	// Settings are read here rather than threaded through every caller: the
@@ -1017,7 +1019,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.batchTotal = len(m.batchResults) + len(msg.items)
 		m.batchCh = titler.SuggestBatch(ctx, m.batchConfig(), msg.items, titler.DefaultConcurrency)
 		m.batchRunning = true
-		return m, batchNextCmd(m.batchGen, m.batchCh)
+		return m, tea.Batch(m.spinner.Tick, batchNextCmd(m.batchGen, m.batchCh))
 	case batchResultMsg:
 		if msg.gen != m.batchGen {
 			return m, nil
@@ -1200,7 +1202,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
-	if m.loading {
+	if m.loading || m.batchRunning {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 	}

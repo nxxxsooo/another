@@ -604,8 +604,8 @@ func (m modelState) batchView() string {
 		if m.batchCancelling {
 			note = fmt.Sprintf("正在取消 %d/%d · 等待剩余任务退出", len(m.batchResults), m.batchTotal)
 		}
-		b.WriteString(mutedStyle.Render(note) + "\n\n")
-		b.WriteString(mutedStyle.Render("每条都是独立的 agent 调用，慢是正常的。"))
+		b.WriteString(accentStyle.Render(m.spinner.View()) + " " + mutedStyle.Render(note) + "\n\n")
+		b.WriteString(mutedStyle.Render("4 路并发 · 每条都是独立的 agent 调用，慢是正常的。"))
 		return b.String()
 	}
 	counts := titler.Summarize(m.batchResults)
