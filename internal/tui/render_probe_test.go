@@ -7,6 +7,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/util"
@@ -21,6 +23,12 @@ func TestRenderProbe(t *testing.T) {
 	if os.Getenv("RENDER_PROBE") == "" {
 		t.Skip("set RENDER_PROBE=1 to print the rendered screen")
 	}
+	// go test writes through a pipe, where lipgloss detects no terminal and
+	// drops every color. A probe for reviewing color decisions has to force the
+	// profile, or it prints the one thing it was run to show as plain text.
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(previous)
 	reg := registry.New()
 	idx, err := index.Open("")
 	if err != nil {

@@ -152,6 +152,12 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
 }
 
+// projectBar is the project column's leading mark. It must stay one cell wide;
+// the column's width math assumes it. The quarter block is deliberate: the
+// column identifies a project, it does not rank one, so the mark should be
+// found when looked for and ignored otherwise.
+const projectBar = "▎"
+
 // renderProjectCell draws the project column in exactly width cells: a colored
 // bar keyed to the path, then the path with its last segment lifted out of the
 // dim. The bar is one cell of foreground, not a filled chip, so it survives the
@@ -164,7 +170,7 @@ func renderProjectCell(path string, width int) string {
 		return strings.Repeat(" ", width)
 	}
 	if width < 3 {
-		return lipgloss.NewStyle().Foreground(projectColor(path)).Render("▌") +
+		return lipgloss.NewStyle().Foreground(projectColor(path)).Render(projectBar) +
 			strings.Repeat(" ", width-1)
 	}
 
@@ -186,7 +192,7 @@ func renderProjectCell(path string, width int) string {
 		text = projectLeafStyle.Render(truncateLeft(leaf, textW))
 	}
 
-	bar := lipgloss.NewStyle().Foreground(projectColor(path)).Render("▌")
+	bar := lipgloss.NewStyle().Foreground(projectColor(path)).Render(projectBar)
 	return padRight(bar+" "+text, width)
 }
 
