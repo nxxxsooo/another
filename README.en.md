@@ -124,18 +124,20 @@ The TUI starts scoped to the current project. A Git repository's main worktree, 
 
 OpenCode and OpenCode 2 are deliberately separate. They use different commands, databases, schemas, and service lifecycles.
 
-| Agent | Provider ID | Native resume | Rename | Archive | Delete |
-|---|---|---|:---:|:---:|:---:|
-| Pi | `pi` | `pi --session <file>` | ✓ | — | ✓ |
-| Codex | `codex` | `codex resume <id>` | ✓ | ✓ | ✓ |
-| Claude Code | `claude-code` | `claude --resume <id>` | ✓ | — | ✓ |
-| Cursor | `cursor` | `cursor-agent --resume <id>` | — | — | ✓ |
-| OpenCode | `opencode` | `opencode --session <id>` | ✓ | ✓ | ✓ |
-| OpenCode 2 | `opencode2` | `opencode2 --session <id>` | ✓ | — | ✓ |
-| CommandCode | `commandcode` | `commandcode --resume <id>` | — | — | ✓ |
-| Hermes | `hermes` | `hermes --resume <id>` | — | ✓ | ✓ |
-| Qwen Code | `qwen` | `qwen --resume <id>` | ✓ | — | — |
-| Antigravity | `agy` | `agy --conversation <id>` | ✓ | — | — |
+The session list marks each agent with a fixed-width color chip. Agent names differ by up to nine characters, and set as words they leave a ragged column where a short name reads as a lesser agent and every row starts its title somewhere else. The source and target pickers show the chip next to the full name, which is where this table is read from.
+
+| Agent | Provider ID | List tag | Native resume | Rename | Archive | Delete |
+|---|---|:---:|---|:---:|:---:|:---:|
+| Pi | `pi` | `PI` | `pi --session <file>` | ✓ | — | ✓ |
+| Codex | `codex` | `CDX` | `codex resume <id>` | ✓ | ✓ | ✓ |
+| Claude Code | `claude-code` | `CLA` | `claude --resume <id>` | ✓ | — | ✓ |
+| Cursor | `cursor` | `CUR` | `cursor-agent --resume <id>` | — | — | ✓ |
+| OpenCode | `opencode` | `OPC` | `opencode --session <id>` | ✓ | ✓ | ✓ |
+| OpenCode 2 | `opencode2` | `OC2` | `opencode2 --session <id>` | ✓ | — | ✓ |
+| CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | ✓ |
+| Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | ✓ |
+| Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | — | — |
+| Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — |
 
 A dash means that agent has no verified native contract for the operation. `another` reports the limitation instead of storing a private state that disappears on refresh.
 

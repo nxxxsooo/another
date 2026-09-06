@@ -120,18 +120,20 @@ TUI 默认按当前项目过滤。Git 仓库的主工作区、所有已登记 wo
 
 OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令、数据库、schema 和服务生命周期。
 
-| Agent | Provider ID | 原生恢复命令 | 重命名 | 归档 | 删除 |
-|---|---|---|:---:|:---:|:---:|
-| Pi | `pi` | `pi --session <file>` | ✓ | — | ✓ |
-| Codex | `codex` | `codex resume <id>` | ✓ | ✓ | ✓ |
-| Claude Code | `claude-code` | `claude --resume <id>` | ✓ | — | ✓ |
-| Cursor | `cursor` | `cursor-agent --resume <id>` | — | — | ✓ |
-| OpenCode | `opencode` | `opencode --session <id>` | ✓ | ✓ | ✓ |
-| OpenCode 2 | `opencode2` | `opencode2 --session <id>` | ✓ | — | ✓ |
-| CommandCode | `commandcode` | `commandcode --resume <id>` | — | — | ✓ |
-| Hermes | `hermes` | `hermes --resume <id>` | — | ✓ | ✓ |
-| Qwen Code | `qwen` | `qwen --resume <id>` | ✓ | — | — |
-| Antigravity | `agy` | `agy --conversation <id>` | ✓ | — | — |
+会话列表用等宽色块标记 agent：名字长短差着九个字符，排成文字会让短名字看起来是个更小的 agent，也会把标题挤到每行不同的位置。来源和去向选择器里色块和全名同时出现，那里就是这张对照表。
+
+| Agent | Provider ID | 列表标记 | 原生恢复命令 | 重命名 | 归档 | 删除 |
+|---|---|:---:|---|:---:|:---:|:---:|
+| Pi | `pi` | `PI` | `pi --session <file>` | ✓ | — | ✓ |
+| Codex | `codex` | `CDX` | `codex resume <id>` | ✓ | ✓ | ✓ |
+| Claude Code | `claude-code` | `CLA` | `claude --resume <id>` | ✓ | — | ✓ |
+| Cursor | `cursor` | `CUR` | `cursor-agent --resume <id>` | — | — | ✓ |
+| OpenCode | `opencode` | `OPC` | `opencode --session <id>` | ✓ | ✓ | ✓ |
+| OpenCode 2 | `opencode2` | `OC2` | `opencode2 --session <id>` | ✓ | — | ✓ |
+| CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | ✓ |
+| Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | ✓ |
+| Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | — | — |
+| Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — |
 
 `—` 表示这个 agent 没有经过验证的原生操作契约。`another` 会直接提示限制，不会维护一份刷新后消失的私有状态。
 
