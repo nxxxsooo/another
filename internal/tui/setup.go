@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -32,7 +33,16 @@ type setupItem struct {
 	sessions  int
 	data, cli bool
 	available bool
+	// adapter marks the second tier: agents another keeps working but does not
+	// test end to end every release. They sit behind a fold so ten rows do not
+	// bury the six that are.
+	adapter bool
 }
+
+// foldRow is the row index sentinel for the fold itself, which belongs to no
+// agent. Page one is a list of agents plus this one control, and the cursor
+// walks all of them.
+const foldRow = -1
 
 // titleOption is one row on the title page. The zero row disables the feature.
 type titleOption struct {
@@ -49,6 +59,11 @@ type setupModel struct {
 	cancelled bool
 	err       string
 	spinner   spinner.Model
+
+	// showAdapters opens the second tier. It starts open when one of those
+	// agents is already selected: a setting that cannot be seen cannot be
+	// turned off.
+	showAdapters bool
 
 	page        int
 	titleOpts   []titleOption
@@ -101,9 +116,13 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 		item := setupItem{
 			id: p.ID(), name: p.DisplayName(), command: registry.CLICommand(p.ID()),
 			sessions: counts[p.ID()], data: data, cli: cli, available: data || cli,
+			adapter: registry.IsCompatibilityAdapter(p.ID()),
 		}
 		items = append(items, item)
 	}
+	// The fold needs the two tiers contiguous; a saved display order is kept
+	// inside each tier but cannot interleave them.
+	sort.SliceStable(items, func(i, j int) bool { return !items[i].adapter && items[j].adapter })
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = accentStyle
@@ -112,6 +131,7 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 	modelInput.Placeholder = "留空用该 CLI 的默认模型"
 	modelInput.CharLimit = 120
 	start := setupModel{items: items, selected: chosen, spinner: sp, modelInput: modelInput}
+	start.showAdapters = anyAdapterSelected(items, chosen)
 	start.langCursor = languageCursor(titler.Language(initialPolicy.Language))
 	if initialTitle != nil {
 		start.modelInput.SetValue(initialTitle.Model)
@@ -141,6 +161,65 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 		}
 	}
 	return enabled, model.titleModel(), config.TitlePolicy{Language: string(model.language())}, model.done, nil
+}
+
+// anyAdapterSelected reports whether the saved configuration already enables a
+// second-tier agent, which is what decides if the fold starts open.
+func anyAdapterSelected(items []setupItem, selected map[string]bool) bool {
+	for _, item := range items {
+		if item.adapter && selected[item.id] {
+			return true
+		}
+	}
+	return false
+}
+
+// rows is what page one actually draws and what the cursor walks: every
+// first-tier agent, the fold, and the second tier when it is open. A row holds
+// an index into items, or foldRow for the control itself.
+func (m setupModel) rows() []int {
+	rows := make([]int, 0, len(m.items)+1)
+	folded := 0
+	for i, item := range m.items {
+		if !item.adapter {
+			rows = append(rows, i)
+			continue
+		}
+		folded++
+	}
+	if folded == 0 {
+		return rows
+	}
+	rows = append(rows, foldRow)
+	if !m.showAdapters {
+		return rows
+	}
+	for i, item := range m.items {
+		if item.adapter {
+			rows = append(rows, i)
+		}
+	}
+	return rows
+}
+
+// foldedCount is how many agents the fold is currently holding back.
+func (m setupModel) foldedCount() int {
+	n := 0
+	for _, item := range m.items {
+		if item.adapter {
+			n++
+		}
+	}
+	return n
+}
+
+// currentItem resolves the cursor to an agent, or reports false on the fold.
+func (m setupModel) currentItem() (int, bool) {
+	rows := m.rows()
+	if m.cursor < 0 || m.cursor >= len(rows) || rows[m.cursor] == foldRow {
+		return 0, false
+	}
+	return rows[m.cursor], true
 }
 
 // initialSetupSelection preserves an existing explicit configuration. A first
@@ -254,28 +333,29 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancelled = true
 			return m, tea.Quit
 		case "shift+up":
-			if m.cursor > 0 && m.cursor < len(m.items) {
-				m.items[m.cursor-1], m.items[m.cursor] = m.items[m.cursor], m.items[m.cursor-1]
-				m.cursor--
-			}
+			// Order is only meaningful within a tier, and the fold marks that
+			// boundary: an agent cannot be dragged across it.
+			return m.reorder(-1), nil
 		case "shift+down":
-			if m.cursor >= 0 && m.cursor < len(m.items)-1 {
-				m.items[m.cursor], m.items[m.cursor+1] = m.items[m.cursor+1], m.items[m.cursor]
-				m.cursor++
-			}
+			return m.reorder(1), nil
 		case "up", "k":
-			if len(m.items) > 0 {
-				m.cursor = (m.cursor - 1 + len(m.items)) % len(m.items)
+			if n := len(m.rows()); n > 0 {
+				m.cursor = (m.cursor - 1 + n) % n
 			}
 		case "down", "j":
-			if len(m.items) > 0 {
-				m.cursor = (m.cursor + 1) % len(m.items)
+			if n := len(m.rows()); n > 0 {
+				m.cursor = (m.cursor + 1) % n
 			}
 		case " ":
-			if len(m.items) == 0 {
+			index, ok := m.currentItem()
+			if !ok {
+				// Space on the fold is the same gesture as space on an agent:
+				// act on the row under the cursor.
+				m.showAdapters = !m.showAdapters
+				m.err = ""
 				return m, nil
 			}
-			item := m.items[m.cursor]
+			item := m.items[index]
 			if !item.available {
 				m.err = item.name + " 未检测到 CLI 或会话数据"
 				return m, nil
@@ -341,6 +421,23 @@ func (m setupModel) updateTitlePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// reorder moves the agent under the cursor one row up or down, refusing to
+// cross the fold or either end.
+func (m setupModel) reorder(step int) setupModel {
+	rows := m.rows()
+	target := m.cursor + step
+	if m.cursor < 0 || m.cursor >= len(rows) || target < 0 || target >= len(rows) {
+		return m
+	}
+	from, to := rows[m.cursor], rows[target]
+	if from == foldRow || to == foldRow {
+		return m
+	}
+	m.items[from], m.items[to] = m.items[to], m.items[from]
+	m.cursor = target
+	return m
+}
+
 func selectedCount(selected map[string]bool) int {
 	n := 0
 	for _, yes := range selected {
@@ -355,31 +452,39 @@ func (m setupModel) View() string {
 	if m.width < 48 || m.height < 20 {
 		return ansi.Truncate("Terminal too small — resize to at least 48x20", max(1, m.width), "")
 	}
-	width := min(72, m.width-8)
+	// The panel keeps its padding and border out of the text area, so rows are
+	// cut to what is left inside it. Truncating to the outer width instead lets
+	// a long row wrap and silently costs the page a line.
+	width := min(72, m.width-8) - modalStyle.GetHorizontalFrameSize()
 	switch m.page {
 	case setupPageTitle:
-		panel := modalStyle.Width(width - modalStyle.GetHorizontalFrameSize()).Render(m.titlePageBody(width))
+		panel := modalStyle.Width(width).Render(m.titlePageBody(width))
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
 	case setupPageModel:
-		panel := modalStyle.Width(width - modalStyle.GetHorizontalFrameSize()).Render(m.modelPageBody(width))
+		panel := modalStyle.Width(width).Render(m.modelPageBody(width))
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
 	}
 	var body strings.Builder
 	body.WriteString(accentStyle.Render("another setup") + "\n")
 	body.WriteString(titleStyle.Render("选择你使用的 agent") + "  " + mutedStyle.Render(fmt.Sprintf("%d / %d", selectedCount(m.selected), len(m.items))) + "\n")
 	body.WriteString(mutedStyle.Render("Space 开关 agent；Shift+↑↓ 调整显示顺序。") + "\n\n")
-	for i, item := range m.items {
+	for row, index := range m.rows() {
 		cursor := "  "
-		if i == m.cursor {
+		if row == m.cursor {
 			cursor = "› "
 		}
+		if index == foldRow {
+			body.WriteString(ansi.Truncate(cursor+m.foldLine(row == m.cursor), width, "…") + "\n")
+			continue
+		}
+		item := m.items[index]
 		mark := mutedStyle.Render("○")
 		if m.selected[item.id] {
 			mark = okStyle.Render("●")
 		}
 		name := padRight(item.name, 16)
 		if color, ok := providerColors[item.id]; ok {
-			name = lipgloss.NewStyle().Foreground(color).Bold(i == m.cursor).Render(name)
+			name = lipgloss.NewStyle().Foreground(color).Bold(row == m.cursor).Render(name)
 		}
 		// Setup is where an agent is met for the first time, so the chip the
 		// session list will use is shown next to the name it stands for.
@@ -403,8 +508,25 @@ func (m setupModel) View() string {
 		body.WriteString(errStyle.Render("✗ "+m.err) + "\n")
 	}
 	body.WriteString(mutedStyle.Render("↑↓ 移动  ·  space 开关  ·  shift+↑↓ 排序  ·  enter 下一步  ·  esc 取消"))
-	panel := modalStyle.Width(width - modalStyle.GetHorizontalFrameSize()).Render(body.String())
+	panel := modalStyle.Width(width).Render(body.String())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
+}
+
+// foldLine draws the one row that is not an agent. It says what is behind it
+// and what it costs to look, because a fold that only shows a count reads as a
+// truncated list rather than a choice.
+func (m setupModel) foldLine(focused bool) string {
+	sign, action := "+", "展开"
+	if m.showAdapters {
+		sign, action = "−", "收起"
+	}
+	label := fmt.Sprintf("%s 其他 %d 个兼容适配（非每次发布实测）", sign, m.foldedCount())
+	if focused {
+		label = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Render(label)
+	} else {
+		label = mutedStyle.Render(label)
+	}
+	return "  " + label + mutedStyle.Render("  ·  space "+action)
 }
 
 func (m setupModel) titlePageBody(width int) string {

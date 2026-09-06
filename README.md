@@ -78,7 +78,7 @@ install -m 755 another ~/.local/bin/another
 another
 ```
 
-首次运行会打开 Charmtone 配置界面。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。之后可随时运行 `another setup` 修改配置。
+首次运行会打开 Charmtone 配置界面。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。页面默认只列持续实测的六个 agent，四个兼容适配折在末尾一行里，光标移到那行按 `Space` 展开；如果配置里已经启用了其中某个，这行开局就是展开的——看不见的设置没法关掉。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。之后可随时运行 `another setup` 修改配置。
 
 ### 更新
 

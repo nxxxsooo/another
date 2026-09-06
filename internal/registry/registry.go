@@ -150,6 +150,17 @@ func CLIAvailable(id string) bool {
 	return err == nil
 }
 
+// compatibilityAdapters are the agents another keeps working but does not put
+// through an end-to-end maintainer pass on every release. They are real
+// providers, not deprecated ones; the tier only decides how prominently setup
+// offers them, so a list of ten does not bury the six that are tested.
+var compatibilityAdapters = map[string]bool{
+	"cursor": true, "opencode": true, "commandcode": true, "hermes": true,
+}
+
+// IsCompatibilityAdapter reports whether an agent belongs to the second tier.
+func IsCompatibilityAdapter(id string) bool { return compatibilityAdapters[NormalizeID(id)] }
+
 func DisplayName(reg *Registry, id string) string {
 	id = NormalizeID(id)
 	if p, err := reg.Get(id); err == nil {

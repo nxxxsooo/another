@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/nxxxsooo/another/internal/titler"
 )
 
@@ -31,7 +32,7 @@ func setupFixture() setupModel {
 		items: []setupItem{
 			{id: "pi", name: "pi", command: "pi", data: true, cli: true, available: true, sessions: 12},
 			{id: "codex", name: "Codex", command: "codex", data: true, cli: true, available: true, sessions: 20},
-			{id: "cursor", name: "Cursor", command: "cursor-agent", available: false},
+			{id: "cursor", name: "Cursor", command: "cursor-agent", available: false, adapter: true},
 		},
 		selected:   map[string]bool{"pi": true},
 		modelInput: textinput.New(),
@@ -105,22 +106,67 @@ func TestSetupShiftArrowsStopAtTheEnds(t *testing.T) {
 	if got.cursor != 0 || got.items[0].id != "pi" {
 		t.Fatalf("shift+up wrapped the first row: cursor=%d items=%+v", got.cursor, got.items)
 	}
-	got.cursor = len(got.items) - 1
-	last := got.items[got.cursor].id
+	// The last row of the first tier: below it is the fold, which nothing may
+	// be dragged across.
+	got.cursor = 1
+	last := got.items[1].id
 	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyShiftDown})
 	got = updated.(setupModel)
-	if got.cursor != len(got.items)-1 || got.items[got.cursor].id != last {
-		t.Fatalf("shift+down wrapped the last row: cursor=%d items=%+v", got.cursor, got.items)
+	if got.cursor != 1 || got.items[1].id != last {
+		t.Fatalf("shift+down crossed the fold: cursor=%d items=%+v", got.cursor, got.items)
 	}
 }
 
 func TestSetupRejectsUnavailableAgent(t *testing.T) {
 	m := setupFixture()
-	m.cursor = 2
+	m.showAdapters = true
+	m.cursor = 3
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	got := updated.(setupModel)
 	if got.selected["cursor"] || !strings.Contains(got.err, "未检测到") {
 		t.Fatalf("unavailable agent selection = %+v", got)
+	}
+}
+
+// Ten agents in one list buries the six another actually tests. The second
+// tier is still reachable — hiding a provider outright would strand anyone
+// already using it — but it costs one keystroke instead of four rows.
+func TestSetupFoldsCompatibilityAdaptersUntilAsked(t *testing.T) {
+	m := setupFixture()
+	view := ansi.Strip(m.View())
+	if strings.Contains(view, "Cursor") {
+		t.Fatalf("a second-tier agent is on the page before the fold is opened:\n%s", view)
+	}
+	if !strings.Contains(view, "其他 1 个兼容适配") {
+		t.Fatalf("the page does not say what it is holding back:\n%s", view)
+	}
+
+	// The fold is the last row, and space acts on the row under the cursor.
+	m.cursor = len(m.rows()) - 1
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	opened := updated.(setupModel)
+	if !opened.showAdapters || !strings.Contains(ansi.Strip(opened.View()), "Cursor") {
+		t.Fatalf("space on the fold did not open the second tier:\n%s", opened.View())
+	}
+	if len(opened.selected) != len(m.selected) {
+		t.Fatalf("opening the fold changed the selection: %v", opened.selected)
+	}
+
+	closed, _ := opened.Update(tea.KeyMsg{Type: tea.KeySpace})
+	if strings.Contains(ansi.Strip(closed.(setupModel).View()), "Cursor") {
+		t.Fatal("space on the fold did not close it again")
+	}
+}
+
+// A setting that cannot be seen cannot be turned off, so an already enabled
+// second-tier agent opens the fold on the way in.
+func TestSetupOpensTheFoldForAnAlreadyEnabledAdapter(t *testing.T) {
+	items := setupFixture().items
+	if !anyAdapterSelected(items, map[string]bool{"cursor": true}) {
+		t.Fatal("an enabled adapter did not open the fold")
+	}
+	if anyAdapterSelected(items, map[string]bool{"pi": true}) {
+		t.Fatal("a first-tier selection opened the fold")
 	}
 }
 
