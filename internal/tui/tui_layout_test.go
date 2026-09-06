@@ -976,3 +976,25 @@ func TestProjectColumnFollowsScope(t *testing.T) {
 		t.Fatalf("global row lost the project column: %q", got)
 	}
 }
+
+// A resize that only redraws can leave the reflowed remains of the previous
+// frame on screen, which is what a torn, doubled list looks like from the
+// outside. Both models therefore ask for a clean screen first.
+func TestResizeAsksForACleanRepaint(t *testing.T) {
+	for name, cmd := range map[string]tea.Cmd{
+		"browser": resizeCmd(layoutTestModel()),
+		"setup":   resizeCmd(setupModel{}),
+	} {
+		if cmd == nil {
+			t.Fatalf("%s: resize returned no command", name)
+		}
+		if got := fmt.Sprintf("%T", cmd()); got != "tea.clearScreenMsg" {
+			t.Fatalf("%s: resize command produced %s, want a clear-screen repaint", name, got)
+		}
+	}
+}
+
+func resizeCmd(m tea.Model) tea.Cmd {
+	_, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	return cmd
+}

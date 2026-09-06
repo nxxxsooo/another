@@ -212,7 +212,9 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		return m, nil
+		// Same reason as the browser: repaint from a clean screen so a reflowed
+		// old frame cannot survive underneath the new one.
+		return m, tea.ClearScreen
 	case modelsLoadedMsg:
 		if msg.provider != m.modelFor {
 			return m, nil

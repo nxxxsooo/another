@@ -936,7 +936,12 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
-		return m, nil
+		// Clear before repainting at the new size. A frame drawn for the old
+		// width can still be on screen when the terminal has already reflowed
+		// it, and a diffed repaint then writes new rows over wrapped remains:
+		// duplicated rows, a column's tail stranded on the line below. Redraw
+		// cost on resize is nothing next to a screen nobody can read.
+		return m, tea.ClearScreen
 	case sessionsPageMsg:
 		if msg.gen != m.pageGen {
 			return m, nil
