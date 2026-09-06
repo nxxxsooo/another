@@ -553,9 +553,9 @@ func TestArchiveOffersOneStepUndo(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 100, 30
 	m.layout()
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	if cmd == nil || !updated.(modelState).loading {
-		t.Fatal("A did not start native archive")
+		t.Fatal("a did not start native archive")
 	}
 	summary := m.sessions.SelectedItem().(sessionItem).summary
 	updated, _ = m.Update(archiveDoneMsg{summary: summary, archived: true})
@@ -881,20 +881,43 @@ func TestSpaceStillOpensPreviewInsteadOfMarking(t *testing.T) {
 	}
 }
 
-func TestAMarksEveryVisibleRowAndClearsOnRepeat(t *testing.T) {
+func TestShiftXMarksEveryVisibleRowAndClearsOnRepeat(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 100, 30
 	m.layout()
 
-	updated, _ := m.Update(markKey('a'))
+	updated, _ := m.Update(markKey('X'))
 	got := updated.(modelState)
 	if len(got.marked) != len(got.sessions.Items()) {
-		t.Fatalf("a did not mark every visible row: %d of %d", len(got.marked), len(got.sessions.Items()))
+		t.Fatalf("X did not mark every visible row: %d of %d", len(got.marked), len(got.sessions.Items()))
 	}
 
-	updated, _ = got.Update(markKey('a'))
+	updated, _ = got.Update(markKey('X'))
 	if again := updated.(modelState); len(again.marked) != 0 {
-		t.Fatalf("a did not clear a fully marked page: %v", again.marked)
+		t.Fatalf("X did not clear a fully marked page: %v", again.marked)
+	}
+}
+
+// Archive and select-all used to sit on a and A: two unrelated actions one
+// Shift apart, and the footer named only the archive. Shift now means one
+// thing, the same verb over the whole page, and the footer says so.
+func TestShiftOnlyWidensTheSameVerb(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+
+	help := m.help()
+	for _, key := range []string{"x 标记", "X 全选", "a 归档"} {
+		if !strings.Contains(help, key) {
+			t.Errorf("footer does not name %q: %q", key, help)
+		}
+	}
+
+	// The freed key must do nothing at all: a row silently marked by a stray
+	// capital is how the old pair went wrong in the first place.
+	updated, cmd := m.Update(markKey('A'))
+	if got := updated.(modelState); len(got.marked) != 0 || got.loading || cmd != nil {
+		t.Fatalf("A still acts: marked=%v loading=%v cmd=%v", got.marked, got.loading, cmd)
 	}
 }
 

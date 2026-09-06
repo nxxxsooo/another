@@ -589,7 +589,7 @@ func (m modelState) markStatus() string {
 	if len(m.marked) == 0 {
 		return ""
 	}
-	return mutedStyle.Render(fmt.Sprintf("已标记 %d 个会话  ·  x 标记 · a 全选 · ctrl+t 批量命名", len(m.marked)))
+	return mutedStyle.Render(fmt.Sprintf("已标记 %d 个会话  ·  x 标记 · X 全选 · ctrl+t 批量命名", len(m.marked)))
 }
 
 func newSourceList(items []list.Item) list.Model {
@@ -977,7 +977,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.archived {
 			summary := msg.summary
 			m.lastArchived = &summary
-			m.status = okStyle.Render("已归档 "+truncateDisplay(msg.summary.Title, 48)) + mutedStyle.Render("  ·  A 撤销")
+			m.status = okStyle.Render("已归档 "+truncateDisplay(msg.summary.Title, 48)) + mutedStyle.Render("  ·  a 撤销")
 		} else {
 			m.lastArchived = nil
 			m.status = okStyle.Render("已取消归档 " + truncateDisplay(msg.summary.Title, 48))
@@ -1531,7 +1531,10 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = okStyle.Render("已复制 resume 命令")
 		}
 		return m, nil
-	case "A":
+	// Shift means one thing in this list: the same action over the whole page.
+	// Archive and select-all used to sit on a and A, two unrelated actions one
+	// Shift apart, with only one of them in the footer.
+	case "a":
 		if m.lastArchived != nil {
 			summary := *m.lastArchived
 			m.loading = true
@@ -1569,9 +1572,9 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = m.markStatus()
 		}
 		return m, nil
-	case "a":
+	case "X":
 		// Toggling on the whole visible page keeps one key for select-all and
-		// clear-all; A is already the archive undo.
+		// clear-all, and it is x's own key with Shift: same verb, wider scope.
 		items := m.sessions.Items()
 		allMarked := len(items) > 0
 		for _, li := range items {
@@ -2032,7 +2035,7 @@ func (m modelState) help() string {
 		return " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出"
 	}
 	if m.lastArchived != nil {
-		return " A 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览"
+		return " a 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览"
 	}
 	help := " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围"
 	rename, archive, delete := m.selectedSessionCapabilities()
@@ -2040,12 +2043,12 @@ func (m modelState) help() string {
 		help += " · ctrl+r 重命名"
 	}
 	if archive {
-		help += " · A 归档"
+		help += " · a 归档"
 	}
 	if delete {
 		help += " · ctrl+d 删除"
 	}
-	return help + " · x 标记 · ctrl+t 批量 · / 搜索 · r 刷新"
+	return help + " · x 标记 · X 全选 · ctrl+t 批量 · / 搜索 · r 刷新"
 }
 
 func (m modelState) selectedSessionCapabilities() (rename, archive, delete bool) {

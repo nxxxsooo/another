@@ -107,7 +107,8 @@ Space     preview the conversation
 f         switch between the current project and all projects
 Ctrl+R    rename in the source agent's native title store
 Tab       accept the AI title suggestion, when one is configured and arrives
-A         archive; press A again for one-step undo
+a         archive; press a again for one-step undo
+x / X     mark the row under the cursor / mark or clear the whole page
 Ctrl+D    permanently delete after an explicit confirmation
 /         search titles and normalized conversation text
 r         refresh the local index
@@ -153,7 +154,7 @@ The second setup page picks the agent and the language; `Enter` opens a third pa
 
 The second setup page picks the title language with `←→`: **Auto** (default), **English**, or **中文**. Auto uses Chinese when the first meaningful user message contains a Han character and English otherwise. The date and `｜` separator are identical in every language, and the eight types map one to one: 功能/Feature, 设计/Design, 修复/Fix, 优化/Optimize, 发布/Release, 探索/Explore, 文档/Docs, 研究/Research.
 
-For more than one title at a time, mark sessions with `x` and press `Ctrl+T`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `Ctrl+T` retries exactly those.
+For more than one title at a time, mark sessions with `x` (`X` toggles the whole page) and press `Ctrl+T`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `Ctrl+T` retries exactly those.
 
 The batch header names the agent, model, and language this run uses, and `m` opens the same picker setup uses.
 
