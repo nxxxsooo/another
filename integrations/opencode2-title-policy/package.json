@@ -1,0 +1,14 @@
+{
+  "name": "@another/opencode2-title-policy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --experimental-strip-types src/policy.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^0.0.0-beta-19187",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  }
+}

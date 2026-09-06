@@ -141,11 +141,11 @@ another providers doctor
 
 ## AI 标题建议
 
-如果 setup 中指定了 agent，按 `Ctrl+R` 会以原始标题打开重命名框，同时在后台请求该 agent 生成一个 `MMDD｜类型｜主题` 格式的标题，规则来自 `title-formatter` skill。日期取自索引中的创建时间，并转换到 `Asia/Shanghai`，不会交给模型猜测。
+如果 setup 中指定了 agent，按 `Ctrl+R` 会以原始标题打开重命名框，同时在后台请求该 agent 生成标题。规则由 another 自己执行，不依赖任何 Skill：中文为 `MMDD｜类型｜主题`，英文为 `MMDD｜Type｜Topic`；日期取自索引中的创建时间并转换到 `Asia/Shanghai`，不会交给模型猜测。
 
 setup 第二页选 agent 和语言，按 `Enter` 进第三页选模型：模型列表由该 agent 的 CLI 自己给出（`pi --list-models`、`agy models`、`opencode models`、`opencode2 models`），输入任意字符即时过滤，第一行「默认模型」表示交给 CLI 自己决定，最后一行可以手输一个列表里还没有的模型名。Claude Code、Codex、Qwen 没有列模型的命令，这几个直接进手输，页面会说明原因——列一份猜出来的模型 ID 只会让 `--model` 在重命名时才报错。
 
-setup 第二页用 `←→` 选标题语言：**中文**（默认，`0903｜修复｜删除条目快捷键冲突`）、**English**（`0903｜Fix｜delete shortcut conflict`）、**跟随会话**（按会话本身的语言决定）。日期和 `｜` 分隔符在三种语言下都不变，列表照样按同一套规则排序和扫读；类型词表也是一一对应的八类。不选就是中文，也就是这个设置出现之前的行为——英文会话希望保留英文标题的话，重跑 `another setup` 选 English 或跟随会话。
+setup 第二页用 `←→` 选标题语言：**Auto**（默认）、**English**、**中文**。Auto 看第一条有效用户消息：含汉字就用中文，否则用英文。日期和 `｜` 分隔符在三种语言下都不变；八类语义一一对应：功能／Feature、设计／Design、修复／Fix、优化／Optimize、发布／Release、探索／Explore、文档／Docs、研究／Research。
 
 不符合格式的建议、关闭输入框后才到达的建议和失败请求都会被丢弃，不会覆盖已输入的文字。agent 在临时目录中运行，因此当前项目的指令不会进入标题请求。
 
@@ -158,6 +158,8 @@ setup 第二页用 `←→` 选标题语言：**中文**（默认，`0903｜修�
 生成标题时，Codex、Claude Code、Antigravity、OpenCode 这些 CLI 会为每次无头调用留下一条自己的会话，而且没有关掉的开关。另一侧 another 会认出这些残留并挡在索引之外：提示词第一行是固定标记，运行目录是 `another-titler-*` 临时目录，两者任一命中即不入库，之前版本已经入库的也会在下次刷新时清掉。清的只是 another 自己的索引，agent 自己的会话文件仍在它自己的目录里。
 
 <img src="docs/assets/tui-batch.svg" width="100%" alt="another 批量命名确认页：原名到新名的对照表与折叠计数">
+
+OpenCode 2 可以在首次自动命名时直接执行同一规则，而不额外调用一次模型；适配器与安装说明见 [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/)。Pi 的 session-title 扩展补丁见 [`integrations/pi-session-title-policy/`](integrations/pi-session-title-policy/)。Codex 暂无稳定的原生标题策略接口，仍由 another 整理。
 
 ## CLI
 

@@ -1,0 +1,242 @@
+--- a/extensions/core.ts
++++ b/extensions/core.ts
+@@ -9,6 +9,7 @@
+   type ThinkingLevel,
+ } from "@oipsanthony/pi-model-roles";
+ import { readFileSync } from "node:fs";
++import { homedir } from "node:os";
+ import { basename, join } from "node:path";
+ 
+ export const STATE_ENTRY_TYPE = "pi-session-title-state";
+@@ -18,6 +19,7 @@
+ 
+ export type { ThinkingLevel } from "@oipsanthony/pi-model-roles";
+ export type SessionTitleStatus = "generated" | "failed" | "manual";
++export type TitleLanguage = "auto" | "en" | "zh";
+ type CompletionModel = Parameters<typeof complete>[0];
+ type CompletionOptions = Parameters<typeof complete>[2];
+ type CompletionResponse = Awaited<ReturnType<typeof complete>>;
+@@ -39,6 +41,7 @@
+   maxTokens: number;
+   maxLength: number;
+   refreshTurns: number;
++  language: TitleLanguage;
+   terminalTitle: {
+     enabled: boolean;
+     template: string;
+@@ -61,6 +64,7 @@
+ export interface NamingContext {
+   kind: "initial" | "refresh" | "manual";
+   currentTitle?: string;
++  createdAt: string;
+   messages: TitleMessage[];
+ }
+ 
+@@ -120,6 +124,7 @@
+   maxTokens: 40,
+   maxLength: 48,
+   refreshTurns: 4,
++  language: "auto",
+   terminalTitle: {
+     enabled: true,
+     template: "π {title} ({cwd})",
+@@ -129,15 +134,39 @@
+   },
+ };
+ 
+-const TITLE_SYSTEM_PROMPT = `Generate a concise session title for a coding-agent conversation.
++const TITLE_TYPES = {
++  zh: ["功能", "设计", "修复", "优化", "发布", "探索", "文档", "研究"],
++  en: ["Feature", "Design", "Fix", "Optimize", "Release", "Explore", "Docs", "Research"],
++} as const;
+ 
++export function loadSharedTitleLanguage(environment: NodeJS.ProcessEnv = process.env): TitleLanguage {
++  const root = environment.XDG_CONFIG_HOME || join(environment.HOME || homedir(), ".config");
++  try {
++    const value = JSON.parse(readFileSync(join(root, "another", "config.json"), "utf8"))?.title_policy?.language;
++    return value === "en" || value === "zh" ? value : "auto";
++  } catch {
++    return "auto";
++  }
++}
++
++function titleSystemPrompt(language: TitleLanguage): string {
++  const rule = language === "zh"
++    ? `Write the type and topic in Chinese. Type must be one of: ${TITLE_TYPES.zh.join(" ")}.`
++    : language === "en"
++      ? `Write the type and topic in English. Type must be one of: ${TITLE_TYPES.en.join(" ")}.`
++      : `Use Chinese if the first user message contains any Han character; otherwise use English. Chinese types: ${TITLE_TYPES.zh.join(" ")}. English types: ${TITLE_TYPES.en.join(" ")}.`;
++  return `Generate a concise title for a coding-agent conversation.
++
+ Rules:
+-- Use the same language as the first user message.
+-- Return exactly one line of plain text and nothing else.
+-- Describe the specific task; avoid generic labels such as "code changes" or "problem solving".
+-- Do not use Markdown, quotation marks, or trailing punctuation.
+-- Keep the title within the requested character limit.
+-- When evaluating an existing title, return exactly KEEP if it remains accurate.`;
++- Return exactly one line in MMDD｜Type｜Topic format and nothing else.
++- ${rule}
++- MMDD is supplied in the request. Copy it exactly; never calculate or change it.
++- Use exactly U+FF5C ｜ as the separator.
++- Topic must be concrete and distinct from the project name: at most 16 Chinese characters or 8 English words.
++- Do not use tools, Markdown, quotation marks, explanations, or trailing punctuation.
++- When evaluating an existing title, return exactly KEEP if it already follows this contract and remains accurate.
++- If type or topic cannot be determined, return exactly KEEP.`;
++}
+ 
+ const ANSI_PATTERN = /[\u001b\u009b](?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001b\\)?)/g;
+ const CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
+@@ -153,7 +182,9 @@
+ }
+ 
+ export function normalizeConfig(value: unknown): SessionTitleConfig {
+-  if (!value || typeof value !== "object" || Array.isArray(value)) return structuredClone(DEFAULT_CONFIG);
++  if (!value || typeof value !== "object" || Array.isArray(value)) {
++    return { ...structuredClone(DEFAULT_CONFIG), language: loadSharedTitleLanguage() };
++  }
+ 
+   const input = value as Record<string, unknown>;
+   const terminal = input.terminalTitle && typeof input.terminalTitle === "object" && !Array.isArray(input.terminalTitle)
+@@ -181,6 +212,7 @@
+     maxTokens: positiveSafeInteger(input.maxTokens, DEFAULT_CONFIG.maxTokens),
+     maxLength: positiveSafeInteger(input.maxLength, DEFAULT_CONFIG.maxLength),
+     refreshTurns,
++    language: loadSharedTitleLanguage(),
+     terminalTitle: {
+       enabled: typeof terminal.enabled === "boolean" ? terminal.enabled : DEFAULT_CONFIG.terminalTitle.enabled,
+       template: typeof terminal.template === "string" && terminal.template.trim()
+@@ -201,6 +233,47 @@
+   }
+ }
+ 
++// Pi's JSONL header is the authoritative creation field. Do not substitute
++// the first message time, file mtime, or today's date when it is unavailable.
++export function readSessionCreatedAt(path: string | undefined): string | undefined {
++  if (!path) return;
++  try {
++    const first = readFileSync(path, "utf8").split(/\r?\n/u, 1)[0];
++    const header = JSON.parse(first) as { type?: unknown; timestamp?: unknown };
++    if (header.type !== "session" || typeof header.timestamp !== "string") return;
++    const time = Date.parse(header.timestamp);
++    return Number.isFinite(time) && time > 0 ? header.timestamp : undefined;
++  } catch {
++    return;
++  }
++}
++
++export function mmddShanghai(createdAt: string): string | undefined {
++  const time = Date.parse(createdAt);
++  if (!Number.isFinite(time) || time <= 0) return;
++  const parts = new Intl.DateTimeFormat("en-US", {
++    timeZone: "Asia/Shanghai",
++    month: "2-digit",
++    day: "2-digit",
++  }).formatToParts(new Date(time));
++  const month = parts.find((part) => part.type === "month")?.value;
++  const day = parts.find((part) => part.type === "day")?.value;
++  return month && day ? month + day : undefined;
++}
++
++export function cleanPolicyTitle(value: string, language: TitleLanguage, createdAt: string, maxLength: number): string | undefined {
++  const title = cleanTitle(value, maxLength);
++  const date = mmddShanghai(createdAt);
++  if (!title || !date) return;
++  const parts = title.split("｜").map((part) => part.trim());
++  if (parts.length !== 3 || parts[0] !== date || !parts[2]) return;
++  const detected = TITLE_TYPES.zh.includes(parts[1] as never) ? "zh" : TITLE_TYPES.en.includes(parts[1] as never) ? "en" : undefined;
++  if (!detected || (language !== "auto" && detected !== language)) return;
++  if (detected === "zh" && Array.from(parts[2]).length > 16) return;
++  if (detected === "en" && parts[2].split(/\s+/u).length > 8) return;
++  return parts.join("｜");
++}
++
+ export function codePointLength(value: string): number {
+   return Array.from(value).length;
+ }
+@@ -361,13 +434,15 @@
+   kind: NamingContext["kind"],
+   entries: readonly unknown[],
+   currentTitle?: string,
++  createdAt?: string,
+ ): NamingContext | undefined {
++  if (!createdAt || !mmddShanghai(createdAt)) return undefined;
+   if (kind === "initial") {
+     const first = extractCompletedExchanges(entries)[0];
+-    return first ? { kind, messages: trimInitialContext(first) } : undefined;
++    return first ? { kind, createdAt, messages: trimInitialContext(first) } : undefined;
+   }
+   const messages = trimRecentContext(extractRecentMessages(entries));
+-  return messages.length ? { kind, currentTitle, messages } : undefined;
++  return messages.length ? { kind, currentTitle, createdAt, messages } : undefined;
+ }
+ 
+ function formatPrompt(context: NamingContext, maxLength: number): string {
+@@ -375,7 +450,7 @@
+     .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.text}`)
+     .join("\n\n");
+   const current = context.currentTitle ? `Current title: ${context.currentTitle}\n\n` : "";
+-  return `${current}Maximum title length: ${maxLength} Unicode code points.\n\nConversation:\n${conversation}`;
++  return `${current}MMDD: ${mmddShanghai(context.createdAt)}\nMaximum title length: ${maxLength} Unicode code points.\n\nConversation:\n${conversation}`;
+ }
+ 
+ function modelKey(model: CompletionModel): string {
+@@ -404,7 +479,7 @@
+   try {
+     const completion = dependencies.complete(
+       model,
+-      { systemPrompt: TITLE_SYSTEM_PROMPT, messages: [message] },
++      { systemPrompt: titleSystemPrompt(config.language), messages: [message] },
+       {
+         apiKey: auth.apiKey,
+         headers: auth.headers,
+@@ -497,7 +572,7 @@
+           configuredModelFailed,
+         };
+       }
+-      const title = cleanTitle(raw, config.maxLength);
++      const title = cleanPolicyTitle(raw, config.language, namingContext.createdAt, config.maxLength);
+       if (title) {
+         return {
+           kind: "title",
+--- a/extensions/index.ts
++++ b/extensions/index.ts
+@@ -13,6 +13,7 @@
+   extractCompletedExchanges,
+   loadConfig,
+   nextAutomaticEvaluation,
++  readSessionCreatedAt,
+   renderTerminalTitle,
+   requestTitle,
+   restoreState,
+@@ -143,7 +144,12 @@
+     const entries = branch(ctx);
+     const turns = extractCompletedExchanges(entries).length;
+     const currentName = sessionName(ctx);
+-    const namingContext = buildNamingContext(kind, entries, currentName);
++    const namingContext = buildNamingContext(
++      kind,
++      entries,
++      currentName,
++      readSessionCreatedAt(ctx.sessionManager.getSessionFile()),
++    );
+     if (!namingContext) {
+       if (kind === "manual") ctx.ui.notify("No conversation is available to generate a session title.", "warning");
+       return;
+@@ -281,6 +287,16 @@
+   pi.on("agent_start", (_event, rawContext) => {
+     const ctx = rawContext as SessionContext;
+     detach(() => syncDisplay(ctx));
++  });
++
++  // Pi 0.84.4 does not reliably emit agent_settled for an ordinary completed
++  // TUI turn. agent_end is emitted after the assistant entry is persisted, so
++  // it is the primary automatic-title trigger. agent_settled remains below as
++  // a retry/compaction-safe fallback; inFlight and persisted state deduplicate
++  // the two when both arrive.
++  pi.on("agent_end", (_event, rawContext) => {
++    const ctx = rawContext as SessionContext;
++    detach(() => evaluateAutomatic(ctx));
+   });
+ 
+   pi.on("agent_settled", (_event, rawContext) => {
