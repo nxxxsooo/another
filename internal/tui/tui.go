@@ -1788,13 +1788,49 @@ func overlay(background, box string, width int) string {
 		if row >= len(bgLines) {
 			break
 		}
-		boxLine = ansi.Truncate(boxLine, boxW, "")
-		boxLine += strings.Repeat(" ", max(0, boxW-ansi.StringWidth(boxLine)))
-		left := ansi.Cut(bgLines[row], 0, x)
-		right := ansi.Cut(bgLines[row], x+boxW, width)
+		boxLine = fitLeft(boxLine, boxW)
+		// ansi.Cut cannot split a double-width character, so a cut that lands
+		// inside one comes back a cell short or a cell long. Left uncorrected
+		// that shifts the modal and every background cell after it, and the
+		// row tears — visibly at some terminal widths and not others, because
+		// the width decides whether the cut lands mid-character at all.
+		left := fitLeft(ansi.Cut(bgLines[row], 0, x), x)
+		right := cutRight(bgLines[row], x+boxW, width)
 		bgLines[row] = left + boxLine + right
 	}
 	return strings.Join(bgLines, "\n")
+}
+
+// fitLeft returns s in exactly cells columns, keeping its start. The padding
+// goes where the lost half-character was: at the end.
+func fitLeft(s string, cells int) string {
+	if cells <= 0 {
+		return ""
+	}
+	if w := ansi.StringWidth(s); w > cells {
+		s = ansi.Truncate(s, cells, "")
+	}
+	return s + strings.Repeat(" ", max(0, cells-ansi.StringWidth(s)))
+}
+
+// cutRight returns columns from..to of line in exactly to-from columns. When
+// the cut starts inside a double-width character ansi.Cut keeps the whole of
+// it and hands back one column too many, so the slice is taken one column
+// later and the character's lost half becomes padding. Padding on the left is
+// what keeps the rest of the row in the columns it was drawn in.
+func cutRight(line string, from, to int) string {
+	cells := to - from
+	if cells <= 0 {
+		return ""
+	}
+	s := ansi.Cut(line, from, to)
+	if ansi.StringWidth(s) > cells {
+		s = ansi.Cut(line, from+1, to)
+	}
+	if w := ansi.StringWidth(s); w > cells {
+		return fitLeft(s, cells)
+	}
+	return strings.Repeat(" ", max(0, cells-ansi.StringWidth(s))) + s
 }
 
 // clearSuggestion drops suggestion state so a stale proposal cannot reappear

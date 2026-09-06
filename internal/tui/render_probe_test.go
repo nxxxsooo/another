@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -62,7 +63,7 @@ func TestRenderProbe(t *testing.T) {
 		projectScope:  project,
 		projectOnly:   true,
 	}
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: probeWidth(), Height: 20})
 	shown := updated.(modelState)
 	fmt.Println("======== list (project scope)")
 	fmt.Println(shown.View())
@@ -89,4 +90,13 @@ func TestRenderProbe(t *testing.T) {
 	shown.layout()
 	fmt.Println("======== delete confirmation")
 	fmt.Println(shown.View())
+}
+
+// probeWidth lets a reviewer reproduce a width-specific layout complaint:
+// RENDER_PROBE_WIDTH=124 pins the terminal the screenshot came from.
+func probeWidth() int {
+	if n, err := strconv.Atoi(os.Getenv("RENDER_PROBE_WIDTH")); err == nil && n >= 40 {
+		return n
+	}
+	return 100
 }
