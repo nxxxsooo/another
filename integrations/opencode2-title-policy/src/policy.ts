@@ -30,10 +30,22 @@ export function titlePrompt(language: TitleLanguage): string {
 Rules:
 - ${languageRule}
 - Use exactly U+FF5C ｜ as the separator.
-- Topic must be concrete and distinct from the project name: at most 16 Chinese characters or 8 English words.
+- Topic must be concrete and distinct from the project name: at most 16 Chinese characters or 8 English words, counting each English word, filename, or identifier as one character.
 - Preserve exact technical terms, numbers, and filenames.
 - Never use tools, markdown, quotes, explanations, or trailing punctuation.
 - If type or topic cannot be determined, output exactly KEEP.`
+}
+
+// topicWeight measures a topic the way the caps are meant: one unit per CJK
+// character and one per Latin or numeric run. Counting raw characters treated
+// every technical term as if it were a sentence — `功能｜Meeting Loop会议待办总结`
+// scored 18 against a cap of 16 and was refused, which left the session
+// wearing the undated half of the policy. Real titles name tools, files, and
+// identifiers; only genuine rambling should exceed the cap.
+export function topicWeight(topic: string): number {
+  const runs = topic.match(/[A-Za-z0-9][A-Za-z0-9._+#/-]*/gu)?.length ?? 0
+  const rest = topic.replace(/[A-Za-z0-9._+#/-]+/gu, "")
+  return runs + [...rest].filter((character) => !/[\s\p{P}\p{S}]/u.test(character)).length
 }
 
 export function parsePartialTitle(title: string): { language: "en" | "zh"; type: string; topic: string } | undefined {
@@ -43,8 +55,7 @@ export function parsePartialTitle(title: string): { language: "en" | "zh"; type:
   if (!type || !topic) return
   const language = categories.zh.includes(type as never) ? "zh" : categories.en.includes(type as never) ? "en" : undefined
   if (!language) return
-  if (language === "zh" && [...topic].length > 16) return
-  if (language === "en" && topic.split(/\s+/u).length > 8) return
+  if (topicWeight(topic) > (language === "zh" ? 16 : 8)) return
   return { language, type, topic }
 }
 
