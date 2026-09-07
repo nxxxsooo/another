@@ -122,5 +122,9 @@ var (
 	// the title and, per the note above, break on nested resets.
 	projectLeafStyle   = lipgloss.NewStyle().Foreground(twinTheme.textSubtle)
 	projectParentStyle = lipgloss.NewStyle().Foreground(twinTheme.textMostSubtle)
-	dangerChoice       = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.danger).Padding(0, 1)
+	// A directory that no longer exists loses the bar's color rather than
+	// gaining a symbol: this column's color means "somewhere you can go", so
+	// withdrawing it is the honest way to say the place is gone.
+	missingProjectStyle = lipgloss.NewStyle().Foreground(twinTheme.textMostSubtle)
+	dangerChoice        = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.danger).Padding(0, 1)
 )

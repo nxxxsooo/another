@@ -49,6 +49,31 @@ const (
 type sessionItem struct {
 	summary model.Summary
 	snippet string
+	// missingDir records that the session's directory is gone. It is resolved
+	// once per page rather than per frame: the row renderer runs on every
+	// keystroke, and a filesystem check does not belong there.
+	missingDir bool
+}
+
+// sessionItems turns summaries into rows, resolving each distinct directory
+// once so a page of rows costs one check per project rather than one per row.
+func sessionItems(summaries []model.Summary) []list.Item {
+	known := make(map[string]bool, len(summaries))
+	items := make([]list.Item, 0, len(summaries))
+	for _, s := range summaries {
+		missing := false
+		if s.ProjectPath != "" {
+			gone, seen := known[s.ProjectPath]
+			if !seen {
+				info, err := os.Stat(s.ProjectPath)
+				gone = err != nil || !info.IsDir()
+				known[s.ProjectPath] = gone
+			}
+			missing = gone
+		}
+		items = append(items, sessionItem{summary: s, missingDir: missing})
+	}
+	return items
 }
 
 func (i sessionItem) displayTitle() string {
@@ -139,7 +164,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + " " +
 		provText + " " + title + " "
 	if projW > 0 {
-		row += renderProjectCell(it.summary.ProjectPath, projW) + " "
+		row += renderProjectCellState(it.summary.ProjectPath, projW, it.missingDir) + " "
 	}
 	row += mutedStyle.Render(padLeft(msgs, msgW))
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
@@ -155,16 +180,29 @@ const projectBar = "▎"
 // bar keyed to the path, then the path with its last segment lifted out of the
 // dim. The bar is one cell of foreground, not a filled chip, so it survives the
 // nested ANSI resets that make background-painted columns tear in Ghostty.
+//
+// A directory that no longer exists keeps its path — it is still the best
+// name for where the work happened — and loses its color instead. Color in
+// this column means "a project you can go to", so a moved, renamed, or
+// deleted directory reads as gone without a symbol having to say it.
 func renderProjectCell(path string, width int) string {
+	return renderProjectCellState(path, width, false)
+}
+
+func renderProjectCellState(path string, width int, missing bool) string {
 	if width <= 0 {
 		return ""
 	}
 	if path == "" {
 		return strings.Repeat(" ", width)
 	}
+	barStyle := lipgloss.NewStyle().Foreground(projectColor(path))
+	leafStyle := projectLeafStyle
+	if missing {
+		barStyle, leafStyle = missingProjectStyle, projectParentStyle
+	}
 	if width < 3 {
-		return lipgloss.NewStyle().Foreground(projectColor(path)).Render(projectBar) +
-			strings.Repeat(" ", width-1)
+		return barStyle.Render(projectBar) + strings.Repeat(" ", width-1)
 	}
 
 	shown := util.TildePath(path)
@@ -180,13 +218,12 @@ func renderProjectCell(path string, width int) string {
 	// column whenever the whole path cannot; the parent gives way first.
 	if parentW := textW - ansi.StringWidth(leaf); parentW > 0 && parent != "" {
 		text = projectParentStyle.Render(truncateLeft(parent, parentW)) +
-			projectLeafStyle.Render(leaf)
+			leafStyle.Render(leaf)
 	} else {
-		text = projectLeafStyle.Render(truncateLeft(leaf, textW))
+		text = leafStyle.Render(truncateLeft(leaf, textW))
 	}
 
-	bar := lipgloss.NewStyle().Foreground(projectColor(path)).Render(projectBar)
-	return padRight(bar+" "+text, width)
+	return padRight(barStyle.Render(projectBar)+" "+text, width)
 }
 
 type targetItem struct{ id, name string }
@@ -716,6 +753,7 @@ func loadSessionsPageCmd(m modelState, gen uint64) tea.Cmd {
 	idx := m.idx
 	opts := listOptsFor(m)
 	providerFilter := opts.Provider
+	countOpts := providerCountOpts(m)
 	return func() tea.Msg {
 		total, err := idx.Count(opts)
 		if err != nil {
@@ -725,15 +763,11 @@ func loadSessionsPageCmd(m modelState, gen uint64) tea.Cmd {
 		if err == nil {
 			err = lerr
 		}
-		counts, countErr := idx.CountByProviderFiltered(providerCountOpts(m))
+		counts, countErr := idx.CountByProviderFiltered(countOpts)
 		if err == nil {
 			err = countErr
 		}
-		var sitems []list.Item
-		for _, s := range summaries {
-			sitems = append(sitems, sessionItem{summary: s})
-		}
-		return sessionsPageMsg{items: sitems, total: total, counts: counts, provider: providerFilter, gen: gen, err: err}
+		return sessionsPageMsg{items: sessionItems(summaries), total: total, counts: counts, provider: providerFilter, gen: gen, err: err}
 	}
 }
 
@@ -778,9 +812,15 @@ func searchCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, op
 		if err == nil {
 			err = countErr
 		}
-		items := make([]list.Item, 0, len(hits))
+		summaries := make([]model.Summary, 0, len(hits))
 		for _, hit := range hits {
-			items = append(items, sessionItem{summary: hit.Session, snippet: hit.Snippet})
+			summaries = append(summaries, hit.Session)
+		}
+		items := sessionItems(summaries)
+		for i, hit := range hits {
+			row := items[i].(sessionItem)
+			row.snippet = hit.Snippet
+			items[i] = row
 		}
 		return searchResultsMsg{items: items, query: opts.Query, counts: counts, status: status, err: err}
 	}
