@@ -185,6 +185,22 @@ func TestHeaderAndEmptyViewExposeProjectScope(t *testing.T) {
 	}
 }
 
+func TestHelpShowsOnlySelectedAgentCapabilities(t *testing.T) {
+	m := layoutTestModel()
+	if help := m.help(); !strings.Contains(help, "重命名") || !strings.Contains(help, "归档") || !strings.Contains(help, "删除") {
+		t.Fatalf("Codex help hides supported actions: %q", help)
+	}
+
+	it := m.sessions.SelectedItem().(sessionItem)
+	it.summary.Provider = "agy"
+	m.sessions.SetItems([]list.Item{it})
+	if help := m.help(); strings.Contains(help, "归档") || strings.Contains(help, "删除") {
+		t.Fatalf("Antigravity help advertises unsupported actions: %q", help)
+	} else if !strings.Contains(help, "重命名") {
+		t.Fatalf("Antigravity help hides supported rename: %q", help)
+	}
+}
+
 func TestEscapeClearsAppliedSearch(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 80, 24
@@ -998,5 +1014,28 @@ func TestProjectColumnFollowsScope(t *testing.T) {
 	}
 	if got := render(true); !strings.Contains(got, "scope-fixture") {
 		t.Fatalf("global row lost the project column: %q", got)
+	}
+}
+
+// Bubbletea erases only the tail of a line it believes is shorter than the
+// terminal, so a frame drawn for the old size can survive under the new one.
+// Both screens ask for a clear when the size changes.
+func TestResizeAsksForAClearScreen(t *testing.T) {
+	m := layoutTestModel()
+	_, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if cmd == nil {
+		t.Fatal("the browser did not repaint on resize")
+	}
+	if cmd() != tea.ClearScreen() {
+		t.Fatalf("the browser repaint is not a clear: %T", cmd())
+	}
+
+	s := setupFixture()
+	_, cmd = s.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if cmd == nil {
+		t.Fatal("setup did not repaint on resize")
+	}
+	if cmd() != tea.ClearScreen() {
+		t.Fatalf("the setup repaint is not a clear: %T", cmd())
 	}
 }

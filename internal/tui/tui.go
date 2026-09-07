@@ -986,7 +986,12 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
-		return m, nil
+		// Bubbletea only erases the tail of a line it believes is shorter than
+		// the terminal, so a frame drawn for the old size can survive under the
+		// new one: an old border column, a count from a row that has moved.
+		// Clearing on resize costs one frame and makes the screen the only
+		// thing on screen.
+		return m, tea.ClearScreen
 	case sessionsPageMsg:
 		if msg.gen != m.pageGen {
 			return m, nil

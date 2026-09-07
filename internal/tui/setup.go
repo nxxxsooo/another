@@ -304,7 +304,9 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		return m, nil
+		// Setup is centred in the window, so a resize moves the whole panel and
+		// leaves the old one behind unless the screen is cleared with it.
+		return m, tea.ClearScreen
 	case modelsLoadedMsg:
 		if msg.provider != m.modelFor {
 			return m, nil
