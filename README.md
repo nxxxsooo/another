@@ -304,7 +304,7 @@ python3 ./scripts/render-mark-transparent.py                       # 标志透�
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/tui-goodbye-static.png">
-    <img src="docs/assets/tui-goodbye.gif" width="500" alt="another 退出时打印的字标；整块紫色的字标先亮成白色，随后分离成错开一格的两份，左缘紫色、右缘薄荷绿，白色内核留在中间">
+    <img src="docs/assets/tui-goodbye.gif" width="500" alt="another 退出时打印的字标；一份紫色、一份薄荷绿的两份字标分列两侧，同时向中间靠拢，途中字标沿横向撕成错位的几条，两种颜色褪成两边共有的白色，最后重合成一个完整的白色字标">
   </picture>
 </p>
 

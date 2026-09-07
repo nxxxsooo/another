@@ -56,15 +56,15 @@ func TestMarkStaysShort(t *testing.T) {
 	}
 }
 
-// At rest the mark has to show all three readings at once: ink only the source
-// agent holds, ink only the target holds, and the overlap they share. If any
-// one of them is missing the image is not saying that a session is in two
-// places, which is the entire point of the goodbye.
-func TestRestingMarkShowsBothAgentsAndTheirOverlap(t *testing.T) {
+// The opening frame has to show all three readings at once: ink only the
+// source agent holds, ink only the target holds, and the overlap they share.
+// If any one of them is missing, the goodbye never states the thing it then
+// spends the whole animation resolving — that the session stood in two places.
+func TestOpeningMarkShowsBothAgentsAndTheirOverlap(t *testing.T) {
 	seen := map[inkState]int{}
 	for sub := range faceSubRows {
 		for col := range logoWidth() {
-			seen[stateAt(sub, col, ghostRest)]++
+			seen[stateAt(sub, col, goodbyeScript[0].gap)]++
 		}
 	}
 	for _, s := range []struct {
@@ -76,39 +76,46 @@ func TestRestingMarkShowsBothAgentsAndTheirOverlap(t *testing.T) {
 		{shared, "shared"},
 	} {
 		if seen[s.state] == 0 {
-			t.Errorf("resting mark has no %s sub-pixels", s.name)
+			t.Errorf("opening mark has no %s sub-pixels", s.name)
 		}
 	}
 }
 
-// Every sub-pixel of both copies must survive the overlay. The source copy sits
-// at the origin and the target copy hangs to its right, so the reserved width
-// is what keeps the target from being clipped mid-stroke.
+// Every sub-pixel of both copies must survive the overlay. The pair is centred
+// in the reserved width, and the tear pulls individual rows off the frame's
+// gap, so it is the gap each row is actually drawn at that has to stay inside
+// the reserve — otherwise a torn band is clipped mid-stroke.
 func TestGhostIsNeverClipped(t *testing.T) {
-	var source, target int
+	// A row of the mark is two sub-rows of the bitmap, and the tear moves
+	// whole rows, so both halves of a cell are always at the same gap.
+	sourceInRow := make([]int, markHeight())
 	for sub := range faceSubRows {
 		for col := range markWidth {
 			if faceInk(sub, col) {
-				source++
+				sourceInRow[sub/2]++
 			}
 		}
 	}
-	for _, beat := range goodbyeScript {
-		if beat.dx > ghostShift {
-			t.Fatalf("script shifts %d cells, wider than the %d reserved", beat.dx, ghostShift)
-		}
-		target = 0
-		for sub := range faceSubRows {
-			for col := range logoWidth() {
-				switch stateAt(sub, col, beat.dx) {
-				case targetOnly, shared:
-					target++
+	for i, beat := range goodbyeScript {
+		for row := range markHeight() {
+			gap := rowGap(row, beat.gap, beat.tear)
+			if gap < 0 || gap > ghostShift {
+				t.Fatalf("beat %d row %d is drawn at gap %d, outside the %d reserved",
+					i, row, gap, ghostShift)
+			}
+			var target int
+			for _, sub := range []int{2 * row, 2*row + 1} {
+				for col := range logoWidth() {
+					switch stateAt(sub, col, gap) {
+					case targetOnly, shared:
+						target++
+					}
 				}
 			}
-		}
-		if target != source {
-			t.Errorf("dx=%d lost ink: target copy shows %d sub-pixels, source has %d",
-				beat.dx, target, source)
+			if target != sourceInRow[row] {
+				t.Errorf("beat %d row %d at gap %d lost ink: target shows %d sub-pixels, source has %d",
+					i, row, gap, target, sourceInRow[row])
+			}
 		}
 	}
 }
@@ -121,38 +128,80 @@ func TestEveryFrameHasIdenticalDimensions(t *testing.T) {
 	t.Cleanup(func() { SetVersion("") })
 
 	for _, f := range goodbyeScript {
-		frame := renderFrame(f.dx, f.tension)
+		frame := renderFrame(f.gap, f.merge, f.tear)
 		lines := strings.Split(frame, "\n")
 		if len(lines) != logoHeight() {
-			t.Fatalf("frame dx=%d has %d lines, want %d", f.dx, len(lines), logoHeight())
+			t.Fatalf("frame gap=%d has %d lines, want %d", f.gap, len(lines), logoHeight())
 		}
 		for i, line := range lines {
 			if got := ansi.StringWidth(line); got != logoWidth() {
-				t.Errorf("frame dx=%d line %d width = %d, want %d", f.dx, i, got, logoWidth())
+				t.Errorf("frame gap=%d line %d width = %d, want %d", f.gap, i, got, logoWidth())
 			}
 		}
 	}
 }
 
-// The story is: whole in one agent, separating once, settled in two. It has to
-// open unified and close split, because the goodbye prints after the migration
-// already happened and the split frame is what stays in scrollback.
-func TestScriptOpensWholeAndClosesSplit(t *testing.T) {
+// The story is: the session standing in two places, drawing together, ending
+// as one word. It has to open split and close merged, because the goodbye
+// prints after the migration already happened and the merged frame is what
+// stays in scrollback.
+func TestScriptOpensSplitAndClosesMerged(t *testing.T) {
 	first, last := goodbyeScript[0], goodbyeScript[len(goodbyeScript)-1]
-	if first.dx != 0 || first.tension != 0 {
-		t.Errorf("script opens already split: %+v", first)
+	if first.gap != ghostShift || first.merge != 0 || first.tear != 0 {
+		t.Errorf("script opens at %+v, want the two agents fully apart and whole {gap:%d merge:0 tear:0}", first, ghostShift)
 	}
-	if last.dx != ghostRest || last.tension != 1 {
-		t.Errorf("script closes at %+v, want the settled split {dx:%d tension:1}", last, ghostRest)
+	if last.gap != 0 || last.merge != 1 || last.tear != 0 {
+		t.Errorf("script closes at %+v, want the merged mark {gap:0 merge:1 tear:0}", last)
 	}
-	var separations int
-	for i := 1; i < len(goodbyeScript); i++ {
-		if goodbyeScript[i].dx > 0 && goodbyeScript[i-1].dx == 0 {
-			separations++
+}
+
+// The tear is something the goodbye passes through, not something it leaves
+// behind. It has to actually happen — a table of zeroes would quietly turn the
+// close back into a clean dissolve — and it has to be gone by the end, because
+// a torn frame is exactly what must not survive in scrollback.
+func TestTearHappensAndIsGoneByTheEnd(t *testing.T) {
+	var torn int
+	for _, beat := range goodbyeScript {
+		if beat.tear != 0 {
+			torn++
 		}
 	}
-	if separations != 1 {
-		t.Errorf("script separates %d times, want exactly one", separations)
+	if torn == 0 {
+		t.Fatal("no beat tears; the close is a clean dissolve")
+	}
+
+	// A tear every row answers the same way is a shift, not a tear.
+	seen := map[int]bool{}
+	for row := range markHeight() {
+		seen[rowGap(row, ghostClose, 2)] = true
+	}
+	if len(seen) < 2 {
+		t.Fatalf("every torn row lands on the same gap %v", seen)
+	}
+}
+
+// The gap only ever closes. A copy that drifted back apart would turn one
+// merge into a wobble, and the mark would read as undecided rather than as a
+// session arriving somewhere.
+func TestScriptOnlyEverClosesTheGap(t *testing.T) {
+	for i := 1; i < len(goodbyeScript); i++ {
+		if goodbyeScript[i].gap > goodbyeScript[i-1].gap {
+			t.Fatalf("beat %d reopens the gap: %+v after %+v",
+				i, goodbyeScript[i], goodbyeScript[i-1])
+		}
+		if goodbyeScript[i].merge < goodbyeScript[i-1].merge {
+			t.Fatalf("beat %d walks the agents back: %+v after %+v",
+				i, goodbyeScript[i], goodbyeScript[i-1])
+		}
+	}
+	var merges int
+	for i := 1; i < len(goodbyeScript); i++ {
+		if goodbyeScript[i].gap == 0 && goodbyeScript[i-1].gap > 0 {
+			merges++
+		}
+	}
+	if merges != 1 {
+		t.Errorf("script merges %d times, want exactly one", merges)
 	}
 }
 
@@ -160,26 +209,52 @@ func TestScriptOpensWholeAndClosesSplit(t *testing.T) {
 // animation, so the two must agree exactly.
 func TestRestFrameIsTheScriptsFinalBeat(t *testing.T) {
 	last := goodbyeScript[len(goodbyeScript)-1]
-	if restFrame() != renderFrame(last.dx, last.tension) {
+	if restFrame() != renderFrame(last.gap, last.merge, last.tear) {
 		t.Error("restFrame() and the script's final beat render differently")
 	}
 }
 
-// Tension walks between the two stable brand states. At zero the mark is whole
-// and entirely the source agent's colour however far the copies have moved; at
-// one the target and the overlap have arrived at their own colours.
-func TestTensionResolvesToOneColourWhenWhole(t *testing.T) {
-	if got := mix(twinTheme.source, twinTheme.target, 0); got != twinTheme.source {
-		t.Errorf("target at tension 0 = %s, want the source colour %s", got, twinTheme.source)
-	}
+// Merge walks each agent to the colour of the session. At zero both copies are
+// their own agent's; at one both have arrived at the white the overlap has
+// carried since the first frame.
+func TestMergeWalksBothAgentsToTheSession(t *testing.T) {
 	if got := mix(twinTheme.source, twinTheme.text, 0); got != twinTheme.source {
-		t.Errorf("overlap at tension 0 = %s, want the source colour %s", got, twinTheme.source)
+		t.Errorf("source at merge 0 = %s, want %s", got, twinTheme.source)
 	}
-	if got := mix(twinTheme.source, twinTheme.target, 1); got != twinTheme.target {
-		t.Errorf("target at tension 1 = %s, want %s", got, twinTheme.target)
+	if got := mix(twinTheme.target, twinTheme.text, 0); got != twinTheme.target {
+		t.Errorf("target at merge 0 = %s, want %s", got, twinTheme.target)
 	}
 	if got := mix(twinTheme.source, twinTheme.text, 1); got != twinTheme.text {
-		t.Errorf("overlap at tension 1 = %s, want %s", got, twinTheme.text)
+		t.Errorf("source at merge 1 = %s, want %s", got, twinTheme.text)
+	}
+	if got := mix(twinTheme.target, twinTheme.text, 1); got != twinTheme.text {
+		t.Errorf("target at merge 1 = %s, want %s", got, twinTheme.text)
+	}
+}
+
+// In register there is no seam left to colour: every inked sub-pixel belongs to
+// both copies, so the closing frame is the session's own white and nothing
+// else. This is the frame that stays in scrollback.
+func TestMergedFrameIsOneColour(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+
+	for sub := range faceSubRows {
+		for col := range logoWidth() {
+			if s := stateAt(sub, col, 0); s != bare && s != shared {
+				t.Fatalf("sub-pixel (%d,%d) is %v in register, want bare or shared", sub, col, s)
+			}
+		}
+	}
+	frame := restFrame()
+	for _, agent := range []lipgloss.Color{twinTheme.source, twinTheme.target} {
+		if strings.Contains(frame, colorOf(t, agent)) {
+			t.Errorf("the merged mark still carries %s", agent)
+		}
+	}
+	if !strings.Contains(frame, colorOf(t, twinTheme.text)) {
+		t.Error("the merged mark is not drawn in the session's colour")
 	}
 }
 
@@ -217,14 +292,14 @@ func TestEveryCellPacksItsTwoSubPixels(t *testing.T) {
 
 	for _, beat := range goodbyeScript {
 		for row := range markHeight() {
-			cells := []rune(ansi.Strip(markRow(row, logoWidth(), beat.dx, previewInk)))
+			cells := []rune(ansi.Strip(markRow(row, logoWidth(), rowGap(row, beat.gap, beat.tear), previewInk)))
 			if len(cells) != logoWidth() {
-				t.Fatalf("dx=%d row %d renders %d cells, want %d",
-					beat.dx, row, len(cells), logoWidth())
+				t.Fatalf("gap=%d row %d renders %d cells, want %d",
+					beat.gap, row, len(cells), logoWidth())
 			}
 			for col, got := range cells {
-				top := stateAt(2*row, col, beat.dx)
-				bottom := stateAt(2*row+1, col, beat.dx)
+				top := stateAt(2*row, col, rowGap(row, beat.gap, beat.tear))
+				bottom := stateAt(2*row+1, col, rowGap(row, beat.gap, beat.tear))
 
 				var want rune
 				switch {
@@ -245,8 +320,8 @@ func TestEveryCellPacksItsTwoSubPixels(t *testing.T) {
 					want = '▄'
 				}
 				if got != want {
-					t.Fatalf("dx=%d cell (%d,%d) is %q, want %q for states %v/%v",
-						beat.dx, row, col, got, want, top, bottom)
+					t.Fatalf("gap=%d cell (%d,%d) is %q, want %q for states %v/%v",
+						beat.gap, row, col, got, want, top, bottom)
 				}
 			}
 		}
@@ -308,21 +383,21 @@ func TestBackgroundsOnlyAppearWhereTwoAgentsShareACell(t *testing.T) {
 		for row := range markHeight() {
 			var wantBG int
 			for col := range logoWidth() {
-				top := stateAt(2*row, col, beat.dx)
-				bottom := stateAt(2*row+1, col, beat.dx)
+				top := stateAt(2*row, col, rowGap(row, beat.gap, beat.tear))
+				bottom := stateAt(2*row+1, col, rowGap(row, beat.gap, beat.tear))
 				if top != bare && bottom != bare && top != bottom {
 					wantBG++
 				}
 			}
-			line := markRow(row, logoWidth(), beat.dx, previewInk)
+			line := markRow(row, logoWidth(), rowGap(row, beat.gap, beat.tear), previewInk)
 			gotBG := countBackgroundRuns(line)
 			if wantBG == 0 && gotBG != 0 {
-				t.Errorf("dx=%d row %d paints %d backgrounds but no cell needs one",
-					beat.dx, row, gotBG)
+				t.Errorf("gap=%d row %d paints %d backgrounds but no cell needs one",
+					beat.gap, row, gotBG)
 			}
 			if wantBG > 0 && gotBG == 0 {
-				t.Errorf("dx=%d row %d needs a background on %d cells but paints none",
-					beat.dx, row, wantBG)
+				t.Errorf("gap=%d row %d needs a background on %d cells but paints none",
+					beat.gap, row, wantBG)
 			}
 		}
 	}
@@ -338,7 +413,9 @@ func TestStyledRunsAreLeavesAndNeverNest(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
 
 	for row := range markHeight() {
-		line := markRow(row, logoWidth(), ghostRest, previewInk)
+		// ghostClose is the worst case: overlapping but not merged is where the
+		// most cells carry two different agents' ink, and so a background.
+		line := markRow(row, logoWidth(), ghostClose, previewInk)
 		var depth int
 		for i := 0; i < len(line); {
 			switch {

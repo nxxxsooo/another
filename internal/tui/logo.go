@@ -28,6 +28,12 @@ import (
 // presence — and the same channel-split language the README's hero banner uses,
 // so the goodbye and the landing image read as one mark.
 //
+// The split is the goodbye's opening state, not its resting one. The animation
+// closes the gap until the two copies are in register and the mark is only the
+// white they shared all along; see goodbyeScript for why it runs that way. The
+// channel-split reading therefore lives in the motion and in the README hero,
+// while what stays in a terminal's scrollback is the merged word.
+//
 // The overlap is twinTheme.text rather than twinTheme.intersection, even though
 // the palette names the latter for exactly this job. The brand asks the
 // intersection to bloom brighter than both forms, and #68FFD6 only blooms
@@ -50,13 +56,21 @@ const (
 	logoWord    = "another"
 	logoTagline = "Keep the session. Change the agent."
 
-	// ghostShift is the furthest the target copy ever travels from the source
-	// copy, and so the extra width every frame reserves. ghostRest is where it
-	// settles: one cell is half a stem, which leaves the word legible with a
-	// coloured fringe down each edge, while the wider overshoot only happens in
-	// passing.
-	ghostShift = 2
-	ghostRest  = 1
+	// ghostShift is the gap the two copies open at, and so the extra width
+	// every frame reserves. Four cells is the narrowest gap that reads as two
+	// copies: at two the stems of one land in the counters of the other and
+	// the word thickens into a single two-toned blob, which says "bold"
+	// rather than "twice".
+	//
+	// It is even because the copies close symmetrically. Each step halves the
+	// gap into whole cells on both sides, so an odd gap would move one copy
+	// and leave the other standing, and the pair would drift across the block
+	// instead of meeting in it.
+	//
+	// ghostClose is the beat between: the two marks overlapping but not yet
+	// one, which is where their colours start giving way.
+	ghostShift = 4
+	ghostClose = 2
 )
 
 // inkState is what a single sub-pixel belongs to once the two offset copies of
@@ -97,9 +111,9 @@ func rgbOf(c lipgloss.Color) (r, g, b int) {
 	return int(v>>16) & 0xFF, int(v>>8) & 0xFF, int(v) & 0xFF
 }
 
-// mix walks from one theme colour to another. The two agents are the same
-// session, so their colours share a path rather than sitting as two unrelated
-// hues that happen to appear together.
+// mix walks from one theme colour to another. Both agents walk toward the same
+// destination, so their colours share a path rather than sitting as two
+// unrelated hues that happen to appear together.
 func mix(from, to lipgloss.Color, t float64) lipgloss.Color {
 	fr, fg, fb := rgbOf(from)
 	tr, tg, tb := rgbOf(to)
@@ -116,11 +130,47 @@ func faceInk(subRow, col int) bool {
 	return faceBits[subRow][col] == '#'
 }
 
-// stateAt overlays the source copy at rest with the target copy shifted right
-// by dx and reports what the sub-pixel at (subRow, col) now belongs to.
-func stateAt(subRow, col, dx int) inkState {
-	src := faceInk(subRow, col)
-	dst := faceInk(subRow, col-dx)
+// pairOffsets places the two copies gap cells apart and centred in the width
+// the block reserves. Centring is what makes the close symmetric: the source
+// walks in from the left and the target from the right by the same number of
+// cells, and they meet in the middle of the block rather than the target
+// sliding across a stationary source.
+func pairOffsets(gap int) (source, target int) {
+	left := (logoWidth() - markWidth - gap) / 2
+	return left, left + gap
+}
+
+// tearBands is how far each row of the mark leads or lags the gap the frame
+// nominally has. It is a fixed pattern rather than noise because every frame
+// has to be reproducible: the README GIF is rendered from this same table by
+// scripts/render-goodbye-gif.py, and a goodbye that came out differently each
+// time could not be checked against anything.
+//
+// The pattern is deliberately uneven. Strict alternation reads as a texture —
+// a striped mark — while bands of unequal throw read as one word being pulled
+// apart, which is the point.
+var tearBands = [...]int{0, +1, -1, +2, -1}
+
+// rowGap is the gap one row is drawn at. tear scales the bands, so tear zero
+// is a clean frame and larger values rip the word further open.
+//
+// The result is clamped, which is load-bearing rather than defensive: outside
+// this range a copy hangs past the reserved width and is clipped mid-stroke.
+// Clamping also gives the tear its bite at the extremes — at a small gap the
+// leading bands are still split while the rest have already merged.
+func rowGap(cellRow, gap, tear int) int {
+	if tear == 0 {
+		return gap
+	}
+	return min(max(gap+tear*tearBands[cellRow%len(tearBands)], 0), ghostShift)
+}
+
+// stateAt overlays the two copies gap cells apart and reports what the
+// sub-pixel at (subRow, col) now belongs to.
+func stateAt(subRow, col, gap int) inkState {
+	srcAt, dstAt := pairOffsets(gap)
+	src := faceInk(subRow, col-srcAt)
+	dst := faceInk(subRow, col-dstAt)
 	switch {
 	case src && dst:
 		return shared
@@ -138,7 +188,7 @@ func stateAt(subRow, col, dx int) inkState {
 // in the background, which is the only way a terminal cell holds two colours at
 // once. Cells that share a colour pair are emitted as a single styled run so a
 // frame costs a handful of escape sequences instead of one per column.
-func markRow(cellRow, width, dx int, ink [4]lipgloss.Color) string {
+func markRow(cellRow, width, gap int, ink [4]lipgloss.Color) string {
 	var (
 		out    strings.Builder
 		run    []rune
@@ -165,8 +215,8 @@ func markRow(cellRow, width, dx int, ink [4]lipgloss.Color) string {
 	}
 
 	for col := range width {
-		top := stateAt(2*cellRow, col, dx)
-		bottom := stateAt(2*cellRow+1, col, dx)
+		top := stateAt(2*cellRow, col, gap)
+		bottom := stateAt(2*cellRow+1, col, gap)
 
 		var (
 			glyph  rune
@@ -218,56 +268,87 @@ func pad(s string, width int) string {
 	return s
 }
 
-// renderFrame draws one moment of the goodbye. dx displaces the target copy by
-// whole cells, because a terminal cannot slide half a column; tension separates
-// the two states by colour, which terminals can interpolate. At tension zero
-// every state resolves to the source colour, so the mark is one agent's, whole
-// and single, however far the copies have already moved.
-func renderFrame(dx int, tension float64) string {
+// renderFrame draws one moment of the goodbye. gap is how far apart the two
+// copies stand, in whole cells, because a terminal cannot slide half a column.
+// merge is how far the two agents have given way to the session they both
+// hold: at zero each copy is its own agent's colour, at one both have arrived
+// at the white the overlap has been all along. tear pulls the rows off that
+// single gap so the word can come apart across scanlines on the way in.
+//
+// The overlap does not move. It is the part of the session both agents hold,
+// so it is white from the first frame, and merging is the rest of the mark
+// catching up to it rather than a third colour arriving from somewhere.
+func renderFrame(gap int, merge float64, tear int) string {
 	width := logoWidth()
 	ink := [4]lipgloss.Color{
 		bare:       lipgloss.Color(""),
-		sourceOnly: twinTheme.source,
-		targetOnly: mix(twinTheme.source, twinTheme.target, tension),
-		shared:     mix(twinTheme.source, twinTheme.text, tension),
+		sourceOnly: mix(twinTheme.source, twinTheme.text, merge),
+		targetOnly: mix(twinTheme.target, twinTheme.text, merge),
+		shared:     twinTheme.text,
 	}
 
 	lines := make([]string, 0, logoHeight())
 	for row := range markHeight() {
-		lines = append(lines, markRow(row, width, dx, ink))
+		lines = append(lines, markRow(row, width, rowGap(row, gap, tear), ink))
 	}
 	lines = append(lines, captionRow(width))
 	return strings.Join(lines, "\n")
 }
 
-// restFrame is the settled mark: the session shown in both places at once. It
-// is the frame the terminal keeps in its scrollback, so it is the one that has
-// to carry the whole idea on its own.
-func restFrame() string { return renderFrame(ghostRest, 1) }
+// restFrame is the settled mark: one word, in the colour of the session
+// itself. It is the frame the terminal keeps in its scrollback, so it is the
+// one that has to carry the whole idea on its own.
+func restFrame() string { return renderFrame(0, 1, 0) }
 
 // goodbyeScript is the whole story, and it is told in that order for a reason.
 //
-// While the copies are still in register every inked sub-pixel is shared, so
-// tension alone drives the mark from the source agent's violet up to the plain
-// white of the session itself: the handoff, before anything has moved. Only
-// then do the copies separate, overshoot by a single frame, and settle a cell
-// apart. The white core survives the split as the session both agents now hold,
-// with one agent's colour fringing each edge.
+// It opens with the session standing in two places: two copies of the mark a
+// clear gap apart, one in the source agent's violet and one in the target's
+// mint. That is the state a migration leaves behind, and it is where the
+// goodbye starts because it is what just happened.
 //
-// It ends split on purpose. The goodbye prints after a migration has already
-// happened, and a mark that snapped back to one colour would say the opposite.
+// Then they close on each other, each walking the same distance toward the
+// middle, and as they overlap their colours give way to the white they share.
+// It does not close cleanly: the rows tear off the shared gap on the way in,
+// so for a few frames the word is split in some bands and already merged in
+// others. A migration is not a smooth dissolve, and the mark should not claim
+// it was one.
+//
+// The last beat drops the tear and brings both copies into register, where
+// every inked sub-pixel belongs to both and the mark is simply the session,
+// whole, under a line that says Keep the session.
+//
+// It ends unified on purpose. Both agents held this conversation, and neither
+// is what survives the handoff; a mark that stayed split would keep insisting
+// on the seam after the point of the tool is that there isn't one.
+//
+// There is no hold on the final beat. The frame stays on screen once the
+// animation stops, so repeating it would only be dead time before the prompt
+// comes back — the whole goodbye has to be over before it is in the way.
 var goodbyeScript = []struct {
-	dx      int
-	tension float64
+	gap   int
+	merge float64
+	tear  int
 }{
-	{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0},
-	{0, 0.45}, {0, 1},
-	{1, 1}, {2, 1},
-	{1, 1}, {1, 1}, {1, 1}, {1, 1},
-	{ghostRest, 1},
+	{ghostShift, 0, 0}, {ghostShift, 0, 0},
+	{ghostShift, 0, 2}, {ghostShift, 0, 1},
+	{ghostClose, 0, 2}, {ghostClose, 0.2, 1},
+	{ghostClose, 0.45, 2}, {ghostClose, 0.7, 1},
+	{0, 0.85, 2}, {0, 1, 1},
+	{0, 1, 0},
 }
 
-const frameDelay = 42 * time.Millisecond
+// frameDelay is a 50fps beat. The goodbye runs while the user is already on
+// their way somewhere else, so it buys its expressiveness with more frames
+// rather than with more of their time.
+//
+// It does not go below 20ms, and the floor comes from the README rather than
+// from the terminal. GIF stores a frame delay in centiseconds, so anything
+// under 20ms rounds to one, and browsers have clamped a one-centisecond delay
+// to a tenth of a second since the days of animated under-construction
+// banners. A 17ms goodbye would play correctly here and ten times too slow in
+// the README; scripts/render-goodbye-gif.py refuses to render below this.
+const frameDelay = 20 * time.Millisecond
 
 // renderFarewell is the still image, used when motion is unavailable or
 // unwanted. It falls back to the compact framed banner when the terminal is too
@@ -305,12 +386,12 @@ func playFarewell(w io.Writer, termWidth, termHeight int, animate bool) {
 		fmt.Fprintln(w, renderFarewell(termWidth))
 		return
 	}
-	fmt.Fprint(w, "\n"+renderFrame(goodbyeScript[0].dx, goodbyeScript[0].tension)+"\n")
+	fmt.Fprint(w, "\n"+renderFrame(goodbyeScript[0].gap, goodbyeScript[0].merge, goodbyeScript[0].tear)+"\n")
 	for _, f := range goodbyeScript[1:] {
 		time.Sleep(frameDelay)
 		// Up over the block, wipe what follows, repaint.
 		fmt.Fprintf(w, "\x1b[%dA\r\x1b[0J", logoHeight())
-		fmt.Fprint(w, renderFrame(f.dx, f.tension)+"\n")
+		fmt.Fprint(w, renderFrame(f.gap, f.merge, f.tear)+"\n")
 	}
 	fmt.Fprintln(w)
 }

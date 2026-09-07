@@ -26,6 +26,12 @@ OUTPUT = ROOT / "docs" / "assets" / "tui-goodbye.gif"
 STILL = ROOT / "docs" / "assets" / "tui-goodbye-static.png"
 
 CELL_W, CELL_H, PAD = 8, 16, 18
+# How long the looping GIF rests on the merged mark before starting over.
+END_HOLD_MS = 1200
+# GIF stores a frame delay in centiseconds, and browsers clamp a delay of one
+# centisecond to 100ms. A faster script would play correctly in the terminal
+# and ten times too slow in the README, so fail loudly instead of shipping it.
+MIN_FRAME_MS = 20
 SURFACE = (10, 10, 10)
 CHARPLE = (107, 80, 255)   # the agent the session came from
 JULEP = (0, 255, 178)      # the agent it went to
@@ -54,20 +60,24 @@ def load_design() -> dict:
     def const_int(name: str) -> int:
         return int(re.search(rf"\b{name}\s*=\s*(\d+)", src).group(1))
 
-    consts = {name: const_int(name) for name in ("ghostShift", "ghostRest")}
+    consts = {name: const_int(name) for name in ("ghostShift", "ghostClose")}
+
+    bands = re.search(r"var tearBands = \[\.\.\.\]int\{(.*?)\}", src).group(1)
+    tear_bands = [int(v) for v in re.findall(r"[+-]?\d+", bands)]
 
     # Skip past the anonymous struct's field list to the literal's body.
     block = re.search(r"var goodbyeScript = \[\]struct \{.*?\}\{\n(.*?)\n\}", src, re.S).group(1)
     beats = []
-    for shift, tension in re.findall(r"\{(\w+),\s*([0-9.]+)\}", block):
+    for gap, merge, tear in re.findall(r"\{(\w+),\s*([0-9.]+),\s*(\d+)\}", block):
         # A beat may name a constant instead of spelling out the number.
-        beats.append((consts[shift] if shift in consts else int(shift), float(tension)))
+        beats.append((consts[gap] if gap in consts else int(gap), float(merge), int(tear)))
     if not beats:
         raise SystemExit("could not read goodbyeScript from logo.go")
 
     return {
         "shift": consts["ghostShift"],
-        "rest": consts["ghostRest"],
+        "close": consts["ghostClose"],
+        "tear_bands": tear_bands,
         "tagline": re.search(r'logoTagline\s*=\s*"(.*?)"', src).group(1),
         "frame_ms": const_int("frameDelay"),
         "beats": beats,
@@ -90,12 +100,18 @@ def lerp(a, b, t):
     return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
-def state_at(rows, width, sub_row, col, dx):
-    """Overlay the source copy with the target copy shifted right by dx."""
+def state_at(rows, width, sub_row, col, gap, reserve):
+    """Overlay the two copies gap cells apart, centred in the reserved width.
+
+    Mirrors pairOffsets and stateAt in logo.go: the copies close on each other
+    symmetrically, so neither one is the stationary reference.
+    """
+    left = (reserve - gap) // 2
+
     def ink(c):
         return 0 <= c < width and rows[sub_row][c] == "#"
 
-    src, dst = ink(col), ink(col - dx)
+    src, dst = ink(col - left), ink(col - left - gap)
     if src and dst:
         return SHARED
     if src:
@@ -105,11 +121,21 @@ def state_at(rows, width, sub_row, col, dx):
     return BARE
 
 
-def frame(rows, face_width, total, dx, tension, font, design, version):
+def row_gap(cell_row, gap, tear, design):
+    """Mirrors rowGap in logo.go: the tear pulls each row off the frame's gap."""
+    if tear == 0:
+        return gap
+    bands = design["tear_bands"]
+    return max(0, min(gap + tear * bands[cell_row % len(bands)], design["shift"]))
+
+
+def frame(rows, face_width, total, gap, merge, tear, font, design, version):
+    # Mirrors renderFrame in logo.go: the overlap is the session and never
+    # moves, while merge walks each agent's own colour toward it.
     palette = {
-        SOURCE_ONLY: CHARPLE,
-        TARGET_ONLY: lerp(CHARPLE, JULEP, tension),
-        SHARED: lerp(CHARPLE, TEXT, tension),
+        SOURCE_ONLY: lerp(CHARPLE, TEXT, merge),
+        TARGET_ONLY: lerp(JULEP, TEXT, merge),
+        SHARED: TEXT,
     }
     cell_rows = len(rows) // 2
 
@@ -119,9 +145,10 @@ def frame(rows, face_width, total, dx, tension, font, design, version):
     half = CELL_H // 2
 
     for row in range(cell_rows):
+        g = row_gap(row, gap, tear, design)
         for col in range(total):
-            top = state_at(rows, face_width, 2 * row, col, dx)
-            bottom = state_at(rows, face_width, 2 * row + 1, col, dx)
+            top = state_at(rows, face_width, 2 * row, col, g, design["shift"])
+            bottom = state_at(rows, face_width, 2 * row + 1, col, g, design["shift"])
             x0, y0 = PAD + col * CELL_W, PAD + row * CELL_H
             if top != BARE:
                 d.rectangle([x0, y0, x0 + CELL_W - 1, y0 + half - 1], fill=palette[top])
@@ -143,16 +170,27 @@ def main() -> None:
     total = face_width + design["shift"]
     version = project_version()
     font = ImageFont.truetype("/System/Library/Fonts/Menlo.ttc", 13)
-    frames = [frame(rows, face_width, total, dx, tension, font, design, version)
-              for dx, tension in design["beats"]]
+    frames = [frame(rows, face_width, total, gap, merge, tear, font, design, version)
+              for gap, merge, tear in design["beats"]]
+    # The script holds nothing at the end, because in a terminal the last frame
+    # simply stays there. A GIF loops instead, so the settled mark needs a hold
+    # of its own or the thing the animation is about flashes past.
+    if design["frame_ms"] < MIN_FRAME_MS:
+        raise SystemExit(
+            f"frameDelay is {design['frame_ms']}ms; below {MIN_FRAME_MS}ms a GIF "
+            "frame rounds to one centisecond and browsers clamp it to 100ms"
+        )
+    durations = [design["frame_ms"]] * len(frames)
+    durations[-1] = END_HOLD_MS
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     frames[0].save(OUTPUT, save_all=True, append_images=frames[1:],
-                   duration=design["frame_ms"], loop=0, optimize=True)
+                   duration=durations, loop=0, optimize=True)
     # The reduced-motion still is the settled frame, the same one the terminal
     # keeps in its scrollback.
     frames[-1].save(STILL)
     print(f"{OUTPUT.relative_to(ROOT)}  {frames[0].size[0]}x{frames[0].size[1]}  "
-          f"{len(frames)} frames @ {design['frame_ms']}ms  "
+          f"{len(frames)} frames @ {design['frame_ms']}ms "
+          f"(+{END_HOLD_MS}ms hold), motion {sum(durations[:-1])}ms, "
           f"{OUTPUT.stat().st_size // 1024} KB")
     print(f"{STILL.relative_to(ROOT)}  {STILL.stat().st_size // 1024} KB")
 
