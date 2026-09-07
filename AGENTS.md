@@ -11,7 +11,7 @@ For every release, update and verify the full release-surface matrix:
 3. **GitHub Release** — create the version tag on the verified commit, publish release notes, wait for release automation, and verify downloadable artifacts and checksums.
 4. **Homebrew** — verify the generated Cask update in the public `nxxxsooo/homebrew-tap`, then test the real consumer upgrade path.
 5. **Local installation** — update Mingjian's installed `another` through its real installation source and verify both `which another` and `another --version`; a successful remote release does not imply the local binary changed.
-6. **Project website** — once the website exists, update both the release blog post and the project case page for every release. Until then, report this surface as not yet available rather than silently omitting it or claiming full cross-surface publication.
+6. **Project website** — the site is live at `https://mjshao.fun/another` (landing page `mjshao-portfolio/public/another/index.html`, case page `src/app/work/projects/another.mdx`, release post `src/app/blog/posts/another-migrate-coding-agent-sessions.mdx`). Update all three for every release, including the version string, then verify each through the deployed URL.
 7. **WeChat Official Account** — prepare the matching release article and verify it in the draft box for every release. Public broadcast requires Mingjian's explicit confirmation.
 
 Before publishing, record the target version and all surfaces. Do not mix unexplained working-tree changes into a release. Do not report “released”, “published”, or “fully updated” until every applicable surface has been verified through its consumer-facing entry point; report partial success and blocked or unavailable surfaces explicitly.
