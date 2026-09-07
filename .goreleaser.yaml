@@ -44,15 +44,32 @@ homebrew_casks:
     description: "Browse and manage coding-agent sessions, or move one into another agent"
     license: MIT
     binaries: [another]
-    hooks:
-      post:
-        # These binaries are unsigned, so macOS quarantines them on download and
-        # Gatekeeper kills the first run. Strip the attribute the way Homebrew
-        # documents for unsigned casks.
-        install: |
-          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status.zero?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/another"]
-          end
+    # These binaries are unsigned, so Homebrew quarantines them on download and
+    # Gatekeeper kills the first run. Verified on a scratch tap: without this
+    # the staged binary carries com.apple.quarantine, with it the attribute is
+    # gone before the first run.
+    #
+    # Written as a custom block rather than through `hooks.post.install`,
+    # because goreleaser renders that hook as `postflight`, which Homebrew now
+    # deprecates in favour of `postflight_steps` — and prints a warning on every
+    # `brew upgrade` telling the user to report it to this tap. There is no
+    # declarative step for removing quarantine, so this is `run` with paths
+    # resolved the way the step DSL resolves them: chdir and writable_paths are
+    # relative to the staged path. must_succeed is false so a machine without
+    # xattr still installs, which is what the old hook's `xattr -h` guard did.
+    #
+    # goreleaser emits custom_block directly after `cask ... do`, which puts
+    # this stanza before `version` and makes `brew style` report every stanza as
+    # out of order. That is the trade: a lint only this repository ever runs, in
+    # exchange for a deprecation warning every user saw on every upgrade.
+    custom_block: |
+      postflight_steps do
+        run "/usr/bin/xattr",
+            args:           ["-dr", "com.apple.quarantine", "another"],
+            chdir:          ".",
+            writable_paths: ["another"],
+            must_succeed:   false
+      end
     zap:
       trash:
         # Only on `brew uninstall --zap`. These are the two directories another
