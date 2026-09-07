@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -15,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/migrate"
@@ -1037,5 +1039,53 @@ func TestResizeAsksForAClearScreen(t *testing.T) {
 	}
 	if cmd() != tea.ClearScreen() {
 		t.Fatalf("the setup repaint is not a clear: %T", cmd())
+	}
+}
+
+// nerdWidth models the terminal this has to survive: ambiguous characters stay
+// narrow, which is what both Ghostty and the app's own width table assume, but
+// a private-use glyph from a Nerd Font is drawn two cells wide while every
+// width table can only call it one.
+func nerdWidth(s string) int {
+	narrow := runewidth.NewCondition()
+	narrow.EastAsianWidth = false
+	w := narrow.StringWidth(s)
+	for _, r := range s {
+		if unicode.In(r, unicode.Co) {
+			w++
+		}
+	}
+	return w
+}
+
+// The row that broke the browser in a folder holding several projects: a Qwen
+// session whose title was a captured Nerd Font prompt. The glyphs measured one
+// cell and drew two, so the row escaped its pane, the terminal wrapped it, and
+// every frame after that landed one line off — the previous frame stayed on
+// screen underneath.
+func TestPromptGlyphsCannotWidenARow(t *testing.T) {
+	marked := map[string]bool{}
+	items := []list.Item{
+		sessionItem{summary: model.Summary{
+			ID: "prompt", Provider: "qwen", MessageCount: 134,
+			Title:       "\ue0b6\U000f0035 mingjian \ue0b0 ~/\U000f0219 /sync \ue0b0\ue0b0\ue0b0 \uf43a 02:03 \ue0b4 \uf432 codex Error loading",
+			ProjectPath: "/Users/mingjian/Documents/sync",
+		}},
+		sessionItem{summary: model.Summary{
+			ID: "plain", Provider: "codex", MessageCount: 12,
+			Title: "A useful title", ProjectPath: "/tmp/project",
+		}},
+	}
+
+	for w := 40; w <= 200; w++ {
+		for _, showProject := range []bool{false, true} {
+			l := newBareList(items, sessionDelegate{marked: marked, showProject: showProject}, w, 4)
+			for _, line := range strings.Split(l.View(), "\n") {
+				if got := nerdWidth(ansi.Strip(line)); got > w {
+					t.Fatalf("width %d project=%v: row draws %d cells: %q",
+						w, showProject, got, ansi.Strip(line))
+				}
+			}
+		}
 	}
 }

@@ -86,7 +86,10 @@ func (i sessionItem) displayTitle() string {
 			title = "(untitled)"
 		}
 	}
-	return strings.ReplaceAll(title, "\n", " ")
+	// A title can be a captured shell prompt, and the glyphs in one have a
+	// width only the font knows. Measuring a row that contains them is what
+	// puts the previous frame on screen; see util.SanitizeDisplay.
+	return util.SanitizeDisplay(title)
 }
 
 func (i sessionItem) FilterValue() string {
@@ -205,7 +208,7 @@ func renderProjectCellState(path string, width int, missing bool) string {
 		return barStyle.Render(projectBar) + strings.Repeat(" ", width-1)
 	}
 
-	shown := util.TildePath(path)
+	shown := util.SanitizeDisplay(util.TildePath(path))
 	textW := width - 2
 	leaf := shown
 	parent := ""
@@ -2134,7 +2137,7 @@ func isCurrentSession(sm model.Summary) bool {
 }
 
 func truncateDisplay(s string, n int) string {
-	s = strings.ReplaceAll(strings.TrimSpace(s), "\n", " ")
+	s = util.SanitizeDisplay(s)
 	if s == "" {
 		return "(untitled)"
 	}
