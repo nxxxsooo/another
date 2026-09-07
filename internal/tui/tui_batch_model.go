@@ -42,7 +42,7 @@ func (m modelState) openBatchModelPicker() (tea.Model, tea.Cmd) {
 	if !titler.CanListModels(cfg.Provider) {
 		m.batchModelPicking = false
 		m.batchModelEditing = true
-		m.batchModelErr = titler.Command(cfg.Provider) + " 不支持列出模型"
+		m.batchModelErr = fmt.Sprintf(txt.modelListUnsupported, titler.Command(cfg.Provider))
 		m.batchModelInput.Focus()
 		return m, textinput.Blink
 	}
@@ -129,7 +129,7 @@ func (m modelState) updateBatchModelPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 func (m modelState) applyBatchModel(chosen string) (tea.Model, tea.Cmd) {
 	cfg := m.batchConfig()
 	if chosen == cfg.Model {
-		m.status = "模型未变，保留现有结果"
+		m.status = txt.batchModelUnchanged
 		return m, nil
 	}
 	cfg.Model = chosen
@@ -145,8 +145,8 @@ func (m modelState) applyBatchModel(chosen string) (tea.Model, tea.Cmd) {
 func (m modelState) batchModelView(inner int) string {
 	var b strings.Builder
 	if m.batchModelLoading {
-		b.WriteString(mutedStyle.Render("正在向 "+titler.Command(m.batchConfig().Provider)+" 获取模型列表…") + "\n")
-		b.WriteString(mutedStyle.Render("esc 返回"))
+		b.WriteString(mutedStyle.Render(fmt.Sprintf(txt.setupModelLoadingFmt, titler.Command(m.batchConfig().Provider))) + "\n")
+		b.WriteString(mutedStyle.Render(txt.setupModelBack))
 		return b.String()
 	}
 	rows := m.batchModelRows()
@@ -154,17 +154,17 @@ func (m modelState) batchModelView(inner int) string {
 	for i := start; i < end; i++ {
 		label := rows[i]
 		if i == 0 {
-			label = "默认模型"
+			label = txt.defaultModel
 		}
 		b.WriteString(ansi.Truncate(modelRowLine(label, i == m.batchModelCursor), inner, "…") + "\n")
 	}
 	if hidden := len(rows) - end; hidden > 0 {
-		fmt.Fprintf(&b, "%s\n", mutedStyle.Render(fmt.Sprintf("+ 还有 %d 个，继续输入可过滤", hidden)))
+		fmt.Fprintf(&b, "%s\n", mutedStyle.Render(fmt.Sprintf(txt.setupModelMoreFmt, hidden)))
 	}
-	b.WriteString(ansi.Truncate(modelRowLine("自定义模型名", m.batchModelCursor >= m.batchCustomRow()), inner, "…") + "\n")
+	b.WriteString(ansi.Truncate(modelRowLine(txt.setupModelCustom, m.batchModelCursor >= m.batchCustomRow()), inner, "…") + "\n")
 	if m.batchModelFilter != "" {
-		b.WriteString(mutedStyle.Render("过滤："+m.batchModelFilter) + "\n")
+		b.WriteString(mutedStyle.Render(txt.setupModelFilter+m.batchModelFilter) + "\n")
 	}
-	b.WriteString(mutedStyle.Render("↑↓ 选模型  ·  输入过滤  ·  enter 换模型重跑  ·  esc 取消"))
+	b.WriteString(mutedStyle.Render(txt.helpBatchModelList))
 	return b.String()
 }

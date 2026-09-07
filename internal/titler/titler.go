@@ -148,6 +148,49 @@ func Command(providerID string) string {
 	return ""
 }
 
+// SuggestFailure names why a suggestion never reached a model, or why the
+// attempt failed. Like ListFailure, it is an identifier so the screen showing
+// it can choose the words.
+type SuggestFailure string
+
+const (
+	// SuggestNoCreatedAt refuses a session whose date cannot be proven.
+	SuggestNoCreatedAt SuggestFailure = "no-created-at"
+	// SuggestNoTitles means the agent cannot write titles at all.
+	SuggestNoTitles SuggestFailure = "no-titles"
+	// SuggestNotInstalled means the CLI is not on PATH.
+	SuggestNotInstalled SuggestFailure = "not-installed"
+	// SuggestTimedOut means the CLI did not answer within Timeout.
+	SuggestTimedOut SuggestFailure = "timed-out"
+	// SuggestFailed means the CLI failed on its own terms, and Detail
+	// carries its explanation verbatim.
+	SuggestFailed SuggestFailure = "failed"
+)
+
+// SuggestError is what a failed suggestion returns. Command names the CLI, and
+// Detail carries text only that CLI could have written.
+type SuggestError struct {
+	Reason  SuggestFailure
+	Command string
+	Detail  string
+}
+
+// Error is the untranslated form, for a caller with no interface to render it.
+func (e *SuggestError) Error() string {
+	switch e.Reason {
+	case SuggestNoCreatedAt:
+		return "the session has no creation time"
+	case SuggestNoTitles:
+		return fmt.Sprintf("%s cannot write titles", e.Command)
+	case SuggestNotInstalled:
+		return fmt.Sprintf("%s is not installed", e.Command)
+	case SuggestTimedOut:
+		return fmt.Sprintf("%s timed out", e.Command)
+	default:
+		return fmt.Sprintf("%s: %s", e.Command, e.Detail)
+	}
+}
+
 // Suggest runs the configured agent once and returns a contract-valid title,
 // or "" when the model declined or drifted. An empty result is not an error:
 // the caller shows nothing and the manual rename path is untouched.
@@ -158,15 +201,15 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 	// check runs before anything that could spend a model call, and before the
 	// CLI lookup so the refusal never depends on what is installed.
 	if req.CreatedAt.Unix() <= 0 {
-		return "", permanent(errors.New("会话缺少创建时间"))
+		return "", permanent(&SuggestError{Reason: SuggestNoCreatedAt})
 	}
 	l, ok := launchers[NormalizeID(cfg.Provider)]
 	if !ok {
-		return "", permanent(fmt.Errorf("%s 不能生成标题", cfg.Provider))
+		return "", permanent(&SuggestError{Reason: SuggestNoTitles, Command: cfg.Provider})
 	}
 	bin, err := exec.LookPath(l.command)
 	if err != nil {
-		return "", permanent(fmt.Errorf("%s 未安装", l.command))
+		return "", permanent(&SuggestError{Reason: SuggestNotInstalled, Command: l.command})
 	}
 
 	// A throwaway working directory keeps the agent out of the user's project:
@@ -189,9 +232,9 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("%s 生成超时", l.command)
+			return "", &SuggestError{Reason: SuggestTimedOut, Command: l.command}
 		}
-		return "", fmt.Errorf("%s: %s", l.command, failureReason(stderr.String(), stdout.String(), err))
+		return "", &SuggestError{Reason: SuggestFailed, Command: l.command, Detail: failureReason(stderr.String(), stdout.String(), err)}
 	}
 	return Clean(stdout.String(), lang), nil
 }

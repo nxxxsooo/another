@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/titler"
 )
@@ -70,6 +71,10 @@ type setupModel struct {
 	titleCursor int
 	modelInput  textinput.Model
 	langCursor  int
+	// uiLangCursor is the interface language, which page one both sets and
+	// immediately demonstrates: the page redraws in the language under the
+	// cursor, so the choice is verified by making it.
+	uiLangCursor int
 
 	// model* is the picker page. modelOpts is what the agent CLI itself
 	// reported; typing filters it, and the last row falls back to a name
@@ -105,10 +110,18 @@ func listModelsCmd(provider string) tea.Cmd {
 // default: titles follow the first meaningful user message unless overridden.
 var languages = []titler.Language{titler.LangAuto, titler.LangEnglish, titler.LangChinese}
 
-// RunSetup lets a person choose which agents another should index and expose.
-// The caller persists the returned IDs only after the program exits cleanly.
-func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, initialTitle *config.TitleModel, initialPolicy config.TitlePolicy) ([]string, *config.TitleModel, config.TitlePolicy, bool, error) {
-	chosen := initialSetupSelection(initial)
+// uiLanguages is the same order for the interface, where auto means the
+// terminal's locale rather than the session's content.
+var uiLanguages = []i18n.Lang{i18n.LangAuto, i18n.LangEnglish, i18n.LangChinese}
+
+// RunSetup lets a person choose which agents another should index and expose,
+// plus the two language settings. It takes and returns whole settings so a
+// preference this page does not touch survives being edited here. The caller
+// persists the result only after the program exits cleanly.
+func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Settings) (config.Settings, bool, error) {
+	initialTitle := initial.TitleModel
+	initialPolicy := initial.TitlePolicy
+	chosen := initialSetupSelection(initial.EnabledProviders)
 	var items []setupItem
 	for _, p := range reg.All() {
 		data := p.Installed()
@@ -128,17 +141,21 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 	sp.Style = accentStyle
 	modelInput := textinput.New()
 	modelInput.Prompt = ""
-	modelInput.Placeholder = "留空用该 CLI 的默认模型"
+	modelInput.Placeholder = txt.modelPlaceholder
 	modelInput.CharLimit = 120
 	start := setupModel{items: items, selected: chosen, spinner: sp, modelInput: modelInput}
 	start.showAdapters = anyAdapterSelected(items, chosen)
 	start.langCursor = languageCursor(titler.Language(initialPolicy.Language))
+	start.uiLangCursor = uiLanguageCursor(i18n.Lang(initial.UI.Language))
 	if initialTitle != nil {
 		start.modelInput.SetValue(initialTitle.Model)
 		start.titleCursor = -1 // resolved once the option list exists
 		start.titleOpts = []titleOption{{id: initialTitle.Provider}}
 		start.langCursor = languageCursor(titler.Language(initialTitle.Language))
 	}
+	// The page renders in the language it is about to offer to change, so the
+	// interface it opens in is the one already configured.
+	restoreLanguage := applyLanguage(i18n.Lang(initial.UI.Language))
 	program := tea.NewProgram(start, tea.WithAltScreen())
 	restoreInputSource := temporarilyUseASCIIInputSource()
 	defer restoreInputSource()
@@ -148,11 +165,15 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 	// returns to the shell; neither should inherit the setup screen's title.
 	restoreWindowTitle(os.Stdout)
 	if err != nil {
-		return nil, nil, config.TitlePolicy{}, false, err
+		applyLanguage(restoreLanguage)
+		return config.Settings{}, false, err
 	}
 	model, ok := final.(setupModel)
 	if !ok || model.cancelled {
-		return nil, nil, config.TitlePolicy{}, false, nil
+		// A cancelled run changes nothing, including the language the rest of
+		// this process speaks.
+		applyLanguage(restoreLanguage)
+		return config.Settings{}, false, nil
 	}
 	var enabled []string
 	for _, item := range model.items {
@@ -160,7 +181,12 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial []string, i
 			enabled = append(enabled, item.id)
 		}
 	}
-	return enabled, model.titleModel(), config.TitlePolicy{Language: string(model.language())}, model.done, nil
+	saved := initial
+	saved.EnabledProviders = enabled
+	saved.TitleModel = model.titleModel()
+	saved.TitlePolicy = config.TitlePolicy{Language: string(model.language())}
+	saved.UI = config.UI{Language: string(model.uiLanguage())}
+	return saved, model.done, nil
 }
 
 // anyAdapterSelected reports whether the saved configuration already enables a
@@ -269,11 +295,31 @@ func languageCursor(lang titler.Language) int {
 	return 0
 }
 
+// uiLanguage reads the chosen interface language back out.
+func (m setupModel) uiLanguage() i18n.Lang {
+	if m.uiLangCursor < 0 || m.uiLangCursor >= len(uiLanguages) {
+		return i18n.LangAuto
+	}
+	return uiLanguages[m.uiLangCursor]
+}
+
+// uiLanguageCursor puts the cursor back on a previously saved interface
+// language. An unset preference lands on auto, which is where it started.
+func uiLanguageCursor(lang i18n.Lang) int {
+	want := i18n.Normalize(lang)
+	for i, l := range uiLanguages {
+		if l == want {
+			return i
+		}
+	}
+	return 0
+}
+
 // titleOptions offers only agents that survived page one and can actually run
 // a one-shot prompt right now. Listing an agent whose CLI is missing would
 // only produce a failure at rename time.
 func titleOptions(items []setupItem, selected map[string]bool) []titleOption {
-	opts := []titleOption{{name: "不启用"}}
+	opts := []titleOption{{name: txt.setupTitleOff}}
 	for _, item := range items {
 		if !selected[item.id] || !titler.Available(item.id) {
 			continue
@@ -315,7 +361,7 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			// A CLI that cannot answer right now is not a dead end: the page
 			// says why and falls back to typing a name.
-			m.modelErr = msg.err.Error()
+			m.modelErr = listErrorText(msg.err)
 			m.modelTyping = true
 			m.modelInput.Focus()
 			return m, textinput.Blink
@@ -340,6 +386,18 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.reorder(-1), nil
 		case "shift+down":
 			return m.reorder(1), nil
+		case "left", "right":
+			// The interface language sits above the list rather than in it:
+			// the cursor belongs to the agents, and arrows are free here
+			// because page one never moves horizontally.
+			step := 1
+			if msg.String() == "left" {
+				step = -1
+			}
+			m.uiLangCursor = (m.uiLangCursor + step + len(uiLanguages)) % len(uiLanguages)
+			applyLanguage(m.uiLanguage())
+			m.err = ""
+			return m, nil
 		case "up", "k":
 			if n := len(m.rows()); n > 0 {
 				m.cursor = (m.cursor - 1 + n) % n
@@ -359,14 +417,14 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			item := m.items[index]
 			if !item.available {
-				m.err = item.name + " 未检测到 CLI 或会话数据"
+				m.err = fmt.Sprintf(txt.setupUnavailable, item.name)
 				return m, nil
 			}
 			m.selected[item.id] = !m.selected[item.id]
 			m.err = ""
 		case "enter":
 			if selectedCount(m.selected) == 0 {
-				m.err = "至少选择一个 agent"
+				m.err = txt.setupPickOne
 				return m, nil
 			}
 			m.err = ""
@@ -452,7 +510,7 @@ func selectedCount(selected map[string]bool) int {
 
 func (m setupModel) View() string {
 	if m.width < 48 || m.height < 20 {
-		return ansi.Truncate("Terminal too small — resize to at least 48x20", max(1, m.width), "")
+		return ansi.Truncate(txt.terminalTooSmall, max(1, m.width), "")
 	}
 	// The panel keeps its padding and border out of the text area, so rows are
 	// cut to what is left inside it. Truncating to the outer width instead lets
@@ -468,8 +526,9 @@ func (m setupModel) View() string {
 	}
 	var body strings.Builder
 	body.WriteString(accentStyle.Render("another setup") + "\n")
-	body.WriteString(titleStyle.Render("选择你使用的 agent") + "  " + mutedStyle.Render(fmt.Sprintf("%d / %d", selectedCount(m.selected), len(m.items))) + "\n")
-	body.WriteString(mutedStyle.Render("Space 开关 agent；Shift+↑↓ 调整显示顺序。") + "\n\n")
+	body.WriteString(titleStyle.Render(txt.setupAgentsTitle) + "  " + mutedStyle.Render(fmt.Sprintf("%d / %d", selectedCount(m.selected), len(m.items))) + "\n")
+	body.WriteString(mutedStyle.Render(txt.setupAgentsHint) + "\n")
+	body.WriteString(mutedStyle.Render(txt.setupInterface) + "  " + m.uiLanguageRow() + "\n")
 	for row, index := range m.rows() {
 		cursor := "  "
 		if row == m.cursor {
@@ -484,22 +543,22 @@ func (m setupModel) View() string {
 		if m.selected[item.id] {
 			mark = okStyle.Render("●")
 		}
-		name := padRight(item.name, 16)
+		name := padRight(item.name, txt.setupNameWidth)
 		if color, ok := providerColors[item.id]; ok {
 			name = lipgloss.NewStyle().Foreground(color).Bold(row == m.cursor).Render(name)
 		}
 		// Setup is where an agent is met for the first time, so the chip the
 		// session list will use is shown next to the name it stands for.
 		name = renderAgentChip(item.id) + " " + name
-		cli := "CLI 未安装"
+		cli := txt.setupCLIMissing
 		if item.cli {
-			cli = "CLI 已安装"
+			cli = txt.setupCLIFound
 		}
-		data := fmt.Sprintf("%d 个会话", item.sessions)
+		data := fmt.Sprintf(txt.setupSessionsFmt, item.sessions)
 		if !item.data && item.sessions == 0 {
-			data = "无会话数据"
+			data = txt.setupNoData
 		}
-		line := cursor + mark + " " + name + "  " + padRight(cli, 12) + "  " + data
+		line := cursor + mark + " " + name + "  " + padRight(cli, txt.setupCLIWidth) + "  " + data
 		if !item.available {
 			line = mutedStyle.Render(line)
 		}
@@ -509,7 +568,7 @@ func (m setupModel) View() string {
 	if m.err != "" {
 		body.WriteString(errStyle.Render("✗ "+m.err) + "\n")
 	}
-	body.WriteString(mutedStyle.Render("↑↓ 移动  ·  space 开关  ·  shift+↑↓ 排序  ·  enter 下一步  ·  esc 取消"))
+	body.WriteString(mutedStyle.Render(txt.setupAgentsHelp))
 	panel := modalStyle.Width(width).Render(body.String())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
 }
@@ -518,28 +577,32 @@ func (m setupModel) View() string {
 // and what it costs to look, because a fold that only shows a count reads as a
 // truncated list rather than a choice.
 func (m setupModel) foldLine(focused bool) string {
-	sign, action := "+", "展开"
+	sign, action := "+", txt.setupFoldExpand
 	if m.showAdapters {
-		sign, action = "−", "收起"
+		sign, action = "−", txt.setupFoldCollapse
 	}
-	label := fmt.Sprintf("%s 其他 %d 个兼容适配（非每次发布实测）", sign, m.foldedCount())
+	format := txt.setupFoldLabelFmt
+	if m.foldedCount() == 1 {
+		format = txt.setupFoldLabelOneFmt
+	}
+	label := fmt.Sprintf(format, sign, m.foldedCount())
 	if focused {
 		label = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Render(label)
 	} else {
 		label = mutedStyle.Render(label)
 	}
-	return "  " + label + mutedStyle.Render("  ·  space "+action)
+	return "  " + label + mutedStyle.Render(fmt.Sprintf(txt.setupFoldHintFmt, action))
 }
 
 func (m setupModel) titlePageBody(width int) string {
 	var body strings.Builder
 	body.WriteString(accentStyle.Render("another setup") + "\n")
-	body.WriteString(titleStyle.Render("重命名时的 AI 标题建议") + "\n")
-	body.WriteString(mutedStyle.Render("按 ctrl+r 时调用哪个已装 agent 生成候选标题。") + "\n\n")
+	body.WriteString(titleStyle.Render(txt.setupTitleTitle) + "\n")
+	body.WriteString(mutedStyle.Render(txt.setupTitleHint) + "\n\n")
 
 	if len(m.titleOpts) <= 1 {
-		body.WriteString(mutedStyle.Render("已选的 agent 里没有能生成标题的 CLI，此功能保持关闭。") + "\n\n")
-		body.WriteString(mutedStyle.Render("enter 保存  ·  esc 返回"))
+		body.WriteString(mutedStyle.Render(txt.setupTitleNone) + "\n\n")
+		body.WriteString(mutedStyle.Render(txt.setupTitleNoneHelp))
 		return body.String()
 	}
 
@@ -552,7 +615,7 @@ func (m setupModel) titlePageBody(width int) string {
 		if i == m.titleCursor {
 			mark = okStyle.Render("●")
 		}
-		name := padRight(opt.name, 16)
+		name := padRight(opt.name, txt.setupNameWidth)
 		if color, ok := providerColors[opt.id]; ok {
 			name = lipgloss.NewStyle().Foreground(color).Bold(i == m.titleCursor).Render(name)
 		}
@@ -570,25 +633,42 @@ func (m setupModel) titlePageBody(width int) string {
 		body.WriteString(ansi.Truncate(line, width, "…") + "\n")
 	}
 	body.WriteString("\n")
-	body.WriteString(mutedStyle.Render("语言") + "  " + m.languageRow() + "\n")
+	body.WriteString(mutedStyle.Render(txt.setupTitleLanguage) + "  " + m.titleLanguageRow() + "\n")
 	if m.titleCursor <= 0 {
-		body.WriteString(mutedStyle.Render("建议模型关闭；语言仍供 O2／Pi 原生命名共用。") + "\n")
+		body.WriteString(mutedStyle.Render(txt.setupTitlePolicy) + "\n")
 	}
 	body.WriteString("\n")
 	if m.err != "" {
 		body.WriteString(errStyle.Render("✗ "+m.err) + "\n")
 	}
 	if m.titleCursor > 0 {
-		body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  ←→ 选语言  ·  enter 选模型  ·  esc 返回"))
+		body.WriteString(mutedStyle.Render(txt.setupTitleHelpModel))
 	} else {
-		body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  ←→ 选语言  ·  enter 保存  ·  esc 返回"))
+		body.WriteString(mutedStyle.Render(txt.setupTitleHelpSave))
 	}
 	return body.String()
 }
 
+// uiLanguageRow shows the interface choices the same way the title row does.
+// Its labels stay in the language they name, so the row is readable to someone
+// who cannot read the page it sits on.
+func (m setupModel) uiLanguageRow() string {
+	labels := make([]string, 0, len(uiLanguages))
+	for i, l := range uiLanguages {
+		label := i18n.Label(l)
+		if i == m.uiLangCursor {
+			label = okStyle.Render("[" + label + "]")
+		} else {
+			label = mutedStyle.Render(" " + label + " ")
+		}
+		labels = append(labels, label)
+	}
+	return strings.Join(labels, " ") + mutedStyle.Render("  ·  ←→")
+}
+
 // languageRow shows the three choices at once. The list is short enough that
 // hiding two of them behind a cycle would only make the setting harder to see.
-func (m setupModel) languageRow() string {
+func (m setupModel) titleLanguageRow() string {
 	labels := make([]string, 0, len(languages))
 	for i, l := range languages {
 		label := titler.LanguageLabel(l)

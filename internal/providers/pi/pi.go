@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/util"
@@ -37,6 +38,19 @@ const migrationCustomType = "another-migration"
 // don't retain a stray literal user turn when reloaded.
 const legacyBridgeText = "上面是从另一个 agent 迁移过来的历史上下文，接着这里继续。"
 
+// bridgeAffixes are the wrappers around the source agent's name, per language.
+// This turn is not interface chrome: it is written into Pi's own session file
+// and read by the model that resumes it, so a Chinese sentence handed to an
+// English user also steers the answer into Chinese.
+//
+// Every form ever written stays listed here forever. isBridgeTurn is what
+// makes a write/load round trip digest-stable, and a session migrated by an
+// older build — or by the same build in the other language — is still on disk.
+var bridgeAffixes = []struct{ prefix, suffix string }{
+	{"上面是从 ", " 迁移过来的历史上下文，接着这里继续。"},
+	{"The context above was migrated from ", ". Continue from here."},
+}
+
 // bridgeTextFor builds the synthetic trailing user turn appended when the
 // migrated conversation ends on an assistant message. Anthropic-backed
 // models reject a resumed session whose last turn is an assistant message,
@@ -45,18 +59,30 @@ const legacyBridgeText = "上面是从另一个 agent 迁移过来的历史上�
 // round trip stays digest-stable.
 func bridgeTextFor(sourceProvider string) string {
 	if sourceProvider == "" {
+		// An unnamed source keeps the original wording, which is already
+		// recognized everywhere a previous build wrote it.
 		return legacyBridgeText
 	}
-	return "上面是从 " + sourceProvider + " 迁移过来的历史上下文，接着这里继续。"
+	affix := bridgeAffixes[0]
+	if i18n.Current() != i18n.LangChinese {
+		affix = bridgeAffixes[1]
+	}
+	return affix.prefix + sourceProvider + affix.suffix
 }
 
-// isBridgeTurn reports whether text is a synthetic bridge turn — the
-// current per-source form or the earlier fixed literal.
+// isBridgeTurn reports whether text is a synthetic bridge turn — the current
+// per-source form in any language another has ever written, or the earlier
+// fixed literal.
 func isBridgeTurn(text string) bool {
 	if text == legacyBridgeText {
 		return true
 	}
-	return strings.HasPrefix(text, "上面是从 ") && strings.HasSuffix(text, " 迁移过来的历史上下文，接着这里继续。")
+	for _, affix := range bridgeAffixes {
+		if strings.HasPrefix(text, affix.prefix) && strings.HasSuffix(text, affix.suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 type Provider struct {

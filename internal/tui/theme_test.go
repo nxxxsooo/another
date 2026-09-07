@@ -131,8 +131,8 @@ func TestDirectionalStylesAreWiredIntoViews(t *testing.T) {
 
 	header := m.headerView()
 	for name, want := range map[string]string{
-		"source chip": sourceChipStyle.Render("全部"),
-		"target chip": targetChipStyle.Render("去向 →"),
+		"source chip": sourceChipStyle.Render(txt.scopeAll),
+		"target chip": targetChipStyle.Render(txt.targetArrow),
 	} {
 		if !strings.Contains(header, want) {
 			t.Errorf("header does not use %s", name)
@@ -141,12 +141,12 @@ func TestDirectionalStylesAreWiredIntoViews(t *testing.T) {
 
 	m.overlay = overlaySource
 	source := m.View()
-	if !strings.Contains(source, accentStyle.Render("选择来源")) || !strings.Contains(source, selectedRow.Render("all")) {
+	if !strings.Contains(source, accentStyle.Render(txt.sourceModalTitle)) || !strings.Contains(source, selectedRow.Render("all")) {
 		t.Error("source view does not use violet heading and intersection selection")
 	}
 	m.overlay = overlayTarget
 	target := m.View()
-	if !strings.Contains(target, okStyle.Render("选择去向")) || !strings.Contains(target, selectedRow.Render("Claude Code")) {
+	if !strings.Contains(target, okStyle.Render(txt.targetModalTitle)) || !strings.Contains(target, selectedRow.Render("Claude Code")) {
 		t.Error("target view does not use mint heading and intersection selection")
 	}
 }
@@ -160,8 +160,8 @@ func TestDirectionalModalsNeverPaintInheritedBackground(t *testing.T) {
 	m.width, m.height = 100, 30
 	m.layout()
 	boxes := []string{
-		sourceModalStyle.Render(accentStyle.Render("选择来源") + "\n" + m.sourceList.View()),
-		targetModalStyle.Render(okStyle.Render("选择去向") + "\n" + m.targets.View()),
+		sourceModalStyle.Render(accentStyle.Render(txt.sourceModalTitle) + "\n" + m.sourceList.View()),
+		targetModalStyle.Render(okStyle.Render(txt.targetModalTitle) + "\n" + m.targets.View()),
 	}
 	for _, box := range boxes {
 		if strings.Contains(box, "\x1b[48;") {

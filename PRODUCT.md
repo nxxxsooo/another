@@ -48,6 +48,7 @@ A neighboring tool could copy the browser. It could not truthfully copy "the oth
 - Delete shows provider, title, directory, and full session ID, and defaults to cancel. Sessions identifiable as running are blocked from rename, archive, and delete.
 - Disabling a provider in setup prunes it from the index and registry but never deletes native sessions.
 - Archived sessions are excluded from the default list. There is no archive-browsing view yet — a deliberate omission so roughly ten thousand archived Codex rollouts do not flood the list.
+- The TUI renders in English or Chinese. The preference lives in `ui.language` (`auto`, `en`, `zh`); `auto` resolves the terminal locale and falls back to English. It is deliberately separate from the title language, whose `auto` follows the session's own content. The CLI's help, flags, and errors stay English.
 - macOS and Linux. Go 1.24+ to build from source.
 
 ## Brand Commitments

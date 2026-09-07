@@ -54,16 +54,16 @@ type batchAppliedMsg struct {
 // previews: nothing is renamed until the confirmation step fires batchApplyCmd.
 func (m modelState) startBatch() (tea.Model, tea.Cmd) {
 	if !m.titleCfg.Enabled() {
-		m.status = "先在设置里配置标题模型，才能批量命名"
+		m.status = txt.batchNeedsModel
 		return m, nil
 	}
 	if len(m.marked) == 0 {
-		m.status = "x 标记会话后，再用 ctrl+t 批量命名"
+		m.status = txt.batchNeedsMarks
 		return m, nil
 	}
 	summaries, missing := m.markedSummaries()
 	if len(summaries) == 0 && len(missing) == 0 {
-		m.status = "标记的会话都不在当前列表中"
+		m.status = txt.batchMarksMissing
 		return m, nil
 	}
 	byID := make(map[string]model.Summary, len(summaries))
@@ -99,7 +99,7 @@ func (m modelState) startBatch() (tea.Model, tea.Cmd) {
 func newBatchModelInput() textinput.Model {
 	in := textinput.New()
 	in.Prompt = ""
-	in.Placeholder = "留空用该 CLI 的默认模型"
+	in.Placeholder = txt.modelPlaceholder
 	in.CharLimit = 120
 	in.Width = 32
 	return in
@@ -160,7 +160,7 @@ func (m modelState) markedSummaries() ([]model.Summary, []titler.BatchResult) {
 		}
 		sm, err := m.findSummary(id)
 		if err != nil || sm == nil {
-			frozen = append(frozen, titler.BatchResult{SessionID: id, Frozen: "会话已不在索引中"})
+			frozen = append(frozen, titler.BatchResult{SessionID: id, Frozen: titler.FreezeNotIndexed})
 			continue
 		}
 		out = append(out, *sm)
@@ -182,7 +182,7 @@ func batchPrepareCmd(ctx context.Context, gen uint64, reg *registry.Registry, su
 	return func() tea.Msg {
 		frozen := append([]titler.BatchResult{}, seed...)
 		var items []titler.BatchItem
-		freeze := func(sm model.Summary, reason string) {
+		freeze := func(sm model.Summary, reason titler.FreezeReason) {
 			frozen = append(frozen, titler.BatchResult{SessionID: sm.ID, Current: sm.Title, Frozen: reason})
 		}
 		fail := func(sm model.Summary, err error) {
@@ -191,14 +191,14 @@ func batchPrepareCmd(ctx context.Context, gen uint64, reg *registry.Registry, su
 		for _, sm := range summaries {
 			switch {
 			case isCurrentSession(sm):
-				freeze(sm, "当前会话不改名")
+				freeze(sm, titler.FreezeCurrentSession)
 			case sm.CreatedAt.Unix() <= 0:
 				// The index stores a missing creation time as Unix 0, which
 				// scans back as 1970 rather than a zero time. The titler
 				// engine freezes zero times, but it never sees one through
 				// this path, so the freeze happens here instead of handing
 				// the model a date of 0101. Single rename has the same hole.
-				freeze(sm, "缺少创建时间")
+				freeze(sm, titler.FreezeMissingCreatedAt)
 			case reg == nil:
 				fail(sm, provider.ErrNotFound)
 			default:
@@ -208,11 +208,11 @@ func batchPrepareCmd(ctx context.Context, gen uint64, reg *registry.Registry, su
 					continue
 				}
 				if _, ok := p.(provider.SessionRenamer); !ok {
-					freeze(sm, "该来源不支持重命名")
+					freeze(sm, titler.FreezeRenameUnsupported)
 					continue
 				}
 				if !titler.Supports(sm.Provider) {
-					freeze(sm, "该 agent 不支持标题建议")
+					freeze(sm, titler.FreezeSuggestUnsupported)
 					continue
 				}
 				ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
@@ -271,7 +271,7 @@ func (m *modelState) finalizeBatch() {
 	}
 	for _, sm := range m.batchItems {
 		if !have[sm.ID] {
-			m.batchResults = append(m.batchResults, titler.BatchResult{SessionID: sm.ID, Current: sm.Title, Frozen: "已取消"})
+			m.batchResults = append(m.batchResults, titler.BatchResult{SessionID: sm.ID, Current: sm.Title, Frozen: titler.FreezeCancelled})
 		}
 	}
 	m.batchResults = titler.FreezeDuplicates(m.batchResults)
@@ -338,7 +338,7 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.batchCancel = nil
 			}
 			m.batchCancelling = true
-			m.status = "正在取消剩余任务…"
+			m.status = txt.batchCancelling
 			return m, nil
 		}
 		m.overlay = overlayNone
@@ -356,7 +356,7 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		retry := batchRetryable(m.batchResults)
 		if len(retry) == 0 {
-			m.status = "没有可重试的行"
+			m.status = txt.batchNothingToRetry
 			return m, nil
 		}
 		return m.retryBatch(retry)
@@ -365,7 +365,7 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// one model and half by another, so the override waits for the run
 		// to stop. esc already cancels it.
 		if m.batchRunning || m.batchCancelling {
-			m.status = "先 esc 取消生成，再换模型"
+			m.status = txt.batchCancelFirst
 			return m, nil
 		}
 		return m.openBatchModelPicker()
@@ -375,7 +375,7 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		changed := batchChanged(m.batchResults)
 		if len(changed) == 0 {
-			m.status = "没有可应用的标题变更"
+			m.status = txt.batchNoChanges
 			return m, nil
 		}
 		ctx := m.ctx
@@ -394,7 +394,7 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func batchRetryable(results []titler.BatchResult) map[string]bool {
 	retry := map[string]bool{}
 	for _, r := range results {
-		if r.Err != nil || r.Frozen == "已取消" {
+		if r.Err != nil || r.Frozen == titler.FreezeCancelled {
 			retry[r.SessionID] = true
 		}
 	}
@@ -412,7 +412,7 @@ func (m modelState) retryBatch(retry map[string]bool) (tea.Model, tea.Cmd) {
 		}
 	}
 	if len(again) == 0 {
-		m.status = "重试的会话都不在这批里了"
+		m.status = txt.batchRetryMissing
 		return m, nil
 	}
 	kept := make([]titler.BatchResult, 0, len(m.batchResults))
@@ -500,7 +500,7 @@ func applyRenames(ctx context.Context, lookup providerLookup, byID map[string]mo
 	for _, r := range rows {
 		sm, ok := byID[r.SessionID]
 		if !ok {
-			failed = append(failed, applyFailure{id: r.SessionID, reason: "会话已不在列表中"})
+			failed = append(failed, applyFailure{id: r.SessionID, reason: txt.rowNotInList})
 			continue
 		}
 		p, err := lookup.Get(sm.Provider)
@@ -510,7 +510,7 @@ func applyRenames(ctx context.Context, lookup providerLookup, byID map[string]mo
 		}
 		renamer, ok := p.(provider.SessionRenamer)
 		if !ok {
-			failed = append(failed, applyFailure{id: r.SessionID, reason: "该来源不支持重命名"})
+			failed = append(failed, applyFailure{id: r.SessionID, reason: txt.rowRenameUnsupported})
 			continue
 		}
 		ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
@@ -533,7 +533,7 @@ func verifyRenames(lookup summaryLookup, renamed []appliedRename) (appliedIDs []
 			continue
 		}
 		if strings.TrimSpace(sm.Title) != rn.title {
-			failed = append(failed, applyFailure{id: rn.id, reason: "回读标题不一致"})
+			failed = append(failed, applyFailure{id: rn.id, reason: txt.rowTitleMismatch})
 			continue
 		}
 		appliedIDs = append(appliedIDs, rn.id)
@@ -585,7 +585,7 @@ func (m modelState) batchView() string {
 		inner = 12
 	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("批量命名会话") + "\n")
+	b.WriteString(titleStyle.Render(txt.batchTitle) + "\n")
 	b.WriteString(ansi.Truncate(m.batchAgentLine(), inner, "…") + "\n")
 	if m.batchModelPicking {
 		b.WriteString(m.batchModelView(inner))
@@ -595,22 +595,22 @@ func (m modelState) batchView() string {
 		if m.batchModelErr != "" {
 			b.WriteString(mutedStyle.Render(m.batchModelErr) + "\n")
 		}
-		b.WriteString(mutedStyle.Render("模型") + "  " + m.batchModelInput.View() + "\n")
-		b.WriteString(mutedStyle.Render("enter 换模型并重跑  ·  esc 取消"))
+		b.WriteString(mutedStyle.Render(txt.batchModelLabel) + "  " + m.batchModelInput.View() + "\n")
+		b.WriteString(mutedStyle.Render(txt.batchModelHelp))
 		return b.String()
 	}
 	if m.batchRunning {
-		note := fmt.Sprintf("正在生成 %d/%d · esc 取消", len(m.batchResults), m.batchTotal)
+		note := fmt.Sprintf(txt.batchProgressFmt, len(m.batchResults), m.batchTotal)
 		if m.batchCancelling {
-			note = fmt.Sprintf("正在取消 %d/%d · 等待剩余任务退出", len(m.batchResults), m.batchTotal)
+			note = fmt.Sprintf(txt.batchCancelProgress, len(m.batchResults), m.batchTotal)
 		}
 		b.WriteString(accentStyle.Render(m.spinner.View()) + " " + mutedStyle.Render(note) + "\n\n")
-		b.WriteString(mutedStyle.Render("4 路并发 · 每条都是独立的 agent 调用，慢是正常的。"))
+		b.WriteString(mutedStyle.Render(txt.batchConcurrencyNote))
 		return b.String()
 	}
 	counts := titler.Summarize(m.batchResults)
 	fmt.Fprintf(&b, "%s\n\n", mutedStyle.Render(
-		fmt.Sprintf("可应用 %d 条 · 冻结 %d · 失败 %d · 无变化 %d", counts.Changed, counts.Frozen, counts.Failed, counts.Unchanged)))
+		fmt.Sprintf(txt.batchCountsFmt, counts.Changed, counts.Frozen, counts.Failed, counts.Unchanged)))
 	changed := batchChanged(m.batchResults)
 	listed := 0
 	for _, r := range m.batchResults {
@@ -625,7 +625,7 @@ func (m modelState) batchView() string {
 		listed++
 	}
 	if len(changed) > listed {
-		fmt.Fprintf(&b, "%s\n", mutedStyle.Render(fmt.Sprintf("+ 还有 %d 条", len(changed)-listed)))
+		fmt.Fprintf(&b, "%s\n", mutedStyle.Render(fmt.Sprintf(txt.batchMoreRowsFmt, len(changed)-listed)))
 	}
 	rest := counts.Frozen + counts.Failed + counts.Unchanged
 	if m.batchExpanded {
@@ -641,15 +641,15 @@ func (m modelState) batchView() string {
 			shown++
 		}
 		if rest > shown {
-			fmt.Fprintf(&b, "%s\n", mutedStyle.Render(fmt.Sprintf("+ 还有 %d 条", rest-shown)))
+			fmt.Fprintf(&b, "%s\n", mutedStyle.Render(fmt.Sprintf(txt.batchMoreRowsFmt, rest-shown)))
 		}
 	}
 	var hints []string
 	if rest > 0 && !m.batchExpanded {
-		hints = append(hints, "e 展开其余行")
+		hints = append(hints, txt.batchExpandHint)
 	}
 	if n := len(batchRetryable(m.batchResults)); n > 0 {
-		hints = append(hints, fmt.Sprintf("r 重试 %d 行", n))
+		hints = append(hints, fmt.Sprintf(txt.batchRetryHintFmt, n))
 	}
 	if len(hints) > 0 {
 		b.WriteString(ansi.Truncate(mutedStyle.Render(strings.Join(hints, "  ·  ")), inner, "…") + "\n")
@@ -668,12 +668,12 @@ func (m modelState) batchAgentLine() string {
 	}
 	modelName := cfg.Model
 	if modelName == "" {
-		modelName = "默认模型"
+		modelName = txt.defaultModel
 	}
-	line := mutedStyle.Render("模型来源") + "  " + name + mutedStyle.Render(" · ") + modelName +
+	line := mutedStyle.Render(txt.batchModelSource) + "  " + name + mutedStyle.Render(" · ") + modelName +
 		mutedStyle.Render(" · ") + titler.LanguageLabel(cfg.Language)
 	if cfg.Model != m.titleCfg.Model {
-		line += mutedStyle.Render("  本次临时")
+		line += mutedStyle.Render(txt.batchModelTemporary)
 	}
 	return line
 }
@@ -685,10 +685,10 @@ func batchRestLine(r titler.BatchResult) string {
 	}
 	switch {
 	case r.Err != nil:
-		return mutedStyle.Render("失败 ") + name + mutedStyle.Render(" · "+r.Err.Error())
-	case r.Frozen != "":
-		return mutedStyle.Render("冻结 ") + name + mutedStyle.Render(" · "+r.Frozen)
+		return mutedStyle.Render(txt.rowFailed) + name + mutedStyle.Render(" · "+suggestErrorText(r.Err))
+	case r.Frozen != titler.FreezeNone:
+		return mutedStyle.Render(txt.rowFrozen) + name + mutedStyle.Render(" · "+freezeText(r.Frozen))
 	default:
-		return mutedStyle.Render("无变化 ") + name
+		return mutedStyle.Render(txt.rowUnchanged) + name
 	}
 }

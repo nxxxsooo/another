@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/providers/pi"
@@ -305,37 +306,60 @@ func TestWriteMatchesPiResumeContract(t *testing.T) {
 // trailing user turn naming the source agent (Anthropic-backed models
 // reject a resume whose last turn is assistant, treating it as a prefill).
 // Load must drop that synthetic turn again so the round trip is clean.
+// The turn is written in the interface language, because the model resuming
+// the session reads it: a Chinese instruction handed to an English user also
+// steers the reply into Chinese. Whatever language wrote it, Load must still
+// recognize and drop it, or the round trip stops being digest-stable.
 func TestWriteBridgesTrailingAssistantAndLoadDropsIt(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("PI_AGENT_DIR", root)
-	p := pi.New()
-	conv := &model.Conversation{
-		ID: "source", Provider: "claude-code", ProjectPath: "/home/user/proj", Title: "carried title",
-		Messages: []model.Message{
-			{Role: model.RoleUser, Content: "question"},
-			{Role: model.RoleAssistant, Content: "answer"},
-		},
+	cases := []struct {
+		name string
+		lang i18n.Lang
+		want string
+	}{
+		{"english", i18n.LangEnglish, "The context above was migrated from claude-code."},
+		{"chinese", i18n.LangChinese, "上面是从 claude-code 迁移过来的历史上下文"},
 	}
-	res, err := p.Write(context.Background(), conv, provider.WriteOpts{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(res.StoragePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "上面是从 claude-code 迁移过来的历史上下文") {
-		t.Fatalf("expected bridge turn naming the source agent, got: %s", data)
-	}
-	loaded, err := p.Load(context.Background(), provider.SessionRef{ID: res.SessionID, StoragePath: res.StoragePath})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(loaded.Messages) != 2 {
-		t.Fatalf("messages = %d, want 2 (bridge turn must be dropped on load)", len(loaded.Messages))
-	}
-	if loaded.Messages[len(loaded.Messages)-1].Content != "answer" {
-		t.Fatalf("last message = %q, want the real trailing assistant answer, not the bridge turn", loaded.Messages[len(loaded.Messages)-1].Content)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			previous := i18n.SetCurrent(tc.lang)
+			t.Cleanup(func() { i18n.SetCurrent(previous) })
+			root := t.TempDir()
+			t.Setenv("PI_AGENT_DIR", root)
+			p := pi.New()
+			conv := &model.Conversation{
+				ID: "source", Provider: "claude-code", ProjectPath: "/home/user/proj", Title: "carried title",
+				Messages: []model.Message{
+					{Role: model.RoleUser, Content: "question"},
+					{Role: model.RoleAssistant, Content: "answer"},
+				},
+			}
+			res, err := p.Write(context.Background(), conv, provider.WriteOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(res.StoragePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), tc.want) {
+				t.Fatalf("expected bridge turn naming the source agent, got: %s", data)
+			}
+			// The other language must be dropped too: a session migrated
+			// before the language changed is still on disk.
+			for _, reader := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+				i18n.SetCurrent(reader)
+				loaded, err := p.Load(context.Background(), provider.SessionRef{ID: res.SessionID, StoragePath: res.StoragePath})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(loaded.Messages) != 2 {
+					t.Fatalf("read back in %s: messages = %d, want 2 (bridge turn must be dropped on load)", reader, len(loaded.Messages))
+				}
+				if loaded.Messages[len(loaded.Messages)-1].Content != "answer" {
+					t.Fatalf("read back in %s: last message = %q, want the real trailing assistant answer, not the bridge turn", reader, loaded.Messages[len(loaded.Messages)-1].Content)
+				}
+			}
+		})
 	}
 }
 

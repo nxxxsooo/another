@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestBatchProgressAnimatesWithoutMovingTheText(t *testing.T) {
 		t.Fatalf("batch spinner did not advance: before=%q after=%q next=%v", before, after, next)
 	}
 	view := got.batchView()
-	if !strings.Contains(view, "正在生成 3/8") || !strings.Contains(view, "4 路并发") {
+	if !strings.Contains(view, fmt.Sprintf(txt.batchProgressFmt, 3, 8)) || !strings.Contains(view, txt.batchConcurrencyNote) {
 		t.Fatalf("animated progress lost stable status text:\n%s", view)
 	}
 	if len([]rune(before)) != len([]rune(after)) {
@@ -69,7 +70,7 @@ func TestBatchRequiresTitleModel(t *testing.T) {
 	if got.batchRunning || cmd != nil {
 		t.Fatalf("batch started processes without a title model: running=%v cmd=%v", got.batchRunning, cmd)
 	}
-	if !strings.Contains(got.status, "设置") {
+	if got.status != txt.batchNeedsModel {
 		t.Fatalf("missing setup hint: %q", got.status)
 	}
 }
@@ -85,7 +86,7 @@ func TestBatchRequiresMarks(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("batch started work with nothing marked")
 	}
-	if !strings.Contains(got.status, "标记") {
+	if got.status != txt.batchNeedsMarks {
 		t.Fatalf("missing mark hint: %q", got.status)
 	}
 }
@@ -122,7 +123,7 @@ func TestBatchPrepareFreezesWithoutModelCalls(t *testing.T) {
 		t.Fatalf("results = %d, want 1 frozen row", len(done.batchResults))
 	}
 	view := done.View()
-	if !strings.Contains(view, "冻结 1") {
+	if !strings.Contains(view, fmt.Sprintf(txt.batchCountsFmt, 0, 1, 0, 0)) {
 		t.Fatalf("review must fold the frozen row into counts:\n%s", view)
 	}
 }
@@ -132,7 +133,7 @@ func TestBatchReviewListsChangedOnly(t *testing.T) {
 	m.overlay = overlayBatchTitle
 	m.batchResults = []titler.BatchResult{
 		{SessionID: "a", Current: "old talk", Title: "0903｜修复｜快捷键冲突"},
-		{SessionID: "b", Current: "other talk", Frozen: "缺少创建时间"},
+		{SessionID: "b", Current: "other talk", Frozen: titler.FreezeMissingCreatedAt},
 		{SessionID: "c", Current: "third talk", Err: errBatchTest},
 		{SessionID: "d", Current: "0903｜修复｜旧标题", Title: "0903｜修复｜旧标题"},
 	}
@@ -141,17 +142,16 @@ func TestBatchReviewListsChangedOnly(t *testing.T) {
 	if !strings.Contains(view, "0903｜修复｜快捷键冲突") {
 		t.Fatalf("review must show the changed row:\n%s", view)
 	}
-	if strings.Contains(view, "缺少创建时间") {
+	if strings.Contains(view, txt.freezeMissingCreatedAt) {
 		t.Fatalf("review must fold frozen rows by default:\n%s", view)
 	}
-	if !strings.Contains(view, "可应用 1 条") || !strings.Contains(view, "冻结 1") ||
-		!strings.Contains(view, "失败 1") || !strings.Contains(view, "无变化 1") {
+	if !strings.Contains(view, fmt.Sprintf(txt.batchCountsFmt, 1, 1, 1, 1)) {
 		t.Fatalf("review must count every outcome:\n%s", view)
 	}
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
 	expanded := updated.(modelState).View()
-	if !strings.Contains(expanded, "缺少创建时间") {
+	if !strings.Contains(expanded, txt.freezeMissingCreatedAt) {
 		t.Fatalf("e must expand the folded rows:\n%s", expanded)
 	}
 }
@@ -208,7 +208,7 @@ func TestEscOnReviewClosesAndKeepsMarks(t *testing.T) {
 	m := batchTestModel()
 	m.overlay = overlayBatchTitle
 	m.marked["session"] = true
-	m.batchResults = []titler.BatchResult{{SessionID: "session", Current: "x", Frozen: "缺少创建时间"}}
+	m.batchResults = []titler.BatchResult{{SessionID: "session", Current: "x", Frozen: titler.FreezeMissingCreatedAt}}
 
 	updated, _ := m.Update(escKey())
 	got := updated.(modelState)
@@ -226,14 +226,14 @@ func TestEscOnReviewClosesAndKeepsMarks(t *testing.T) {
 func TestEnterWithoutChangesAppliesNothing(t *testing.T) {
 	m := batchTestModel()
 	m.overlay = overlayBatchTitle
-	m.batchResults = []titler.BatchResult{{SessionID: "session", Current: "x", Frozen: "缺少创建时间"}}
+	m.batchResults = []titler.BatchResult{{SessionID: "session", Current: "x", Frozen: titler.FreezeMissingCreatedAt}}
 
 	updated, cmd := m.Update(enterKey())
 	got := updated.(modelState)
 	if cmd != nil {
 		t.Fatal("enter must not start an apply with no changed rows")
 	}
-	if !strings.Contains(got.status, "没有可应用") {
+	if got.status != txt.batchNoChanges {
 		t.Fatalf("missing no-change hint: %q", got.status)
 	}
 }
@@ -255,12 +255,12 @@ func TestBatchReviewNamesAgentAndModel(t *testing.T) {
 	m.overlay = overlayBatchTitle
 	m.batchResults = []titler.BatchResult{{SessionID: "a", Current: "old talk", Title: "0903｜修复｜快捷键冲突"}}
 
-	if view := m.View(); !strings.Contains(view, "Pi") || !strings.Contains(view, "默认模型") {
+	if view := m.View(); !strings.Contains(view, "Pi") || !strings.Contains(view, txt.defaultModel) {
 		t.Fatalf("review must name the agent and the default model:\n%s", view)
 	}
 
 	m.batchCfg = titler.Config{Provider: "pi", Model: "claude-sonnet-4-5"}
-	if view := m.View(); !strings.Contains(view, "claude-sonnet-4-5") || !strings.Contains(view, "本次临时") {
+	if view := m.View(); !strings.Contains(view, "claude-sonnet-4-5") || !strings.Contains(view, strings.TrimSpace(txt.batchModelTemporary)) {
 		t.Fatalf("review must name the overridden model as temporary:\n%s", view)
 	}
 }
@@ -368,12 +368,12 @@ func TestRetryRerunsOnlyFailedRows(t *testing.T) {
 	m.batchResults = []titler.BatchResult{
 		{SessionID: "ok", Current: "old ok", Title: "0903｜修复｜已有结果"},
 		{SessionID: "bad", Current: "old bad", Err: errBatchTest},
-		{SessionID: "cancelled", Current: "old cancelled", Frozen: "已取消"},
-		{SessionID: "frozen", Current: "old frozen", Frozen: "缺少创建时间"},
+		{SessionID: "cancelled", Current: "old cancelled", Frozen: titler.FreezeCancelled},
+		{SessionID: "frozen", Current: "old frozen", Frozen: titler.FreezeMissingCreatedAt},
 	}
 	startGen := m.batchGen
 
-	if view := m.View(); !strings.Contains(view, "r 重试 2 行") {
+	if view := m.View(); !strings.Contains(view, fmt.Sprintf(txt.batchRetryHintFmt, 2)) {
 		t.Fatalf("review must offer a retry for the failed and cancelled rows:\n%s", view)
 	}
 
@@ -415,14 +415,14 @@ func TestRetryRerunsOnlyFailedRows(t *testing.T) {
 func TestRetryWithNothingToRetrySaysSo(t *testing.T) {
 	m := batchTestModel()
 	m.overlay = overlayBatchTitle
-	m.batchResults = []titler.BatchResult{{SessionID: "a", Current: "x", Frozen: "缺少创建时间"}}
+	m.batchResults = []titler.BatchResult{{SessionID: "a", Current: "x", Frozen: titler.FreezeMissingCreatedAt}}
 
 	updated, cmd := m.Update(runeKey('r'))
 	got := updated.(modelState)
 	if cmd != nil {
 		t.Fatal("a frozen row must not be retried")
 	}
-	if !strings.Contains(got.status, "没有可重试") {
+	if got.status != txt.batchNothingToRetry {
 		t.Fatalf("missing hint: %q", got.status)
 	}
 }
@@ -448,7 +448,7 @@ func TestBatchChangedSelectsOnlyChangedRows(t *testing.T) {
 		{SessionID: "a", Current: "old", Title: "0903｜修复｜新标题"},
 		{SessionID: "b", Current: "same", Title: "same"},
 		{SessionID: "c", Current: "old", Title: ""},
-		{SessionID: "d", Current: "old", Frozen: "缺少创建时间"},
+		{SessionID: "d", Current: "old", Frozen: titler.FreezeMissingCreatedAt},
 		{SessionID: "e", Current: "old", Title: "0903｜修复｜另一标题", Err: errBatchTest},
 	}
 	got := batchChanged(results)
@@ -583,14 +583,14 @@ func TestApplyRenamesRejectsUnknownRowsAndNonRenamers(t *testing.T) {
 	for _, f := range failed {
 		reasons[f.id] = f.reason
 	}
-	if reasons["plain"] != "该来源不支持重命名" {
+	if reasons["plain"] != txt.rowRenameUnsupported {
 		t.Fatalf("plain reason = %q", reasons["plain"])
 	}
 	// ghost is missing from byID... it is present; drop it to test the
 	// unknown-row path instead.
 	delete(byID, "ghost")
 	_, failed = applyRenames(context.Background(), lookup, byID, rows[:1])
-	if len(failed) != 1 || failed[0].reason != "会话已不在列表中" {
+	if len(failed) != 1 || failed[0].reason != txt.rowNotInList {
 		t.Fatalf("unknown row failure = %+v", failed)
 	}
 }
@@ -625,7 +625,7 @@ func TestVerifyRenamesRequiresRereadMatch(t *testing.T) {
 	for _, f := range failed {
 		byID[f.id] = f.reason
 	}
-	if byID["drift"] != "回读标题不一致" {
+	if byID["drift"] != txt.rowTitleMismatch {
 		t.Fatalf("drift reason = %q", byID["drift"])
 	}
 }

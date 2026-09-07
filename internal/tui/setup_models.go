@@ -33,7 +33,7 @@ func (m setupModel) openModelPage() (setupModel, tea.Cmd) {
 	}
 	if !titler.CanListModels(opt.id) {
 		m.modelLoading = false
-		m.modelErr = titler.Command(opt.id) + " 不支持列出模型"
+		m.modelErr = fmt.Sprintf(txt.modelListUnsupported, titler.Command(opt.id))
 		m.modelTyping = true
 		m.modelInput.Focus()
 		return m, textinput.Blink
@@ -174,23 +174,23 @@ func (m setupModel) modelPageBody(width int) string {
 	opt := m.titleOpts[m.titleCursor]
 	var b strings.Builder
 	b.WriteString(accentStyle.Render("another setup") + "\n")
-	b.WriteString(titleStyle.Render("用哪个模型写标题") + "\n")
-	b.WriteString(mutedStyle.Render(opt.name+" 报告的可用模型，留在默认即由该 CLI 自己决定。") + "\n\n")
+	b.WriteString(titleStyle.Render(txt.setupModelTitle) + "\n")
+	b.WriteString(mutedStyle.Render(fmt.Sprintf(txt.setupModelHintFmt, opt.name)) + "\n\n")
 
 	if m.modelLoading {
-		b.WriteString(mutedStyle.Render("正在向 "+titler.Command(opt.id)+" 获取模型列表…") + "\n\n")
-		b.WriteString(mutedStyle.Render("esc 返回"))
+		b.WriteString(mutedStyle.Render(fmt.Sprintf(txt.setupModelLoadingFmt, titler.Command(opt.id))) + "\n\n")
+		b.WriteString(mutedStyle.Render(txt.setupModelBack))
 		return b.String()
 	}
 	if m.modelTyping {
 		if m.modelErr != "" {
 			b.WriteString(mutedStyle.Render(m.modelErr) + "\n\n")
 		}
-		b.WriteString(mutedStyle.Render("模型") + "  " + m.modelInput.View() + "\n\n")
+		b.WriteString(mutedStyle.Render(txt.setupModelLabel) + "  " + m.modelInput.View() + "\n\n")
 		if len(m.modelOpts) == 0 {
-			b.WriteString(mutedStyle.Render("enter 保存  ·  esc 返回上一步"))
+			b.WriteString(mutedStyle.Render(txt.setupModelHelpBack))
 		} else {
-			b.WriteString(mutedStyle.Render("enter 保存  ·  esc 回到列表"))
+			b.WriteString(mutedStyle.Render(txt.setupModelHelpList))
 		}
 		return b.String()
 	}
@@ -200,14 +200,14 @@ func (m setupModel) modelPageBody(width int) string {
 	for i := start; i < end; i++ {
 		label := rows[i]
 		if i == 0 {
-			label = "默认模型"
+			label = txt.defaultModel
 		}
 		b.WriteString(ansi.Truncate(modelRowLine(label, i == m.modelCursor), width, "…") + "\n")
 	}
 	if hidden := len(rows) - end; hidden > 0 {
-		fmt.Fprintf(&b, "%s\n", mutedStyle.Render(fmt.Sprintf("+ 还有 %d 个，继续输入可过滤", hidden)))
+		fmt.Fprintf(&b, "%s\n", mutedStyle.Render(fmt.Sprintf(txt.setupModelMoreFmt, hidden)))
 	}
-	custom := "自定义模型名"
+	custom := txt.setupModelCustom
 	if value := strings.TrimSpace(m.modelInput.Value()); value != "" {
 		custom += "：" + value
 	}
@@ -217,9 +217,9 @@ func (m setupModel) modelPageBody(width int) string {
 		b.WriteString(mutedStyle.Render(m.modelErr) + "\n")
 	}
 	if m.modelFilter != "" {
-		b.WriteString(mutedStyle.Render("过滤："+m.modelFilter) + "\n")
+		b.WriteString(mutedStyle.Render(txt.setupModelFilter+m.modelFilter) + "\n")
 	}
-	b.WriteString(mutedStyle.Render("↑↓ 选模型  ·  输入过滤  ·  enter 保存  ·  esc 返回"))
+	b.WriteString(mutedStyle.Render(txt.setupModelHelp))
 	return b.String()
 }
 

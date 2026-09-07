@@ -71,6 +71,51 @@ func TestTitlePolicyAndModelLanguageStayInSync(t *testing.T) {
 	}
 }
 
+// The interface language is a separate setting from the title language, and a
+// round trip has to keep them apart rather than collapsing one into the other.
+func TestUILanguageIsStoredSeparatelyFromTitleLanguage(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	want := config.Settings{
+		EnabledProviders: []string{"pi"},
+		TitlePolicy:      config.TitlePolicy{Language: "auto"},
+		UI:               config.UI{Language: "en"},
+	}
+	if err := config.SaveSettings(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UI.Language != "en" {
+		t.Fatalf("ui language = %q, want en", got.UI.Language)
+	}
+	if got.TitlePolicy.Language != "auto" {
+		t.Fatalf("title language followed the interface language: %+v", got)
+	}
+}
+
+// A configuration written by an older build has no ui key. It must load
+// cleanly and leave the interface on auto rather than failing the version
+// check or inventing a language.
+func TestConfigWithoutUISectionLoadsAsAuto(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := os.MkdirAll(config.ConfigDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"version":1,"enabled_providers":["pi"],"title_policy":{"language":"zh"}}`
+	if err := os.WriteFile(config.SettingsPath(), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UI.Language != "" {
+		t.Fatalf("missing ui section produced %q instead of an empty preference", got.UI.Language)
+	}
+}
+
 func TestLegacyTitlePolicyMigratesIntoModel(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	if err := os.MkdirAll(config.ConfigDir(), 0o700); err != nil {

@@ -34,6 +34,7 @@ store, so you open it there and keep going.
 - **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, Qwen Code, and Antigravity.
 - **One screen:** browse, search, preview, rename, archive, delete, and migrate without leaving the list.
 - **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects.
+- **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
 - **Local and fast:** reads native local stores; the private SQLite index under `~/.cache/another/` skips unchanged sessions on re-scan.
 
@@ -84,7 +85,7 @@ With `~/.local/bin` or your Go bin directory on `PATH`, run:
 another
 ```
 
-The first run opens a Charmtone setup screen. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page lists the six continuously tested agents; the four compatibility adapters sit behind one folded row that `Space` opens. The fold starts open when the saved configuration already enables one of them, because a setting you cannot see is a setting you cannot turn off. The second page picks an optional agent for AI title suggestions; it defaults to off. Run `another setup` any time to change either choice.
+The first run opens a Charmtone setup screen. The top of the first page picks the interface language with `←→`: **Auto** (the default, which follows the terminal's locale), **English**, or **中文**. The page redraws as you press, so a wrong choice is visible immediately instead of after saving. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page lists the six continuously tested agents; the four compatibility adapters sit behind one folded row that `Space` opens. The fold starts open when the saved configuration already enables one of them, because a setting you cannot see is a setting you cannot turn off. The second page picks an optional agent for AI title suggestions; it defaults to off. Run `another setup` any time to change either choice.
 
 ### Update
 
@@ -115,6 +116,8 @@ r         refresh the local index
 Esc       close a picker or dismiss transient state
 q         quit
 ```
+
+The interface language and the title language are separate settings, and their `auto` means different things: the interface follows the terminal's locale (`LC_ALL` → `LC_MESSAGES` → `LANG`, where a `zh` tag selects Chinese and everything else selects English), while a title follows the session it names. The CLI's `--help`, flag descriptions, and error messages stay English. The bridge sentence written into Pi when a migrated conversation ends on an assistant turn follows the interface language, and both wordings are recognized and stripped when the session is read back.
 
 On macOS, opening the TUI temporarily selects the current ASCII-capable keyboard layout so letter shortcuts are not intercepted by a Pinyin IME. The input source active before launch is restored on exit or before handing the terminal to the target agent. Linux input sources are left untouched.
 
@@ -158,7 +161,7 @@ When setup names an agent, `Ctrl+R` opens the rename box on the original title a
 
 The second setup page picks the agent and the language; `Enter` opens a third page for the model. That list comes from the agent's own CLI (`pi --list-models`, `agy models`, `opencode models`, `opencode2 models`), typing filters it, the first row leaves the choice to the CLI, and the last row still accepts a name typed by hand. Claude Code, Codex, and Qwen have no listing command, so they go straight to typing with the reason shown — a guessed list of model IDs would only fail later, at rename time.
 
-The second setup page picks the title language with `←→`: **Auto** (default), **English**, or **中文**. Auto uses Chinese when the first meaningful user message contains a Han character and English otherwise. The date and `｜` separator are identical in every language, and the eight types map one to one: 功能/Feature, 设计/Design, 修复/Fix, 优化/Optimize, 发布/Release, 探索/Explore, 文档/Docs, 研究/Research.
+The second setup page picks the title language with `←→`, independently of the interface language on page one: **Auto** (default), **English**, or **中文**. Auto uses Chinese when the first meaningful user message contains a Han character and English otherwise. The date and `｜` separator are identical in every language, and the eight types map one to one: 功能/Feature, 设计/Design, 修复/Fix, 优化/Optimize, 发布/Release, 探索/Explore, 文档/Docs, 研究/Research.
 
 For more than one title at a time, mark sessions with `x` (`X` toggles the whole page) and press `Ctrl+T`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `Ctrl+T` retries exactly those.
 

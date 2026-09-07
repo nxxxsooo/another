@@ -39,6 +39,55 @@ var modelListers = map[string]modelLister{
 	"opencode2": {[]string{"models"}, parsePlainModels},
 }
 
+// ListFailure names why a listing did not produce models. Like a freeze
+// reason, it is an identifier rather than a sentence: the screen that shows it
+// decides the words, and this package has no business holding one language's.
+type ListFailure string
+
+const (
+	// ListUnsupported means the agent has no listing command at all.
+	ListUnsupported ListFailure = "unsupported"
+	// ListNoTitles means the agent cannot write titles in the first place.
+	ListNoTitles ListFailure = "no-titles"
+	// ListNotInstalled means the CLI is not on PATH.
+	ListNotInstalled ListFailure = "not-installed"
+	// ListTimedOut means the CLI did not answer within ListTimeout.
+	ListTimedOut ListFailure = "timed-out"
+	// ListEmpty means the CLI answered without naming a model.
+	ListEmpty ListFailure = "empty"
+	// ListFailed means the CLI exited with an error of its own, which
+	// Detail carries verbatim because only the CLI can explain it.
+	ListFailed ListFailure = "failed"
+)
+
+// ListError is what ListModels returns. Command is the CLI that was asked, so
+// a caller can name it in its own wording; Detail is text that cannot be
+// translated because it came from the CLI itself.
+type ListError struct {
+	Reason  ListFailure
+	Command string
+	Detail  string
+}
+
+// Error is the untranslated form, used when no interface is present to render
+// a better one — a log line, or a caller that only has an error.
+func (e *ListError) Error() string {
+	switch e.Reason {
+	case ListUnsupported:
+		return fmt.Sprintf("%s cannot list its models", e.Command)
+	case ListNoTitles:
+		return fmt.Sprintf("%s cannot write titles", e.Command)
+	case ListNotInstalled:
+		return fmt.Sprintf("%s is not installed", e.Command)
+	case ListTimedOut:
+		return fmt.Sprintf("%s timed out listing models", e.Command)
+	case ListEmpty:
+		return fmt.Sprintf("%s returned no models", e.Command)
+	default:
+		return fmt.Sprintf("%s: %s", e.Command, e.Detail)
+	}
+}
+
 // CanListModels reports whether setup can offer a picker for this agent.
 func CanListModels(providerID string) bool {
 	_, ok := modelListers[NormalizeID(providerID)]
@@ -51,15 +100,15 @@ func ListModels(ctx context.Context, providerID string) ([]string, error) {
 	id := NormalizeID(providerID)
 	lister, ok := modelListers[id]
 	if !ok {
-		return nil, fmt.Errorf("%s 不支持列出模型", providerID)
+		return nil, &ListError{Reason: ListUnsupported, Command: providerID}
 	}
 	l, ok := launchers[id]
 	if !ok {
-		return nil, fmt.Errorf("%s 不能生成标题", providerID)
+		return nil, &ListError{Reason: ListNoTitles, Command: providerID}
 	}
 	bin, err := exec.LookPath(l.command)
 	if err != nil {
-		return nil, fmt.Errorf("%s 未安装", l.command)
+		return nil, &ListError{Reason: ListNotInstalled, Command: l.command}
 	}
 
 	// The same throwaway directory rule as a suggestion: listing models is a
@@ -87,14 +136,14 @@ func ListModels(ctx context.Context, providerID string) ([]string, error) {
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Run(); err != nil {
 			if ctx.Err() != nil {
-				return nil, fmt.Errorf("%s 获取模型超时", l.command)
+				return nil, &ListError{Reason: ListTimedOut, Command: l.command}
 			}
-			return nil, fmt.Errorf("%s: %s", l.command, failureReason(stderr.String(), stdout.String(), err))
+			return nil, &ListError{Reason: ListFailed, Command: l.command, Detail: failureReason(stderr.String(), stdout.String(), err)}
 		}
 		models = dedupe(lister.parse(stdout.String()))
 	}
 	if len(models) == 0 {
-		return nil, fmt.Errorf("%s 没有返回可用模型", l.command)
+		return nil, &ListError{Reason: ListEmpty, Command: l.command}
 	}
 	return models, nil
 }

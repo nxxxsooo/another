@@ -42,6 +42,10 @@ func NewApp() (*App, error) {
 	} else if !os.IsNotExist(settingsErr) {
 		return nil, fmt.Errorf("load config: %w", settingsErr)
 	}
+	// Resolve the interface language before anything can draw. A missing
+	// configuration is not a missing language: it means auto, which reads the
+	// terminal's locale. The CLI's own help and errors stay English.
+	tui.SetLanguage(settings.UI.Language)
 	idx, err := index.Open("")
 	if err != nil {
 		return nil, err
@@ -435,27 +439,24 @@ func (a *App) setupCmd() *cobra.Command {
 
 func (a *App) runSetup(ctx context.Context) (bool, error) {
 	counts, _ := a.Index.CountByProvider()
-	var initial []string
-	var initialTitle *config.TitleModel
-	var initialPolicy config.TitlePolicy
+	var initial config.Settings
 	if settings, err := config.LoadSettings(); err == nil {
-		initial = settings.EnabledProviders
-		initialTitle = settings.TitleModel
-		initialPolicy = settings.TitlePolicy
-		if initialTitle != nil && initialTitle.Language == "" {
-			initialTitle.Language = settings.TitlePolicy.Language
+		initial = settings
+		if initial.TitleModel != nil && initial.TitleModel.Language == "" {
+			initial.TitleModel.Language = settings.TitlePolicy.Language
 		}
 	} else if !os.IsNotExist(err) {
 		return false, fmt.Errorf("load config: %w", err)
 	}
-	all := registry.NewOrdered(initial)
-	enabled, titleModel, titlePolicy, saved, err := tui.RunSetup(all, counts, initial, initialTitle, initialPolicy)
-	if err != nil || !saved {
+	all := registry.NewOrdered(initial.EnabledProviders)
+	settings, done, err := tui.RunSetup(all, counts, initial)
+	if err != nil || !done {
 		return false, err
 	}
-	if err := config.SaveSettings(config.Settings{EnabledProviders: enabled, TitleModel: titleModel, TitlePolicy: titlePolicy}); err != nil {
+	if err := config.SaveSettings(settings); err != nil {
 		return false, fmt.Errorf("save config: %w", err)
 	}
+	enabled := settings.EnabledProviders
 	if err := a.Index.KeepProviders(enabled); err != nil {
 		return false, fmt.Errorf("prune index: %w", err)
 	}
