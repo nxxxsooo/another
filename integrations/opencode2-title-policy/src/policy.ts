@@ -33,7 +33,27 @@ Rules:
 - Topic must be concrete and distinct from the project name: at most 16 Chinese characters or 8 English words, counting each English word, filename, or identifier as one character.
 - Preserve exact technical terms, numbers, and filenames.
 - Never use tools, markdown, quotes, explanations, or trailing punctuation.
-- If type or topic cannot be determined, output exactly KEEP.`
+- Always output a title. An empty, minimal, or conversational session is still named: title the intent instead of refusing, such as ${language === "zh" ? "探索｜打招呼" : "Explore｜Greeting"}.
+- Never output a refusal, a status word, or any text outside the Type｜Topic form.`
+}
+
+// OpenCode 2 has no sentinel for "no title": whatever the title agent returns
+// becomes the session name verbatim. An earlier version of this prompt offered
+// KEEP as an escape hatch, which OpenCode 2 never interpreted — every session
+// the model would not summarize, an empty one or a greeting, ended up literally
+// named KEEP. The prompt now forbids refusing; a refusal that arrives anyway is
+// replaced rather than shown.
+const refusals = new Set(["KEEP", "NONE", "NULL", "N/A", "NA", "UNKNOWN", "UNTITLED", "NO TITLE"])
+
+export function isRefusal(title: string): boolean {
+  return refusals.has(title.trim().toUpperCase())
+}
+
+// The fallback names what is actually known: a session that exists and was not
+// summarizable. It carries the same date and shape as any policy title, so it
+// sorts with them and is replaced by a manual rename like any other.
+export function fallbackTitle(created: number, configured: TitleLanguage): string | undefined {
+  return finalizeTitle(configured === "zh" ? "探索｜未命名会话" : "Explore｜Untitled session", created, configured)
 }
 
 // topicWeight measures a topic the way the caps are meant: one unit per CJK

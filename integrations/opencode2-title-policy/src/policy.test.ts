@@ -1,11 +1,38 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { finalizeTitle, loadLanguage, parsePartialTitle, titlePrompt } from "./policy.ts"
+import { fallbackTitle, finalizeTitle, isRefusal, loadLanguage, parsePartialTitle, titlePrompt } from "./policy.ts"
 
 test("prompt is strict and language-specific", () => {
   assert.match(titlePrompt("en"), /Feature Design Fix Optimize Release Explore Docs Research/)
   assert.match(titlePrompt("zh"), /功能 设计 修复 优化 发布 探索 文档 研究/)
   assert.match(titlePrompt("auto"), /first user message contains any Han character/)
+})
+
+// OpenCode 2 names the session with whatever the title agent returns. Offering
+// the model an escape hatch it does not understand is how empty sessions ended
+// up named KEEP, so the prompt must never hand out a word to fall back on.
+test("prompt offers no refusal word", () => {
+  for (const language of ["auto", "en", "zh"] as const) {
+    assert.doesNotMatch(titlePrompt(language), /KEEP/)
+    assert.match(titlePrompt(language), /Always output a title/)
+  }
+})
+
+test("a refusal is recognized however it is written", () => {
+  for (const value of ["KEEP", " keep ", "N/A", "none", "Untitled"]) assert.ok(isRefusal(value), value)
+  for (const value of ["Fix｜KEEP alive header", "探索｜打招呼", "Keep-alive tuning"]) {
+    assert.equal(isRefusal(value), false, value)
+  }
+})
+
+test("a refused session is named, dated, and left alone afterwards", () => {
+  const created = Date.parse("2026-09-04T23:30:00Z")
+  assert.equal(fallbackTitle(created, "zh"), "0905｜探索｜未命名会话")
+  assert.equal(fallbackTitle(created, "en"), "0905｜Explore｜Untitled session")
+  assert.equal(fallbackTitle(created, "auto"), "0905｜Explore｜Untitled session")
+  const fallback = fallbackTitle(created, "en")!
+  assert.equal(isRefusal(fallback), false)
+  assert.equal(parsePartialTitle(fallback), undefined)
 })
 
 test("finalizes English and Chinese with Shanghai creation date", () => {

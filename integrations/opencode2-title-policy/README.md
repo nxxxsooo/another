@@ -20,6 +20,11 @@ instance that happened to be watching.
 
 Invalid output is left untouched, and a title that already carries a date is
 not processed again, which is what stops the rename it performs from looping.
+The prompt never offers the model a way to decline. OpenCode 2 has no sentinel
+for "no title" — it writes the title agent's answer to the session verbatim —
+so an earlier escape hatch named every unsummarizable session `KEEP`. A refusal
+that still arrives is replaced with the dated `Explore｜Untitled session` /
+`探索｜未命名会话` rather than shown.
 Child sessions keep the name of the task that spawned them. A manual rename
 that happens to be exactly `Type｜Topic` is treated as policy output and gets
 the date; write anything else to opt out. This targets the beta plugin API

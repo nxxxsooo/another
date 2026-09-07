@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { finalizeTitle, loadLanguage, parsePartialTitle, titlePrompt } from "./policy.ts"
+import { fallbackTitle, finalizeTitle, isRefusal, loadLanguage, parsePartialTitle, titlePrompt } from "./policy.ts"
 
 const plugin = {
   id: "another.title-policy",
@@ -21,12 +21,19 @@ const plugin = {
           // pending sessions in memory and lost the date whenever the plugin
           // reloaded, the server restarted, or the session belonged to a
           // directory whose instance was not the one watching.
-          if (!parsePartialTitle(event.data.title)) continue
+          // A refusal is a defect this policy can produce, never a name the
+          // user should read: OpenCode 2 writes the title agent's answer to the
+          // session as it stands, so a model that declines names the session
+          // after its own refusal.
+          const refused = isRefusal(event.data.title)
+          if (!refused && !parsePartialTitle(event.data.title)) continue
           const session = await ctx.session.get({ sessionID: event.data.sessionID })
           // Child sessions are named after the task that spawned them, which
           // is more useful to their parent than a dated policy title.
           if (session.parentID) continue
-          const title = finalizeTitle(event.data.title, session.time.created, language)
+          const title = refused
+            ? fallbackTitle(session.time.created, language)
+            : finalizeTitle(event.data.title, session.time.created, language)
           if (!title) continue
           // A dated title no longer parses as Type｜Topic, so the rename this
           // triggers ends here rather than looping.
