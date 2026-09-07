@@ -1020,8 +1020,9 @@ func TestProjectCellKeepsTheLastSegment(t *testing.T) {
 	}
 }
 
-// Scoped to one project, every row would repeat the same path; that width
-// belongs to the title instead. The column returns with the global scope.
+// When every row would repeat the same path, that width belongs to the title
+// instead. Whether it would is decided in applySessionDelegate; this checks
+// that the flag reaches the renderer.
 func TestProjectColumnFollowsScope(t *testing.T) {
 	render := func(showProject bool) string {
 		marked := map[string]bool{}
@@ -1042,6 +1043,81 @@ func TestProjectColumnFollowsScope(t *testing.T) {
 	}
 	if got := render(true); !strings.Contains(got, "scope-fixture") {
 		t.Fatalf("global row lost the project column: %q", got)
+	}
+}
+
+// A project scope covers one repository, not one directory: its registered
+// worktrees and, outside Git, everything under the current directory all land
+// in it. Hiding the path there left two sessions from two worktrees looking
+// identical, so the column follows the rows rather than the scope flag.
+func TestProjectColumnReturnsWhenAProjectSpansDirectories(t *testing.T) {
+	root := "/tmp/another-scope-fixture"
+	worktree := root + "/.worktrees/delete-undo"
+	rowsIn := func(paths ...string) modelState {
+		m := layoutTestModel()
+		m.width, m.height = 120, 40
+		m.cwd, m.projectScope = root, util.ProjectScope{CWD: root, Root: root, Git: true}
+		m.projectOnly = true
+		items := make([]list.Item, 0, len(paths))
+		for i, path := range paths {
+			items = append(items, sessionItem{summary: model.Summary{
+				ID: fmt.Sprint(i), Provider: "codex", Title: "A useful title", ProjectPath: path,
+			}})
+		}
+		m.sessions.SetItems(items)
+		m.layout()
+		return m
+	}
+
+	single := rowsIn(root, root)
+	if sessionDelegateFor(&single).showProject {
+		t.Fatal("a project living in one directory still spends width on the path")
+	}
+
+	multi := rowsIn(root, worktree)
+	spread := sessionDelegateFor(&multi)
+	if !spread.showProject {
+		t.Fatal("a project spanning two worktrees hides the only thing telling them apart")
+	}
+	if spread.projectBase != root {
+		t.Fatalf("projectBase = %q, want the project root", spread.projectBase)
+	}
+
+	// The global scope is unchanged: full paths, always shown.
+	global := rowsIn(root, root)
+	global.projectOnly = false
+	if d := sessionDelegateFor(&global); !d.showProject || d.projectBase != "" {
+		t.Fatalf("global scope changed: showProject=%v base=%q", d.showProject, d.projectBase)
+	}
+}
+
+// The rendered row is what the user reads, so the two worktrees have to be
+// distinguishable in it — and by the segment that differs, not by a prefix.
+func TestProjectColumnShowsWorktreesApart(t *testing.T) {
+	root := "/tmp/another-scope-fixture"
+	marked := map[string]bool{}
+	d := sessionDelegate{marked: marked, showProject: true, projectBase: root}
+	render := func(path string) string {
+		item := sessionItem{summary: model.Summary{
+			ID: path, Provider: "codex", Title: "Same title in both trees", ProjectPath: path,
+		}}
+		l := newBareList([]list.Item{item}, d, 120, 4)
+		var buf strings.Builder
+		d.Render(&buf, l, 0, item)
+		return ansi.Strip(buf.String())
+	}
+	atRoot, inWorktree := render(root), render(root+"/.worktrees/delete-undo")
+	if atRoot == inWorktree {
+		t.Fatal("two worktrees render the same row")
+	}
+	if !strings.Contains(inWorktree, ".worktrees/delete-undo") {
+		t.Fatalf("the worktree row does not name its worktree: %q", inWorktree)
+	}
+	if strings.Contains(inWorktree, "another-scope-fixture") {
+		t.Fatalf("the row repeats the shared project root: %q", inWorktree)
+	}
+	if !strings.Contains(atRoot, projectRootMark) {
+		t.Fatalf("the root row has nothing in the column: %q", atRoot)
 	}
 }
 

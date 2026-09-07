@@ -106,10 +106,15 @@ func (i sessionItem) FilterValue() string {
 type sessionDelegate struct {
 	marked  map[string]bool
 	spacing int
-	// showProject is off while the browser is scoped to one project, where
-	// every row would repeat the same path. The column only earns its width
-	// once the list can hold more than one project.
+	// showProject is off while every row would repeat the same path. The
+	// column only earns its width once the list spans more than one
+	// directory — which a project scope does whenever it covers Git
+	// worktrees or a monorepo's subtrees.
 	showProject bool
+	// projectBase is the directory the column is read against. Inside a
+	// project it is the project root, so a row shows the part of its path
+	// that differs from its neighbours' instead of the prefix they share.
+	projectBase string
 }
 
 func (sessionDelegate) Height() int                         { return 1 }
@@ -172,7 +177,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + " " +
 		provText + " " + title + " "
 	if projW > 0 {
-		row += renderProjectCellState(it.summary.ProjectPath, projW, it.missingDir) + " "
+		row += renderProjectCellState(it.summary.ProjectPath, d.projectBase, projW, it.missingDir) + " "
 	}
 	row += mutedStyle.Render(padLeft(msgs, msgW))
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
@@ -184,6 +189,12 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 // found when looked for and ignored otherwise.
 const projectBar = "▎"
 
+// projectRootMark stands for a session that started at the project root while
+// its neighbours started in a worktree or a subtree below it. Spelling the
+// root out would repeat on every such row the prefix the column exists to
+// leave out, and an empty cell would read as "no directory recorded".
+const projectRootMark = "·"
+
 // renderProjectCell draws the project column in exactly width cells: a colored
 // bar keyed to the path, then the path with its last segment lifted out of the
 // dim. The bar is one cell of foreground, not a filled chip, so it survives the
@@ -193,17 +204,23 @@ const projectBar = "▎"
 // name for where the work happened — and loses its color instead. Color in
 // this column means "a project you can go to", so a moved, renamed, or
 // deleted directory reads as gone without a symbol having to say it.
+//
+// With a base the path is read against it, which is what makes the column
+// usable inside one project: 28 cells spent on the prefix every row shares
+// say nothing, and left-truncating that prefix cuts off the tail that does.
 func renderProjectCell(path string, width int) string {
-	return renderProjectCellState(path, width, false)
+	return renderProjectCellState(path, "", width, false)
 }
 
-func renderProjectCellState(path string, width int, missing bool) string {
+func renderProjectCellState(path, base string, width int, missing bool) string {
 	if width <= 0 {
 		return ""
 	}
 	if path == "" {
 		return strings.Repeat(" ", width)
 	}
+	// The bar hashes the absolute path, not the shown text, so a directory
+	// keeps one hue whether the column is scoped to a project or not.
 	barStyle := lipgloss.NewStyle().Foreground(projectColor(path))
 	leafStyle := projectLeafStyle
 	if missing {
@@ -213,8 +230,13 @@ func renderProjectCellState(path string, width int, missing bool) string {
 		return barStyle.Render(projectBar) + strings.Repeat(" ", width-1)
 	}
 
-	shown := util.SanitizeDisplay(util.TildePath(path))
+	shown := util.SanitizeDisplay(projectCellText(path, base))
 	textW := width - 2
+	// The root mark names a place by not naming it, so it stays in the dim the
+	// parent segments use; the rows that do carry a subtree keep the contrast.
+	if shown == projectRootMark {
+		return padRight(barStyle.Render(projectBar)+" "+projectParentStyle.Render(shown), width)
+	}
 	leaf := shown
 	parent := ""
 	if idx := strings.LastIndex(shown, "/"); idx >= 0 {
@@ -232,6 +254,54 @@ func renderProjectCellState(path string, width int, missing bool) string {
 	}
 
 	return padRight(barStyle.Render(projectBar)+" "+text, width)
+}
+
+// projectCellText is what the column says about a directory. Without a base
+// that is the whole path; with one it is the part below the base, because
+// inside a project the shared prefix is the one thing no row needs told.
+//
+// It works on cleaned strings only. This runs for every visible row on every
+// keystroke, so it must not touch the filesystem; the index already stores
+// normalized paths, and a path this cannot place keeps its full spelling
+// rather than being guessed at.
+func projectCellText(path, base string) string {
+	if base == "" {
+		return util.TildePath(path)
+	}
+	clean, cleanBase := filepath.Clean(path), filepath.Clean(base)
+	if clean == cleanBase {
+		return projectRootMark
+	}
+	rel, err := filepath.Rel(cleanBase, clean)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		// A worktree registered outside its repository root is still part of
+		// the project, and its full path is the only honest thing to show.
+		return util.TildePath(path)
+	}
+	return filepath.ToSlash(rel)
+}
+
+// projectsSpreadOut reports whether these rows started in more than one
+// directory. It is what decides whether the column is worth its width: one
+// directory repeated down the list says nothing, while a project holding
+// worktrees or a monorepo's subtrees is exactly where the path is the only
+// thing telling two similarly titled sessions apart.
+func projectsSpreadOut(items []list.Item) bool {
+	first := ""
+	for _, item := range items {
+		row, ok := item.(sessionItem)
+		if !ok || row.summary.ProjectPath == "" {
+			continue
+		}
+		if first == "" {
+			first = row.summary.ProjectPath
+			continue
+		}
+		if row.summary.ProjectPath != first {
+			return true
+		}
+	}
+	return false
 }
 
 type targetItem struct{ id, name string }
@@ -1921,12 +1991,36 @@ func dispatchPageLoadModel(m modelState) (tea.Model, tea.Cmd) {
 // change without a resize, so this is called from the scope toggle as well as
 // from layout; leaving it to layout alone would keep the project column visible
 // for a project-scoped list until the next window change.
+//
+// The column is decided from the rows that are actually loaded rather than
+// from the scope alone. A project scope is not one directory: Git worktrees
+// and monorepo subtrees all land in it, and there the path is the only thing
+// on the row that says which tree a session came from. Reading the loaded
+// items keeps every frame self-consistent, including the one after the scope
+// toggle where the rows on screen still belong to the previous scope.
 func (m *modelState) applySessionDelegate() {
-	m.sessions.SetDelegate(sessionDelegate{
+	m.sessions.SetDelegate(sessionDelegateFor(m))
+}
+
+// sessionDelegateFor decides how rows are drawn for the state the browser is
+// in. It is separate from applying it so the decision can be read directly.
+func sessionDelegateFor(m *modelState) sessionDelegate {
+	// Items(), not VisibleItems(): a column that appeared and vanished as a
+	// filter narrowed the list would move every row beside it.
+	spread := projectsSpreadOut(m.sessions.Items())
+	base := ""
+	if m.projectOnly {
+		base = m.projectScope.Root
+		if base == "" {
+			base = m.cwd
+		}
+	}
+	return sessionDelegate{
 		marked:      m.marked,
 		spacing:     m.sessionSpacing,
-		showProject: !m.projectOnly,
-	})
+		showProject: !m.projectOnly || spread,
+		projectBase: base,
+	}
 }
 
 func (m *modelState) layout() {
