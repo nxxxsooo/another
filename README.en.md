@@ -119,6 +119,8 @@ q         quit
 
 The interface language and the title language are separate settings, and their `auto` means different things: the interface follows the terminal's locale (`LC_ALL` → `LC_MESSAGES` → `LANG`, where a `zh` tag selects Chinese and everything else selects English), while a title follows the session it names. The CLI's `--help`, flag descriptions, and error messages stay English. The bridge sentence written into Pi when a migrated conversation ends on an assistant turn follows the interface language, and both wordings are recognized and stripped when the session is read back.
 
+While the TUI runs it sets the terminal title to `another`, or `another setup` on the setup screen. On exit the title goes back to the working directory, and handing the terminal to another agent names that agent instead, so the tab always says what is actually running in it.
+
 On macOS, opening the TUI temporarily selects the current ASCII-capable keyboard layout so letter shortcuts are not intercepted by a Pinyin IME. The input source active before launch is restored on exit or before handing the terminal to the target agent. Linux input sources are left untouched.
 
 Migration shows the exact resume command first. Press `Enter` to hand the terminal to the target agent, `c` to copy the command, or `Esc` to keep browsing.
@@ -147,6 +149,10 @@ The session list marks each agent with a fixed-width color chip. Agent names dif
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — |
 
 A dash means that agent has no verified native contract for the operation. Rename, archive, and delete change the corresponding agent's native state rather than an another-only marker; `another` shows only operations the selected agent actually supports and does not keep private state that disappears on refresh.
+
+Codex keeps a session's name in three places: the CLI's thread store, the legacy `session_index.jsonl`, and the Electron state Codex Desktop's sidebar actually reads. Rename writes all three. Desktop rewrites its whole state from memory while it runs, so writing underneath it would lose either the rename or whatever Desktop has not flushed; that case is reported instead of forced. The CLI store is already renamed, and the interface says the sidebar catches up when Desktop restarts rather than calling the rename a failure.
+
+A session whose directory no longer exists is marked as such. After a workspace is reorganized those sessions still browse and migrate, but their resume command would land on a path that is gone.
 
 Check the local installation:
 
