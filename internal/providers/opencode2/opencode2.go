@@ -380,19 +380,20 @@ func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, t
 		return fmt.Errorf("opencode2: title must not be empty")
 	}
 	data, _ := json.Marshal(map[string]string{"title": title})
-	cmd := exec.CommandContext(ctx, p.command, "api", "POST", "/api/session/"+ref.ID+"/rename", "--data", string(data))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("opencode2 rename: %w: %s", err, strings.TrimSpace(string(out)))
-	}
 	// `opencode2 api` exits 0 on an HTTP 500, so a refused rename arrives here
 	// looking exactly like a successful one. The session's own row decides:
 	// the server owns it, and it is what another indexes and displays. The
 	// common refusal is a session whose directory has been deleted — an old
-	// worktree or a temporary checkout — which the server cannot open.
-	if err := p.awaitTitle(ctx, ref.ID, title); err != nil {
-		return err
-	}
-	return nil
+	// worktree or a temporary checkout — which the server cannot open, so the
+	// directory is restored around the whole exchange, including the wait for
+	// the server to persist its write.
+	return p.withSessionDirectory(ref.ID, func() error {
+		cmd := exec.CommandContext(ctx, p.command, "api", "POST", "/api/session/"+ref.ID+"/rename", "--data", string(data))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("opencode2 rename: %w: %s", err, strings.TrimSpace(string(out)))
+		}
+		return p.awaitTitle(ctx, ref.ID, title)
+	})
 }
 
 // awaitTitle waits briefly for the server to persist a title, because the API
@@ -450,14 +451,16 @@ func (p *Provider) delete(ctx context.Context, sessionID string) error {
 	if sessionID == "" {
 		return fmt.Errorf("opencode2: missing session id")
 	}
-	cmd := exec.CommandContext(ctx, p.command, "api", "DELETE", "/api/session/"+sessionID)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("opencode2 delete: %w: %s", err, strings.TrimSpace(string(out)))
-	}
 	// Same hidden refusal as rename: the CLI exits 0 on an HTTP 500, and a
 	// deletion another believes in but the server refused would be reported as
 	// a cleaned-up session that is still there.
-	return p.awaitGone(ctx, sessionID)
+	return p.withSessionDirectory(sessionID, func() error {
+		cmd := exec.CommandContext(ctx, p.command, "api", "DELETE", "/api/session/"+sessionID)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("opencode2 delete: %w: %s", err, strings.TrimSpace(string(out)))
+		}
+		return p.awaitGone(ctx, sessionID)
+	})
 }
 
 // SupportsRelocate reports both modes: OpenCode 2 owns a native fork and a

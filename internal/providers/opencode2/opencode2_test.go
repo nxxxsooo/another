@@ -153,6 +153,9 @@ func TestRenameUsesOfficialAPI(t *testing.T) {
 	t.Setenv("OPENCODE2_DB_PATH", path)
 	t.Setenv("OPENCODE2_COMMAND", script)
 	t.Setenv("CAPTURE", capture)
+	// A directory that exists keeps the lifecycle call from restoring one:
+	// that path has its own tests, and this one is about the API call.
+	storeDirectory(t, path, "ses_fixture", t.TempDir())
 	// The stub cannot write the database, so the applied rename is staged the
 	// way a server would leave it: visible in the session's own row.
 	storeTitle(t, path, "new title")
@@ -200,6 +203,7 @@ func TestDeleteUsesOfficialAPI(t *testing.T) {
 	t.Setenv("OPENCODE2_DB_PATH", path)
 	t.Setenv("OPENCODE2_COMMAND", script)
 	t.Setenv("CAPTURE", capture)
+	storeDirectory(t, path, "ses_fixture", t.TempDir())
 	// The stub cannot write the database, so the applied deletion is staged
 	// the way a server would leave it: the row is gone.
 	dropFixtureSession(t, path)
@@ -236,5 +240,93 @@ func TestDeleteReportsARefusalTheCLIHides(t *testing.T) {
 	t.Setenv("OPENCODE2_COMMAND", script)
 	if err := opencode2.New().DeleteSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}); err == nil {
 		t.Fatal("a deletion that never happened was reported as success")
+	}
+}
+
+// OpenCode 2's server opens a session's directory before it will delete it, so
+// a session left behind by a merged worktree could not be removed at all.
+// another restores the directory for the call and withdraws it afterwards.
+func TestDeleteRestoresAMissingDirectoryAndWithdrawsItAgain(t *testing.T) {
+	path := fixtureDB(t)
+	root := t.TempDir()
+	parent := filepath.Join(root, "gone")
+	dir := filepath.Join(parent, "worktree")
+	storeDirectory(t, path, "ses_fixture", dir)
+	capture := filepath.Join(t.TempDir(), "seen")
+	script := filepath.Join(t.TempDir(), "opencode2")
+	body := "#!/bin/sh\n[ -d \"$SESSION_DIR\" ] && printf present > \"$CAPTURE\" || printf missing > \"$CAPTURE\"\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	t.Setenv("OPENCODE2_COMMAND", script)
+	t.Setenv("CAPTURE", capture)
+	t.Setenv("SESSION_DIR", dir)
+	// The stub cannot write the database, so the server's own delete is
+	// staged: the row has to still be there when another reads the session's
+	// directory, and gone by the time it confirms the deletion.
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			return
+		}
+		defer db.Close()
+		_, _ = db.Exec(`DELETE FROM session_v2 WHERE id = 'ses_fixture'`)
+	}()
+
+	if err := opencode2.New().DeleteSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	seen, _ := os.ReadFile(capture)
+	if string(seen) != "present" {
+		t.Fatalf("directory during the call = %q, want present", seen)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("restored directory survived the call: %v", err)
+	}
+	if _, err := os.Stat(parent); !os.IsNotExist(err) {
+		t.Fatalf("restored parent survived the call: %v", err)
+	}
+	if _, err := os.Stat(root); err != nil {
+		t.Fatalf("a directory another did not create was removed: %v", err)
+	}
+}
+
+// A directory that was already there is the person's, not another's. It must
+// survive the call untouched, and so must anything the operation left in a
+// directory another did create.
+func TestDeleteLeavesDirectoriesItDidNotCreate(t *testing.T) {
+	path := fixtureDB(t)
+	dir := filepath.Join(t.TempDir(), "live")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(dir, "file")
+	if err := os.WriteFile(keep, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	storeDirectory(t, path, "ses_fixture", dir)
+	script := filepath.Join(t.TempDir(), "opencode2")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	t.Setenv("OPENCODE2_COMMAND", script)
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			return
+		}
+		defer db.Close()
+		_, _ = db.Exec(`DELETE FROM session_v2 WHERE id = 'ses_fixture'`)
+	}()
+
+	if err := opencode2.New().DeleteSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("an existing directory was removed: %v", err)
 	}
 }
