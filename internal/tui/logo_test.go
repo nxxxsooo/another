@@ -215,20 +215,20 @@ func TestRestFrameIsTheScriptsFinalBeat(t *testing.T) {
 }
 
 // Merge walks each agent to the colour of the session. At zero both copies are
-// their own agent's; at one both have arrived at the white the overlap has
-// carried since the first frame.
+// their own agent's; at one both have arrived at the intersection the overlap
+// has carried since the first frame.
 func TestMergeWalksBothAgentsToTheSession(t *testing.T) {
-	if got := mix(twinTheme.source, twinTheme.text, 0); got != twinTheme.source {
+	if got := mix(twinTheme.source, twinTheme.intersection, 0); got != twinTheme.source {
 		t.Errorf("source at merge 0 = %s, want %s", got, twinTheme.source)
 	}
-	if got := mix(twinTheme.target, twinTheme.text, 0); got != twinTheme.target {
+	if got := mix(twinTheme.target, twinTheme.intersection, 0); got != twinTheme.target {
 		t.Errorf("target at merge 0 = %s, want %s", got, twinTheme.target)
 	}
-	if got := mix(twinTheme.source, twinTheme.text, 1); got != twinTheme.text {
-		t.Errorf("source at merge 1 = %s, want %s", got, twinTheme.text)
+	if got := mix(twinTheme.source, twinTheme.intersection, 1); got != twinTheme.intersection {
+		t.Errorf("source at merge 1 = %s, want %s", got, twinTheme.intersection)
 	}
-	if got := mix(twinTheme.target, twinTheme.text, 1); got != twinTheme.text {
-		t.Errorf("target at merge 1 = %s, want %s", got, twinTheme.text)
+	if got := mix(twinTheme.target, twinTheme.intersection, 1); got != twinTheme.intersection {
+		t.Errorf("target at merge 1 = %s, want %s", got, twinTheme.intersection)
 	}
 }
 
@@ -253,7 +253,7 @@ func TestMergedFrameIsOneColour(t *testing.T) {
 			t.Errorf("the merged mark still carries %s", agent)
 		}
 	}
-	if !strings.Contains(frame, colorOf(t, twinTheme.text)) {
+	if !strings.Contains(frame, colorOf(t, twinTheme.intersection)) {
 		t.Error("the merged mark is not drawn in the session's colour")
 	}
 }
@@ -279,7 +279,7 @@ var previewInk = [4]lipgloss.Color{
 	bare:       lipgloss.Color(""),
 	sourceOnly: twinTheme.source,
 	targetOnly: twinTheme.target,
-	shared:     twinTheme.text,
+	shared:     twinTheme.intersection,
 }
 
 // A terminal cell holds two sub-pixels, so the glyph has to say which halves

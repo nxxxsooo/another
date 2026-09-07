@@ -34,13 +34,12 @@ import (
 // channel-split reading therefore lives in the motion and in the README hero,
 // while what stays in a terminal's scrollback is the merged word.
 //
-// The overlap is twinTheme.text rather than twinTheme.intersection, even though
-// the palette names the latter for exactly this job. The brand asks the
-// intersection to bloom brighter than both forms, and #68FFD6 only blooms
-// against the master artwork's deeper green. Against Julep it is barely a shade
-// apart, so the overlap collapses into the target fringe and the mark loses its
-// third reading. Text white is the one entry in the palette that still reads as
-// a bloom over both agents' colours.
+// The overlap is twinTheme.intersection, the entry the palette names for
+// exactly this job. It sits close to Julep, so in the split frames the shared
+// cells read as a lighter bloom inside the target's mint rather than as a third
+// hue standing apart from it. That is the intended reading: what both agents
+// hold is not a separate thing from where the session landed. The frame the
+// scrollback keeps is therefore the mark in intersection cyan, not white.
 //
 // Painting a background here is safe and load-bearing: a cell whose two halves
 // need different colours is drawn as a half block with one colour in the
@@ -272,19 +271,20 @@ func pad(s string, width int) string {
 // copies stand, in whole cells, because a terminal cannot slide half a column.
 // merge is how far the two agents have given way to the session they both
 // hold: at zero each copy is its own agent's colour, at one both have arrived
-// at the white the overlap has been all along. tear pulls the rows off that
-// single gap so the word can come apart across scanlines on the way in.
+// at the intersection cyan the overlap has been all along. tear pulls the rows
+// off that single gap so the word can come apart across scanlines on the way in.
 //
-// The overlap does not move. It is the part of the session both agents hold,
-// so it is white from the first frame, and merging is the rest of the mark
-// catching up to it rather than a third colour arriving from somewhere.
+// The overlap does not move. It is the part of the session both agents hold, so
+// it carries the intersection colour from the first frame, and merging is the
+// rest of the mark catching up to it rather than a third colour arriving from
+// somewhere.
 func renderFrame(gap int, merge float64, tear int) string {
 	width := logoWidth()
 	ink := [4]lipgloss.Color{
 		bare:       lipgloss.Color(""),
-		sourceOnly: mix(twinTheme.source, twinTheme.text, merge),
-		targetOnly: mix(twinTheme.target, twinTheme.text, merge),
-		shared:     twinTheme.text,
+		sourceOnly: mix(twinTheme.source, twinTheme.intersection, merge),
+		targetOnly: mix(twinTheme.target, twinTheme.intersection, merge),
+		shared:     twinTheme.intersection,
 	}
 
 	lines := make([]string, 0, logoHeight())
@@ -308,7 +308,8 @@ func restFrame() string { return renderFrame(0, 1, 0) }
 // goodbye starts because it is what just happened.
 //
 // Then they close on each other, each walking the same distance toward the
-// middle, and as they overlap their colours give way to the white they share.
+// middle, and as they overlap their colours give way to the intersection they
+// share.
 // It does not close cleanly: the rows tear off the shared gap on the way in,
 // so for a few frames the word is split in some bands and already merged in
 // others. A migration is not a smooth dissolve, and the mark should not claim

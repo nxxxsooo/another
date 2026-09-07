@@ -307,7 +307,7 @@ The name is also a quiet nod to [*Another*](https://www.pa-works.jp/works/anothe
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/tui-goodbye-static.png">
-    <img src="docs/assets/tui-goodbye.gif" width="500" alt="the another wordmark printed on exit; two copies of the mark, one violet and one mint, close on each other from either side, tearing into offset horizontal bands on the way in as both colours give way to the white they share, then meeting as a single white wordmark">
+    <img src="docs/assets/tui-goodbye.gif" width="500" alt="the another wordmark printed on exit; two copies of the mark, one violet and one mint, close on each other from either side, tearing into offset horizontal bands on the way in as both colours give way to the intersection cyan they share, then meeting as a single cyan wordmark">
   </picture>
 </p>
 

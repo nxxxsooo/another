@@ -35,7 +35,7 @@ MIN_FRAME_MS = 20
 SURFACE = (10, 10, 10)
 CHARPLE = (107, 80, 255)   # the agent the session came from
 JULEP = (0, 255, 178)      # the agent it went to
-TEXT = (244, 244, 245)     # the session itself, held by both
+SHARED_INK = (104, 255, 214)  # the session itself, held by both
 MUTED = (126, 126, 143)
 
 # Sub-pixel ownership, mirroring the inkState constants in logo.go.
@@ -133,9 +133,9 @@ def frame(rows, face_width, total, gap, merge, tear, font, design, version):
     # Mirrors renderFrame in logo.go: the overlap is the session and never
     # moves, while merge walks each agent's own colour toward it.
     palette = {
-        SOURCE_ONLY: lerp(CHARPLE, TEXT, merge),
-        TARGET_ONLY: lerp(JULEP, TEXT, merge),
-        SHARED: TEXT,
+        SOURCE_ONLY: lerp(CHARPLE, SHARED_INK, merge),
+        TARGET_ONLY: lerp(JULEP, SHARED_INK, merge),
+        SHARED: SHARED_INK,
     }
     cell_rows = len(rows) // 2
 
