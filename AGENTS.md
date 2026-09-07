@@ -21,4 +21,5 @@ Before publishing, record the target version and all surfaces. Do not mix unexpl
 - **Continuously tested:** Pi, OpenCode 2, Claude Code, Codex, Antigravity, and Qwen Code. Include all six in every release regression plan.
 - **Compatibility adapters:** Cursor, OpenCode, CommandCode, and Hermes. Preserve working adapters, but do not imply they receive end-to-end maintainer testing on every release.
 - Setup must start with no providers selected on first run. Detection means “available”, never “chosen”; users explicitly select which agents another indexes and exposes.
-- Session management is capability-driven. Show rename, archive, and delete only when the selected provider implements the corresponding native operation. Never emulate unsupported lifecycle actions with another-only state.
+- Session management is capability-driven. Show rename, archive, relocate, and delete only when the selected provider implements the corresponding native operation. Never emulate unsupported lifecycle actions with another-only state.
+- Relocation is native or absent. Carrying a session into another directory uses that agent's own move or copy — currently OpenCode 2's `fork`/`move` endpoints and Pi's session file — never a re-render through the portable model, which would silently drop tool calls and reasoning. A same-provider migration is not a relocation.
