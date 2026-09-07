@@ -20,9 +20,20 @@ type Settings struct {
 	// and Pi. It remains available even when another's suggestion model is
 	// disabled. Missing language means the new default, auto.
 	TitlePolicy TitlePolicy `json:"title_policy,omitempty"`
+	// UI is how another speaks to the person running it, which is a
+	// different question from what language it writes titles in. A config
+	// written before this existed has no ui at all, and that means auto.
+	UI UI `json:"ui,omitempty"`
 }
 
 type TitlePolicy struct {
+	Language string `json:"language,omitempty"`
+}
+
+// UI collects preferences about another's own screens rather than the content
+// it produces. Language is "en", "zh", or "auto" to follow the terminal's
+// locale; absent means auto.
+type UI struct {
 	Language string `json:"language,omitempty"`
 }
 

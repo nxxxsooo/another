@@ -32,6 +32,32 @@ type BatchItem struct {
 	Request   Request
 }
 
+// FreezeReason names why a row was refused before or during the run. It is an
+// identifier, never a sentence: the batch engine decides what happened and the
+// screen decides how to say it, so the reason survives being translated and
+// stays safe to compare against.
+type FreezeReason string
+
+const (
+	// FreezeNone means the row was not frozen.
+	FreezeNone FreezeReason = ""
+	// FreezeMissingCreatedAt refuses a row whose creation date cannot be
+	// proven, rather than paying for a call that could only invent one.
+	FreezeMissingCreatedAt FreezeReason = "missing-created-at"
+	// FreezeCancelled marks a row the batch never reached.
+	FreezeCancelled FreezeReason = "cancelled"
+	// FreezeDuplicateTitle marks rows that proposed the same title.
+	FreezeDuplicateTitle FreezeReason = "duplicate-title"
+	// FreezeNotIndexed marks a marked session that is no longer on record.
+	FreezeNotIndexed FreezeReason = "not-indexed"
+	// FreezeCurrentSession protects the conversation doing the renaming.
+	FreezeCurrentSession FreezeReason = "current-session"
+	// FreezeRenameUnsupported marks a provider with no native rename.
+	FreezeRenameUnsupported FreezeReason = "rename-unsupported"
+	// FreezeSuggestUnsupported marks an agent that cannot suggest titles.
+	FreezeSuggestUnsupported FreezeReason = "suggest-unsupported"
+)
+
 // BatchResult reports one row. Exactly one of Title, Frozen, or Err carries the
 // outcome: a frozen row was never sent to a model, an empty Title with no error
 // means the model declined, and Err means the attempt failed.
@@ -39,13 +65,13 @@ type BatchResult struct {
 	SessionID string
 	Current   string
 	Title     string
-	Frozen    string
+	Frozen    FreezeReason
 	Err       error
 }
 
 // Changed reports whether this row would actually rename anything.
 func (r BatchResult) Changed() bool {
-	return r.Err == nil && r.Frozen == "" && r.Title != "" && r.Title != r.Current
+	return r.Err == nil && r.Frozen == FreezeNone && r.Title != "" && r.Title != r.Current
 }
 
 // suggestFunc is the seam that keeps batch tests off real agent CLIs.
@@ -115,11 +141,11 @@ func runOne(ctx context.Context, cfg Config, item BatchItem, suggest suggestFunc
 	// possible answers are a refusal or an invented date. Unix 0 counts as
 	// missing too: that is how the index stores it, and it scans back as 1970.
 	if item.Request.CreatedAt.Unix() <= 0 {
-		res.Frozen = "缺少创建时间"
+		res.Frozen = FreezeMissingCreatedAt
 		return res
 	}
 	if ctx.Err() != nil {
-		res.Frozen = "已取消"
+		res.Frozen = FreezeCancelled
 		return res
 	}
 	var last error
@@ -175,7 +201,7 @@ func FreezeDuplicates(results []BatchResult) []BatchResult {
 	copy(out, results)
 	for i, r := range out {
 		if r.Changed() && counts[r.Title] > 1 {
-			out[i].Frozen = "批内标题重复"
+			out[i].Frozen = FreezeDuplicateTitle
 			out[i].Title = ""
 		}
 	}
@@ -192,7 +218,7 @@ func Summarize(results []BatchResult) BatchCounts {
 		switch {
 		case r.Err != nil:
 			c.Failed++
-		case r.Frozen != "":
+		case r.Frozen != FreezeNone:
 			c.Frozen++
 		case r.Changed():
 			c.Changed++

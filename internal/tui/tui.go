@@ -136,14 +136,17 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	rel := util.FormatRelative(it.summary.UpdatedAt)
 	msgs := ""
 	if it.summary.MessageCount > 0 {
-		msgs = fmt.Sprintf("%d条", it.summary.MessageCount)
+		msgs = fmt.Sprintf(txt.messageCountFmt, it.summary.MessageCount)
 	}
 
 	const (
 		timeW = 10
 		provW = agentChipWidth
-		msgW  = 7
 	)
+	// The message column is sized by the language rather than by a constant:
+	// "128条" and "128 msg" are not the same number of cells, and a column cut
+	// to the shorter of the two would truncate the count it exists to show.
+	msgW := txt.messageCountWidth
 	// The project column is what tells two similarly named sessions apart, but
 	// the title matters more; it only appears once the title still has room.
 	projW := 0
@@ -495,7 +498,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	search.Placeholder = "search titles and messages"
 	rename := textinput.New()
 	rename.Prompt = ""
-	rename.Placeholder = "新的会话标题"
+	rename.Placeholder = txt.renamePlaceholder
 	rename.CharLimit = 200
 	sp := spinner.New()
 	// OpenCode 2's compact braille spinner stays one cell wide, so the
@@ -528,7 +531,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
 	}
 	if err != nil {
-		m.err = "无法读取当前目录，已显示全部会话：" + err.Error()
+		m.err = txt.cwdUnreadable + err.Error()
 	}
 	m.contentIndexing = !m.indexing
 	if initial != nil {
@@ -633,7 +636,7 @@ func (m modelState) markStatus() string {
 	if len(m.marked) == 0 {
 		return ""
 	}
-	return mutedStyle.Render(fmt.Sprintf("已标记 %d 个会话  ·  x 标记 · X 全选 · ctrl+t 批量命名", len(m.marked)))
+	return mutedStyle.Render(fmt.Sprintf(txt.markedFmt, len(m.marked)))
 }
 
 func newSourceList(items []list.Item) list.Model {
@@ -1040,10 +1043,10 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.archived {
 			summary := msg.summary
 			m.lastArchived = &summary
-			m.status = okStyle.Render("已归档 "+truncateDisplay(msg.summary.Title, 48)) + mutedStyle.Render("  ·  a 撤销")
+			m.status = okStyle.Render(txt.archivedPrefix+truncateDisplay(msg.summary.Title, 48)) + mutedStyle.Render(txt.undoHint)
 		} else {
 			m.lastArchived = nil
-			m.status = okStyle.Render("已取消归档 " + truncateDisplay(msg.summary.Title, 48))
+			m.status = okStyle.Render(txt.unarchivedPrefix + truncateDisplay(msg.summary.Title, 48))
 		}
 		var cmd tea.Cmd
 		m, cmd = dispatchPageLoad(m)
@@ -1056,9 +1059,9 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.suggesting = false
 		switch {
 		case msg.err != nil:
-			m.suggestErr = msg.err.Error()
+			m.suggestErr = suggestErrorText(msg.err)
 		case msg.title == "":
-			m.suggestErr = "没有可用建议"
+			m.suggestErr = txt.noSuggestion
 		default:
 			m.suggestion = msg.title
 		}
@@ -1072,10 +1075,9 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 			return m, nil
 		}
-		m.status = okStyle.Render("已重命名为 " + truncateDisplay(msg.title, 56))
+		m.status = okStyle.Render(txt.renamedPrefix + truncateDisplay(msg.title, 56))
 		if msg.caveat != nil {
-			m.status = okStyle.Render("已重命名为 "+truncateDisplay(msg.title, 56)) +
-				mutedStyle.Render("  ·  "+caveatText(msg.caveat))
+			m.status += mutedStyle.Render("  ·  " + caveatText(msg.caveat))
 		}
 		var cmd tea.Cmd
 		m, cmd = dispatchPageLoad(m)
@@ -1123,7 +1125,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			// A CLI that cannot answer right now is not a dead end: the
 			// overlay says why and falls back to typing a name.
-			m.batchModelErr = msg.err.Error()
+			m.batchModelErr = listErrorText(msg.err)
 			m.batchModelPicking = false
 			m.batchModelEditing = true
 			m.batchModelInput.Focus()
@@ -1142,21 +1144,21 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.applied > 0 && msg.failed > 0:
 			detail := msg.detail
 			if detail == "" {
-				detail = "部分行失败"
+				detail = txt.someRowsFailed
 			}
 			// Only the applied rows lose their mark, so ctrl+t reopens the
 			// batch on exactly the rows that failed.
-			m.err = fmt.Sprintf("已重命名 %d 条，失败 %d 条：%s · 失败行仍有标记，ctrl+t 重试", msg.applied, msg.failed, detail)
+			m.err = fmt.Sprintf(txt.batchPartialFmt, msg.applied, msg.failed, detail)
 		case msg.applied > 0:
-			m.status = okStyle.Render(fmt.Sprintf("已重命名 %d 条", msg.applied))
+			m.status = okStyle.Render(fmt.Sprintf(txt.batchRenamedFmt, msg.applied))
 		case msg.failed > 0:
 			detail := msg.detail
 			if detail == "" {
-				detail = "全部失败"
+				detail = txt.allRowsFailed
 			}
-			m.err = fmt.Sprintf("批量重命名失败 %d 条：%s · 标记保留，ctrl+t 重试", msg.failed, detail)
+			m.err = fmt.Sprintf(txt.batchAllFailedFmt, msg.failed, detail)
 		default:
-			m.status = "没有应用任何标题变更"
+			m.status = txt.batchNoneApplied
 		}
 		var cmd tea.Cmd
 		m, cmd = dispatchPageLoad(m)
@@ -1171,7 +1173,7 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.selected = nil
 		m.lastResume = ""
-		m.status = okStyle.Render("已删除 " + truncateDisplay(msg.title, 48))
+		m.status = okStyle.Render(txt.deletedPrefix + truncateDisplay(msg.title, 48))
 		m.sources = sourceChips(m.reg, msg.counts)
 		if m.sourceIdx >= len(m.sources) {
 			m.sourceIdx = 0
@@ -1198,13 +1200,13 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if target == "" {
 			target = "target"
 		}
-		verb := "Migrated to "
+		verb := txt.migratedPrefix
 		if msg.res.AlreadyExists {
-			verb = "Already on "
+			verb = txt.alreadyPrefix
 		}
-		m.status = okStyle.Render(verb+target) + mutedStyle.Render("  ·  c 复制")
+		m.status = okStyle.Render(verb+target) + mutedStyle.Render(txt.copyHint)
 		if len(msg.res.Warnings) > 0 {
-			m.status += mutedStyle.Render(fmt.Sprintf("  ·  %d warning(s)", len(msg.res.Warnings)))
+			m.status += mutedStyle.Render(fmt.Sprintf(txt.warningsFmt, len(msg.res.Warnings)))
 		}
 		m.layout()
 		return m, nil
@@ -1362,11 +1364,11 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			title := strings.TrimSpace(m.renameInput.Value())
 			if title == "" {
-				m.err = "标题不能为空"
+				m.err = txt.titleEmpty
 				return m, nil
 			}
 			if m.selected == nil {
-				m.err = "没有选中的会话"
+				m.err = txt.noSessionSelected
 				return m, nil
 			}
 			if title == strings.TrimSpace(m.selected.summary.Title) {
@@ -1458,14 +1460,14 @@ func (m modelState) openCurrentSession() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if !p.SupportsResume() {
-		m.err = p.DisplayName() + " 不支持直接进入"
+		m.err = fmt.Sprintf(txt.resumeUnsupportedFmt, p.DisplayName())
 		return m, nil
 	}
 	command := p.ResumeCommand(provider.WriteResult{
 		SessionID: it.summary.ID, StoragePath: it.summary.StoragePath, ProjectPath: it.summary.ProjectPath,
 	})
 	if command == "" {
-		m.err = p.DisplayName() + " 没有可用的 resume 命令"
+		m.err = fmt.Sprintf(txt.noResumeCommandFmt, p.DisplayName())
 		return m, nil
 	}
 	m.launch = command
@@ -1559,7 +1561,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "f":
 		if m.cwd == "" {
-			m.err = "无法确定当前项目"
+			m.err = txt.projectUnknown
 			return m, nil
 		}
 		m.projectOnly = !m.projectOnly
@@ -1595,7 +1597,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		if m.lastResume != "" {
 			_ = clipboard.WriteAll(m.lastResume)
-			m.status = okStyle.Render("已复制 resume 命令")
+			m.status = okStyle.Render(txt.resumeCopied)
 		}
 		return m, nil
 	// Shift means one thing in this list: the same action over the whole page.
@@ -1610,7 +1612,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
-				m.err = "不能归档当前正在运行的会话"
+				m.err = txt.cannotArchiveRunning
 				return m, nil
 			}
 			p, err := m.reg.Get(it.summary.Provider)
@@ -1619,7 +1621,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if _, ok := p.(provider.SessionArchiver); !ok {
-				m.err = p.DisplayName() + " 不支持归档"
+				m.err = fmt.Sprintf(txt.archiveUnsupportedFm, p.DisplayName())
 				return m, nil
 			}
 			m.loading = true
@@ -1666,7 +1668,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+r":
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
-				m.err = "不能重命名当前正在运行的会话"
+				m.err = txt.cannotRenameRunning
 				return m, nil
 			}
 			p, err := m.reg.Get(it.summary.Provider)
@@ -1675,7 +1677,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if _, ok := p.(provider.SessionRenamer); !ok {
-				m.err = p.DisplayName() + " 不支持重命名"
+				m.err = fmt.Sprintf(txt.renameUnsupportedFmt, p.DisplayName())
 				return m, nil
 			}
 			sel := it
@@ -1704,7 +1706,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+d":
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
-				m.err = "不能删除当前正在运行的会话"
+				m.err = txt.cannotDeleteRunning
 				return m, nil
 			}
 			p, err := m.reg.Get(it.summary.Provider)
@@ -1713,7 +1715,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if _, ok := p.(provider.SessionDeleter); !ok {
-				m.err = p.DisplayName() + " 不支持删除"
+				m.err = fmt.Sprintf(txt.deleteUnsupportedFmt, p.DisplayName())
 				return m, nil
 			}
 			sel := it
@@ -1804,6 +1806,30 @@ func modalInnerWidth(width int) int {
 // picker names agents, so it never needs to be as wide as the source drawer.
 func targetModalWidth(width int) int { return min(40, modalInnerWidth(width)) }
 
+// modalSubtitle is the explanatory line under a modal's title. It disappears
+// on a short terminal: the title and the control are what the modal is for,
+// and a sentence that pushes the box past the bottom of the screen has taken
+// the modal away to explain it. The length of that sentence depends on the
+// language, so the decision is made on the height available, not on the words.
+func (m modelState) modalSubtitle(text string) string {
+	if m.height < 16 {
+		return ""
+	}
+	return "\n" + mutedStyle.Render(text)
+}
+
+// textModalWidth bounds a modal whose content is prose. Sentence length is a
+// property of the language, not of the layout, so a box sized by its text
+// grows past the terminal in one language and not the other; past it, the
+// right border is cut off and the modal stops looking like a modal. Bounding
+// it instead makes the sentence wrap, which is what a sentence should do.
+//
+// The number is what lipgloss Width() means — content plus padding, without
+// the border — while modalInnerWidth is the text area inside it.
+func textModalWidth(width int) int {
+	return modalInnerWidth(width) + modalStyle.GetHorizontalPadding()
+}
+
 func (m modelState) View() string {
 	if m.width < 40 || m.height < 12 {
 		return ansi.Truncate("Terminal too small — resize to at least 40x12", max(1, m.width), "")
@@ -1828,20 +1854,20 @@ func (m modelState) View() string {
 
 	switch m.overlay {
 	case overlaySource:
-		box := sourceModalStyle.Render(accentStyle.Render("选择来源") + "\n" + mutedStyle.Render("会话来自哪个 agent？") + "\n\n" + m.sourceList.View())
+		box := sourceModalStyle.Render(accentStyle.Render(txt.sourceModalTitle) + m.modalSubtitle(txt.sourceModalHint) + "\n\n" + m.sourceList.View())
 		pane = overlay(pane, box, m.width)
 	case overlayTarget:
-		box := targetModalStyle.Width(targetModalWidth(m.width)).Render(okStyle.Render("选择去向") + "\n" + mutedStyle.Render("把这条会话带到哪个 agent？") + "\n\n" + m.targets.View())
+		box := targetModalStyle.Width(targetModalWidth(m.width)).Render(okStyle.Render(txt.targetModalTitle) + m.modalSubtitle(txt.targetModalHint) + "\n\n" + m.targets.View())
 		pane = overlay(pane, box, m.width)
 	case overlayPreview:
 		box := modalStyle.Render(m.preview.View())
 		pane = overlay(pane, box, m.width)
 	case overlayDelete:
-		box := modalStyle.Render(m.deleteView())
+		box := modalStyle.Width(textModalWidth(m.width)).Render(m.deleteView())
 		pane = overlay(pane, box, m.width)
 	case overlayRename:
-		box := modalStyle.Render(titleStyle.Render("重命名会话") + "\n" +
-			mutedStyle.Render("写回来源 agent 的原生标题") + "\n\n" + m.renameInput.View() +
+		box := modalStyle.Width(textModalWidth(m.width)).Render(titleStyle.Render(txt.renameModalTitle) +
+			m.modalSubtitle(txt.renameModalHint) + "\n\n" + m.renameInput.View() +
 			m.suggestionLine())
 		pane = overlay(pane, box, m.width)
 	case overlayBatchTitle:
@@ -1933,44 +1959,55 @@ func (m modelState) suggestionLine() string {
 	var line string
 	switch {
 	case m.suggesting:
-		line = mutedStyle.Render("AI 建议生成中…")
+		line = mutedStyle.Render(txt.suggestionLoading)
 	case m.suggestion != "":
-		line = okStyle.Render("建议 ") + m.suggestion + mutedStyle.Render("  · tab 接受")
+		line = okStyle.Render(txt.suggestionPrefix) + m.suggestion + mutedStyle.Render(txt.suggestionAccept)
 	case m.suggestErr != "":
-		line = mutedStyle.Render("建议不可用：" + m.suggestErr)
+		line = mutedStyle.Render(txt.suggestionFailed + m.suggestErr)
 	default:
 		return ""
 	}
-	inner := m.width - modalStyle.GetHorizontalFrameSize() - paneStyle.GetHorizontalBorderSize()
+	inner := modalInnerWidth(m.width)
 	if inner < 8 {
 		return ""
 	}
 	return "\n" + ansi.Truncate(line, inner, "…")
 }
 
+// field pads a label in the delete confirmation so the values line up. The
+// labels are translated and "Directory" is not the width of "目录", so the
+// column is measured rather than written into the strings themselves.
+func field(label string) string {
+	width := 0
+	for _, l := range []string{txt.fieldSource, txt.fieldTitle, txt.fieldDirectory, "ID"} {
+		width = max(width, ansi.StringWidth(l))
+	}
+	return padRight(label, width+2)
+}
+
 func (m modelState) deleteView() string {
 	if m.selected == nil {
-		return errStyle.Render("没有选中的会话")
+		return errStyle.Render(txt.noSessionSelected)
 	}
 	sm := m.selected.summary
 	title := truncateDisplay(sm.Title, 64)
 	project := truncateLeft(util.TildePath(sm.ProjectPath), 64)
-	cancel := chipActive.Render("取消")
-	remove := chipMuted.Render("删除")
+	cancel := chipActive.Render(txt.choiceCancel)
+	remove := chipMuted.Render(txt.choiceDelete)
 	if m.deleteChoice == 1 {
-		cancel = chipMuted.Render("取消")
-		remove = dangerChoice.Render("删除")
+		cancel = chipMuted.Render(txt.choiceCancel)
+		remove = dangerChoice.Render(txt.choiceDelete)
 	}
 	if m.height < 18 {
-		return errStyle.Render("删除会话？") + "\n" +
+		return errStyle.Render(txt.deleteConfirmTitle) + "\n" +
 			title + "\n" + mutedStyle.Render(sm.ID) + "\n" + cancel + "   " + remove
 	}
-	return errStyle.Render("删除会话？") + "\n" +
-		mutedStyle.Render("该操作会删除来源 agent 中的原始会话，无法撤销。") + "\n\n" +
-		mutedStyle.Render("来源  ") + registry.DisplayName(m.reg, sm.Provider) + "\n" +
-		mutedStyle.Render("标题  ") + title + "\n" +
-		mutedStyle.Render("目录  ") + project + "\n" +
-		mutedStyle.Render("ID    ") + sm.ID + "\n\n" +
+	return errStyle.Render(txt.deleteConfirmTitle) + "\n" +
+		mutedStyle.Render(txt.deleteConfirmBody) + "\n\n" +
+		mutedStyle.Render(field(txt.fieldSource)) + registry.DisplayName(m.reg, sm.Provider) + "\n" +
+		mutedStyle.Render(field(txt.fieldTitle)) + title + "\n" +
+		mutedStyle.Render(field(txt.fieldDirectory)) + project + "\n" +
+		mutedStyle.Render(field("ID")) + sm.ID + "\n\n" +
 		cancel + "   " + remove
 }
 
@@ -1979,21 +2016,21 @@ func (m modelState) headerView() string {
 	source := m.currentSource()
 	sourceName := source.name
 	if sourceName == "all" {
-		sourceName = "全部"
+		sourceName = txt.scopeAll
 	}
-	left := brand + "  " + mutedStyle.Render("← 来源 ") + sourceChipStyle.Render(sourceName)
-	right := targetChipStyle.Render("去向 →")
+	left := brand + "  " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
+	right := targetChipStyle.Render(txt.targetArrow)
 	var first string
 	if m.width >= 64 {
-		header := left + mutedStyle.Render(fmt.Sprintf("   │   %d 个会话   │   ", m.totalSessions)) + right +
+		header := left + mutedStyle.Render(fmt.Sprintf(txt.headerCountFmt, m.totalSessions)) + right +
 			mutedStyle.Render("   │   ") + m.scopeView(true)
 		first = ansi.Truncate(header, m.width, "…")
 	} else {
-		brand = sourceChipStyle.Render("项目")
+		brand = sourceChipStyle.Render(txt.scopeProject)
 		if !m.projectOnly {
-			brand = sourceChipStyle.Render("全部")
+			brand = sourceChipStyle.Render(txt.scopeAll)
 		}
-		left = brand + " " + mutedStyle.Render("← 来源 ") + sourceChipStyle.Render(sourceName)
+		left = brand + " " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
 		left = ansi.Truncate(left, max(0, m.width-ansi.StringWidth(right)-2), "…")
 		gap := max(2, m.width-ansi.StringWidth(left)-ansi.StringWidth(right))
 		first = ansi.Truncate(left+strings.Repeat(" ", gap)+right, m.width, "…")
@@ -2013,9 +2050,9 @@ func (m modelState) scopeView(showPath bool) string {
 	path = util.TildePath(path)
 	var line string
 	if m.projectOnly {
-		line = sourceChipStyle.Render("当前项目")
+		line = sourceChipStyle.Render(txt.scopeThis)
 	} else {
-		line = sourceChipStyle.Render("全部")
+		line = sourceChipStyle.Render(txt.scopeAll)
 	}
 	if showPath && path != "" {
 		line += mutedStyle.Render("  ·  " + path)
@@ -2025,12 +2062,12 @@ func (m modelState) scopeView(showPath bool) string {
 
 func (m modelState) emptySessionsView() string {
 	if m.searchQuery != "" {
-		return mutedStyle.Render("\n  没有匹配的会话")
+		return mutedStyle.Render(txt.emptySearch)
 	}
 	if m.projectOnly {
-		return mutedStyle.Render("\n  当前项目没有会话\n  按 f 查看全部")
+		return mutedStyle.Render(txt.emptyProject)
 	}
-	return mutedStyle.Render("\n  没有会话")
+	return mutedStyle.Render(txt.emptyAll)
 }
 
 func (m modelState) footerView() string {
@@ -2039,7 +2076,7 @@ func (m modelState) footerView() string {
 	case m.err != "":
 		lines = append(lines, errStyle.Render("✗ "+m.err))
 	case m.loading:
-		lines = append(lines, m.spinner.View()+mutedStyle.Render(" working…"))
+		lines = append(lines, m.spinner.View()+mutedStyle.Render(txt.working))
 	case m.lastResume != "":
 		lines = append(lines, accentStyle.Render(m.lastResume))
 	case m.status != "":
@@ -2060,9 +2097,9 @@ func (m modelState) selectionSummary() string {
 	it, ok := m.sessions.SelectedItem().(sessionItem)
 	if !ok {
 		if m.indexing {
-			return "indexing…"
+			return txt.indexing
 		}
-		return fmt.Sprintf("%d sessions", m.totalSessions)
+		return fmt.Sprintf(txt.sessionCountFmt, m.totalSessions)
 	}
 	proj := util.TildePath(it.summary.ProjectPath)
 	return fmt.Sprintf(" %s · %s", proj, it.summary.ShortID())
@@ -2071,51 +2108,51 @@ func (m modelState) selectionSummary() string {
 func (m modelState) help() string {
 	switch m.overlay {
 	case overlaySource:
-		return " ↑↓ 选来源 · →/enter 应用 · esc 取消"
+		return txt.helpSource
 	case overlayTarget:
-		return " ↑↓ 选去向 · enter 迁移 · esc 取消"
+		return txt.helpTarget
 	case overlayPreview:
-		return " ↑↓ 滚动 · esc 关闭"
+		return txt.helpPreview
 	case overlayDelete:
-		return " ←→ 选择 · enter 确认 · esc 取消"
+		return txt.helpDelete
 	case overlayRename:
 		if m.suggestion != "" {
-			return " 输入新标题 · tab 用建议 · enter 保存 · esc 取消"
+			return txt.helpRenameSuggestion
 		}
-		return " 输入新标题 · enter 保存 · esc 取消"
+		return txt.helpRename
 	case overlayBatchTitle:
 		if m.batchModelPicking {
-			return " ↑↓ 选模型 · 输入过滤 · enter 换模型重跑 · esc 取消"
+			return txt.helpBatchModelList
 		}
 		if m.batchModelEditing {
-			return " 输入模型名 · enter 换模型重跑 · esc 取消"
+			return txt.helpBatchModelTyped
 		}
 		if m.batchRunning {
-			return " 生成中 · esc 取消剩余任务"
+			return txt.helpBatchRunning
 		}
-		return " enter 应用变更 · r 重试失败 · m 换模型 · e 展开其余 · esc 关闭"
+		return txt.helpBatchReview
 	}
 	if m.searching {
-		return " enter 搜索 · esc 取消"
+		return txt.helpSearch
 	}
 	if m.lastResume != "" {
-		return " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出"
+		return txt.helpResume
 	}
 	if m.lastArchived != nil {
-		return " a 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览"
+		return txt.helpArchived
 	}
-	help := " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围"
+	help := txt.helpListBase
 	rename, archive, delete := m.selectedSessionCapabilities()
 	if rename {
-		help += " · ctrl+r 重命名"
+		help += txt.helpListRename
 	}
 	if archive {
-		help += " · a 归档"
+		help += txt.helpListArchive
 	}
 	if delete {
-		help += " · ctrl+d 删除"
+		help += txt.helpListDelete
 	}
-	return help + " · x 标记 · X 全选 · ctrl+t 批量 · / 搜索 · r 刷新"
+	return help + txt.helpListTail
 }
 
 func (m modelState) selectedSessionCapabilities() (rename, archive, delete bool) {
@@ -2154,7 +2191,7 @@ func isCurrentSession(sm model.Summary) bool {
 func truncateDisplay(s string, n int) string {
 	s = util.SanitizeDisplay(s)
 	if s == "" {
-		return "(untitled)"
+		return txt.untitled
 	}
 	return ansi.Truncate(s, n, "…")
 }

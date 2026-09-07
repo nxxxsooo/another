@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
+	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
@@ -52,18 +53,25 @@ func layoutTestModel() modelState {
 	}
 }
 
+// Every screen is measured in both languages. An English sentence is longer
+// than the Chinese one that means the same thing, and CJK text is twice as
+// wide per character; a layout verified in one language says nothing about
+// the other.
 func TestViewsFitTerminal(t *testing.T) {
-	for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
-		for _, ov := range []int{overlayNone, overlaySource, overlayTarget, overlayPreview, overlayDelete, overlayBatchTitle} {
-			m := layoutTestModel()
-			m.overlay = ov
-			updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-			view := updated.(modelState).View()
-			if got := lipgloss.Width(view); got > size[0] {
-				t.Errorf("%dx%d overlay %d width = %d", size[0], size[1], ov, got)
-			}
-			if got := lipgloss.Height(view); got > size[1] {
-				t.Errorf("%dx%d overlay %d height = %d", size[0], size[1], ov, got)
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		useLanguage(t, lang)
+		for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
+			for _, ov := range []int{overlayNone, overlaySource, overlayTarget, overlayPreview, overlayDelete, overlayRename, overlayBatchTitle} {
+				m := layoutTestModel()
+				m.overlay = ov
+				updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+				view := updated.(modelState).View()
+				if got := lipgloss.Width(view); got > size[0] {
+					t.Errorf("%s %dx%d overlay %d width = %d", lang, size[0], size[1], ov, got)
+				}
+				if got := lipgloss.Height(view); got > size[1] {
+					t.Errorf("%s %dx%d overlay %d height = %d", lang, size[0], size[1], ov, got)
+				}
 			}
 		}
 	}
@@ -178,27 +186,27 @@ func TestHeaderAndEmptyViewExposeProjectScope(t *testing.T) {
 	m.projectOnly = true
 	m.projectScope = util.ProjectScope{CWD: "/repo", Root: "/repo", Git: true, Worktrees: []string{"/repo"}}
 	header := ansi.Strip(m.headerView())
-	if !strings.Contains(header, "当前项目") || !strings.Contains(header, "/repo") {
+	if !strings.Contains(header, txt.scopeThis) || !strings.Contains(header, "/repo") {
 		t.Fatalf("header hides project scope: %q", header)
 	}
 	m.sessions.SetItems(nil)
-	if empty := ansi.Strip(m.emptySessionsView()); !strings.Contains(empty, "按 f 查看全部") {
+	if empty := ansi.Strip(m.emptySessionsView()); !strings.Contains(empty, txt.emptyProject) {
 		t.Fatalf("empty view = %q", empty)
 	}
 }
 
 func TestHelpShowsOnlySelectedAgentCapabilities(t *testing.T) {
 	m := layoutTestModel()
-	if help := m.help(); !strings.Contains(help, "重命名") || !strings.Contains(help, "归档") || !strings.Contains(help, "删除") {
+	if help := m.help(); !strings.Contains(help, txt.helpListRename) || !strings.Contains(help, txt.helpListArchive) || !strings.Contains(help, txt.helpListDelete) {
 		t.Fatalf("Codex help hides supported actions: %q", help)
 	}
 
 	it := m.sessions.SelectedItem().(sessionItem)
 	it.summary.Provider = "agy"
 	m.sessions.SetItems([]list.Item{it})
-	if help := m.help(); strings.Contains(help, "归档") || strings.Contains(help, "删除") {
+	if help := m.help(); strings.Contains(help, txt.helpListArchive) || strings.Contains(help, txt.helpListDelete) {
 		t.Fatalf("Antigravity help advertises unsupported actions: %q", help)
-	} else if !strings.Contains(help, "重命名") {
+	} else if !strings.Contains(help, txt.helpListRename) {
 		t.Fatalf("Antigravity help hides supported rename: %q", help)
 	}
 }
@@ -262,7 +270,7 @@ func TestPickersUseStableCenteredModals(t *testing.T) {
 	source := m.View()
 	m.overlay = overlayTarget
 	target := m.View()
-	if !strings.Contains(source, "选择来源") || !strings.Contains(target, "选择去向") {
+	if !strings.Contains(source, txt.sourceModalTitle) || !strings.Contains(target, txt.targetModalTitle) {
 		t.Fatal("pickers lost their purpose labels")
 	}
 	if source == base || target == base || source == target {
@@ -271,7 +279,7 @@ func TestPickersUseStableCenteredModals(t *testing.T) {
 	for _, view := range []string{source, target} {
 		var modalLine string
 		for _, line := range strings.Split(view, "\n") {
-			if strings.Contains(line, "选择来源") || strings.Contains(line, "选择去向") {
+			if strings.Contains(line, txt.sourceModalTitle) || strings.Contains(line, txt.targetModalTitle) {
 				modalLine = line
 				break
 			}
@@ -299,7 +307,7 @@ func TestMessageCountHasUnit(t *testing.T) {
 	m := layoutTestModel()
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
 	view := updated.(modelState).sessions.View()
-	if !strings.Contains(view, "12条") {
+	if !strings.Contains(view, fmt.Sprintf(txt.messageCountFmt, 12)) {
 		t.Fatalf("message count is still a bare number: %q", view)
 	}
 }
@@ -311,7 +319,7 @@ func TestWideHeaderKeepsTargetBesideSessionCount(t *testing.T) {
 	if got := ansi.StringWidth(header); got > m.width {
 		t.Fatalf("header width = %d, want <= %d: %q", got, m.width, header)
 	}
-	if !strings.Contains(header, "个会话   │    去向 →") {
+	if !strings.Contains(header, "│    "+txt.targetArrow) {
 		t.Fatalf("target action did not return beside the session count: %q", header)
 	}
 }
@@ -329,7 +337,7 @@ func TestNarrowHeaderKeepsBothDirectionControls(t *testing.T) {
 		if ansi.StringWidth(header) > m.width {
 			t.Fatalf("source %q header width = %d, want <= %d", source.name, ansi.StringWidth(header), m.width)
 		}
-		if !strings.Contains(header, "来源") || !strings.Contains(header, "去向 →") {
+		if !strings.Contains(header, strings.TrimSpace(txt.sourceArrow)) || !strings.Contains(header, txt.targetArrow) {
 			t.Fatalf("source %q lost a direction control: %q", source.name, header)
 		}
 	}
@@ -378,8 +386,16 @@ func TestWideIdleFooterKeepsOnlyTheActiveControls(t *testing.T) {
 	m.width, m.height = 100, 24
 	m.layout()
 	footer := ansi.Strip(m.footerView())
-	if strings.Contains(footer, "/tmp/project") || strings.Contains(footer, "session") {
-		t.Fatalf("wide footer repeats row metadata: %q", footer)
+	// The row already shows the project and the session ID. A wide idle
+	// footer that repeats them spends its one line on what is on screen
+	// twice; the assertion is on the metadata, not on any word that happens
+	// to appear in a key hint.
+	want := ansi.Strip(ansi.Truncate(footerStyle.Render(m.help()), m.width, "…"))
+	if footer != want {
+		t.Fatalf("wide idle footer is not just the controls:\n got %q\nwant %q", footer, want)
+	}
+	if strings.Contains(footer, "/tmp/project") {
+		t.Fatalf("wide footer repeats the row's project: %q", footer)
 	}
 	if !strings.Contains(footer, "enter") {
 		t.Fatalf("wide footer lost active controls: %q", footer)
@@ -416,8 +432,8 @@ func TestSourceModalRowsShareOneCellWidth(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 87, 24
 	m.layout()
-	box := sourceModalStyle.Render(accentStyle.Render("选择来源") + "\n" +
-		mutedStyle.Render("会话来自哪个 agent？") + "\n\n" + m.sourceList.View())
+	box := sourceModalStyle.Render(accentStyle.Render(txt.sourceModalTitle) + "\n" +
+		mutedStyle.Render(txt.sourceModalHint) + "\n\n" + m.sourceList.View())
 	lines := strings.Split(box, "\n")
 	want := ansi.StringWidth(lines[0])
 	for row, line := range lines[1:] {
@@ -578,7 +594,7 @@ func TestArchiveOffersOneStepUndo(t *testing.T) {
 	summary := m.sessions.SelectedItem().(sessionItem).summary
 	updated, _ = m.Update(archiveDoneMsg{summary: summary, archived: true})
 	got := updated.(modelState)
-	if got.lastArchived == nil || !strings.Contains(got.help(), "撤销") {
+	if got.lastArchived == nil || got.help() != txt.helpArchived {
 		t.Fatalf("archive has no one-step undo: %+v", got.lastArchived)
 	}
 }
@@ -603,7 +619,7 @@ func TestCtrlRWithoutConfiguredAgentAsksForNoSuggestion(t *testing.T) {
 	if got.suggesting || got.suggestFor != "" {
 		t.Fatalf("unconfigured another must not call a model: suggesting=%v for=%q", got.suggesting, got.suggestFor)
 	}
-	if strings.Contains(got.View(), "AI 建议") {
+	if strings.Contains(got.View(), txt.suggestionLoading) {
 		t.Fatal("suggestion row shown while the feature is off")
 	}
 }
@@ -655,7 +671,7 @@ func TestStaleAndFailedSuggestionsStayOutOfTheWay(t *testing.T) {
 	if fail.err != "" {
 		t.Fatalf("a failed suggestion leaked into the main error line: %q", fail.err)
 	}
-	if fail.suggesting || !strings.Contains(fail.View(), "建议不可用") {
+	if fail.suggesting || !strings.Contains(fail.View(), strings.TrimSpace(txt.suggestionFailed)) {
 		t.Fatal("a failed suggestion is not reported in the rename box")
 	}
 
@@ -666,17 +682,20 @@ func TestStaleAndFailedSuggestionsStayOutOfTheWay(t *testing.T) {
 }
 
 func TestRenameOverlayWithSuggestionFitsTerminal(t *testing.T) {
-	for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
-		m := layoutTestModel()
-		m.overlay = overlayRename
-		m.suggestion = "0903｜修复｜删除条目快捷键冲突"
-		updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-		view := updated.(modelState).View()
-		if got := lipgloss.Width(view); got > size[0] {
-			t.Errorf("%dx%d width = %d", size[0], size[1], got)
-		}
-		if got := lipgloss.Height(view); got > size[1] {
-			t.Errorf("%dx%d height = %d", size[0], size[1], got)
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		useLanguage(t, lang)
+		for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
+			m := layoutTestModel()
+			m.overlay = overlayRename
+			m.suggestion = "0903｜修复｜删除条目快捷键冲突"
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			view := updated.(modelState).View()
+			if got := lipgloss.Width(view); got > size[0] {
+				t.Errorf("%s %dx%d width = %d", lang, size[0], size[1], got)
+			}
+			if got := lipgloss.Height(view); got > size[1] {
+				t.Errorf("%s %dx%d height = %d", lang, size[0], size[1], got)
+			}
 		}
 	}
 }
@@ -690,7 +709,7 @@ func TestCtrlDOpensDeleteWithCancelSelected(t *testing.T) {
 	if got.overlay != overlayDelete || got.deleteChoice != 0 {
 		t.Fatalf("ctrl+d did not open safe delete state: overlay=%d choice=%d", got.overlay, got.deleteChoice)
 	}
-	if !strings.Contains(got.View(), "删除会话？") || !strings.Contains(got.View(), "默认") && !strings.Contains(got.View(), "取消") {
+	if !strings.Contains(got.View(), txt.deleteConfirmTitle) || !strings.Contains(got.View(), txt.choiceCancel) {
 		t.Fatal("delete confirmation does not make cancellation visible")
 	}
 	updated, cmd := got.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -776,7 +795,7 @@ func TestCurrentPiSessionCannotBeDeleted(t *testing.T) {
 	t.Setenv("PI_SESSION_FILE", "/tmp/live-pi.jsonl")
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 	got := updated.(modelState)
-	if got.overlay == overlayDelete || !strings.Contains(got.err, "当前") {
+	if got.overlay == overlayDelete || got.err != txt.cannotDeleteRunning {
 		t.Fatalf("current session was not protected: overlay=%d err=%q", got.overlay, got.err)
 	}
 }
@@ -925,7 +944,7 @@ func TestShiftOnlyWidensTheSameVerb(t *testing.T) {
 	m.layout()
 
 	help := m.help()
-	for _, key := range []string{"x 标记", "X 全选", "a 归档"} {
+	for _, key := range []string{txt.helpListArchive, " · x ", " · X "} {
 		if !strings.Contains(help, key) {
 			t.Errorf("footer does not name %q: %q", key, help)
 		}
@@ -1110,7 +1129,7 @@ func TestPartialRenameReportsTheCaveatAndKeepsTheRename(t *testing.T) {
 		t.Fatal("the list did not reload after a rename that landed")
 	}
 	status := ansi.Strip(got.status)
-	if !strings.Contains(status, "已重命名为") {
+	if !strings.Contains(status, strings.TrimSpace(txt.renamedPrefix)) {
 		t.Fatalf("the rename is not reported as done: %q", status)
 	}
 	if !strings.Contains(status, "Codex Desktop is running") {

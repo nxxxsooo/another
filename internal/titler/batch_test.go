@@ -78,13 +78,13 @@ func TestBatchFreezesRowsWithoutACreationTime(t *testing.T) {
 	}
 	got := byID(drain(suggestBatch(context.Background(), Config{}, items, 2, suggest)))
 
-	if got["undated"].Frozen != "缺少创建时间" {
+	if got["undated"].Frozen != FreezeMissingCreatedAt {
 		t.Fatalf("undated row was not frozen: %+v", got["undated"])
 	}
 	// Unix 0 is how the index stores a missing creation time; it scans back
 	// as 1970, so the engine must treat it as missing rather than handing the
 	// model an invented MMDD of 0101.
-	if got["epoch"].Frozen != "缺少创建时间" {
+	if got["epoch"].Frozen != FreezeMissingCreatedAt {
 		t.Fatalf("epoch-zero row was not frozen: %+v", got["epoch"])
 	}
 	if got["undated"].Title != "" {
@@ -243,7 +243,7 @@ func TestDuplicateProposalsFreezeEveryCollidingRow(t *testing.T) {
 	got := byID(FreezeDuplicates(results))
 
 	for _, id := range []string{"a", "b"} {
-		if got[id].Frozen != "批内标题重复" {
+		if got[id].Frozen != FreezeDuplicateTitle {
 			t.Fatalf("colliding row %s was not frozen: %+v", id, got[id])
 		}
 		if got[id].Title != "" {
@@ -253,7 +253,7 @@ func TestDuplicateProposalsFreezeEveryCollidingRow(t *testing.T) {
 	if !got["c"].Changed() {
 		t.Fatalf("the unique row was frozen too: %+v", got["c"])
 	}
-	if results[0].Frozen != "" {
+	if results[0].Frozen != FreezeNone {
 		t.Fatal("FreezeDuplicates mutated its input")
 	}
 }

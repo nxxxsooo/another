@@ -10,6 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/util"
@@ -30,6 +32,18 @@ func TestRenderProbe(t *testing.T) {
 	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(previous)
+	// The probe exists to look at the real screen, so it resolves the
+	// interface language the way the program does: from configuration, or
+	// from the locale. ANOTHER_LANG forces one for a side-by-side look.
+	//
+	//	RENDER_PROBE=1 ANOTHER_LANG=zh go test ./internal/tui/ -run TestRenderProbe -v
+	language := os.Getenv("ANOTHER_LANG")
+	if language == "" {
+		if settings, err := config.LoadSettings(); err == nil {
+			language = settings.UI.Language
+		}
+	}
+	useLanguage(t, i18n.Lang(language))
 	reg := registry.New()
 	idx, err := index.Open("")
 	if err != nil {

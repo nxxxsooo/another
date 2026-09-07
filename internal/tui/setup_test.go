@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/titler"
 )
@@ -125,7 +126,7 @@ func TestSetupRejectsUnavailableAgent(t *testing.T) {
 	m.cursor = 3
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	got := updated.(setupModel)
-	if got.selected["cursor"] || !strings.Contains(got.err, "未检测到") {
+	if got.selected["cursor"] || !strings.Contains(got.err, "Cursor") || got.err == "" {
 		t.Fatalf("unavailable agent selection = %+v", got)
 	}
 }
@@ -139,7 +140,7 @@ func TestSetupFoldsCompatibilityAdaptersUntilAsked(t *testing.T) {
 	if strings.Contains(view, "Cursor") {
 		t.Fatalf("a second-tier agent is on the page before the fold is opened:\n%s", view)
 	}
-	if !strings.Contains(view, "其他 1 个兼容适配") {
+	if !strings.Contains(view, fmt.Sprintf(txt.setupFoldLabelOneFmt, "+", 1)) {
 		t.Fatalf("the page does not say what it is holding back:\n%s", view)
 	}
 
@@ -230,7 +231,7 @@ func TestSetupModelPagePicksFromTheCliListing(t *testing.T) {
 	if cfg := m.titleModel(); cfg == nil || cfg.Model != "" {
 		t.Fatalf("the picker must start on the CLI default: %+v", cfg)
 	}
-	if body := m.modelPageBody(72); !strings.Contains(body, "默认模型") || !strings.Contains(body, "claude-sonnet-4-5") {
+	if body := m.modelPageBody(72); !strings.Contains(body, txt.defaultModel) || !strings.Contains(body, "claude-sonnet-4-5") {
 		t.Fatalf("model page does not list what the CLI reported:\n%s", body)
 	}
 
@@ -384,14 +385,17 @@ func TestSetupTitlePageEscGoesBackWithoutCancelling(t *testing.T) {
 }
 
 func TestSetupTitlePageViewFitsTerminal(t *testing.T) {
-	m := titlePageFixture(t)
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m = next.(setupModel)
-	for _, size := range [][2]int{{48, 20}, {80, 24}, {120, 40}} {
-		m.width, m.height = size[0], size[1]
-		view := m.View()
-		if lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
-			t.Fatalf("%dx%d rendered %dx%d", size[0], size[1], lipgloss.Width(view), lipgloss.Height(view))
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		useLanguage(t, lang)
+		m := titlePageFixture(t)
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = next.(setupModel)
+		for _, size := range [][2]int{{48, 20}, {80, 24}, {120, 40}} {
+			m.width, m.height = size[0], size[1]
+			view := m.View()
+			if lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
+				t.Fatalf("%s: %dx%d rendered %dx%d", lang, size[0], size[1], lipgloss.Width(view), lipgloss.Height(view))
+			}
 		}
 	}
 }
@@ -401,7 +405,7 @@ func TestSetupRequiresOneAgent(t *testing.T) {
 	m.selected = map[string]bool{}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(setupModel)
-	if got.done || cmd != nil || !strings.Contains(got.err, "至少") {
+	if got.done || cmd != nil || got.err != txt.setupPickOne {
 		t.Fatalf("empty setup was accepted: %+v", got)
 	}
 }
@@ -415,21 +419,90 @@ func TestSetupTooSmallView(t *testing.T) {
 }
 
 func TestSetupExplainsToggleAndSortControls(t *testing.T) {
-	view := setupFixture().View()
-	for _, want := range []string{"space 开关", "shift+↑↓ 排序"} {
+	useLanguage(t, i18n.LangChinese)
+	view := ansi.Strip(setupFixture().View())
+	for _, want := range []string{"space 开关", "Shift+↑↓ 调整显示顺序"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("setup does not explain %q: %q", want, view)
 		}
 	}
 }
 
+// The setup page is the first screen another ever shows, and it is where the
+// interface language is chosen — including by someone whose terminal is
+// currently speaking the language they cannot read. It has to fit in both.
 func TestSetupViewFitsTerminal(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		useLanguage(t, lang)
+		m := setupFixture()
+		for _, size := range [][2]int{{48, 20}, {80, 24}, {120, 40}} {
+			m.width, m.height = size[0], size[1]
+			view := m.View()
+			if lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
+				t.Fatalf("%s: %dx%d rendered %dx%d", lang, size[0], size[1], lipgloss.Width(view), lipgloss.Height(view))
+			}
+		}
+	}
+}
+
+// The interface language is chosen on the first page, where it is also
+// demonstrated: the page redraws in the language under the cursor, so a person
+// who picked the wrong one sees that immediately instead of after saving.
+func TestSetupInterfaceLanguageSwitchesThePageLive(t *testing.T) {
+	useLanguage(t, i18n.LangEnglish)
 	m := setupFixture()
-	for _, size := range [][2]int{{48, 20}, {80, 24}, {120, 40}} {
-		m.width, m.height = size[0], size[1]
-		view := m.View()
-		if lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
-			t.Fatalf("%dx%d rendered %dx%d", size[0], size[1], lipgloss.Width(view), lipgloss.Height(view))
+	if got := m.uiLanguage(); got != i18n.LangAuto {
+		t.Fatalf("interface language starts at %q, want auto", got)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "Auto") || !strings.Contains(view, "中文") {
+		t.Fatalf("page one does not offer the interface languages:\n%s", view)
+	}
+
+	right, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = right.(setupModel)
+	if got := m.uiLanguage(); got != i18n.LangEnglish {
+		t.Fatalf("→ selected %q, want en", got)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, englishText.setupAgentsTitle) {
+		t.Fatalf("the page did not redraw in English:\n%s", view)
+	}
+
+	right, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = right.(setupModel)
+	if got := m.uiLanguage(); got != i18n.LangChinese {
+		t.Fatalf("→ selected %q, want zh", got)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, chineseText.setupAgentsTitle) {
+		t.Fatalf("the page did not redraw in Chinese:\n%s", view)
+	}
+	// The arrows belong to the language row; the agent cursor must not move.
+	if m.cursor != 0 {
+		t.Fatalf("the language keys moved the agent cursor to %d", m.cursor)
+	}
+	left, _ := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if got := left.(setupModel).uiLanguage(); got != i18n.LangEnglish {
+		t.Fatalf("← selected %q, want en", got)
+	}
+}
+
+// Re-running setup must not silently rewrite an interface language that was
+// already chosen, and a configuration written before the setting existed has
+// to land on auto rather than on whatever the list happens to start with.
+func TestSetupRestoresSavedInterfaceLanguage(t *testing.T) {
+	for _, tc := range []struct {
+		saved string
+		want  i18n.Lang
+	}{
+		{"zh", i18n.LangChinese},
+		{"en", i18n.LangEnglish},
+		{"auto", i18n.LangAuto},
+		{"", i18n.LangAuto},
+		{"klingon", i18n.LangAuto},
+	} {
+		m := setupFixture()
+		m.uiLangCursor = uiLanguageCursor(i18n.Lang(tc.saved))
+		if got := m.uiLanguage(); got != tc.want {
+			t.Fatalf("saved %q restored as %q, want %q", tc.saved, got, tc.want)
 		}
 	}
 }

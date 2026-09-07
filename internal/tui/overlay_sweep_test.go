@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/model"
 )
 
@@ -21,45 +22,48 @@ func TestOverlayBordersHoldAcrossEveryWidth(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
 
-	for width := 80; width <= 140; width++ {
-		for _, ov := range []int{overlaySource, overlayTarget, overlayPreview, overlayDelete, overlayRename} {
-			m := layoutTestModel()
-			var sessions []list.Item
-			for i := 0; i < 20; i++ {
-				sessions = append(sessions, sessionItem{
-					summary: model.Summary{
-						ID: "session", Provider: "opencode",
-						Title:       "Claude Code v2.1.260 发布说明摘要与后续动作",
-						ProjectPath: "/Users/mingjian/Documents/sync/GitHub/another",
-					},
-				})
-			}
-			m.sessions.SetItems(sessions)
-			m.width, m.height, m.overlay = width, 24, ov
-			m.layout()
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		useLanguage(t, lang)
+		for width := 80; width <= 140; width++ {
+			for _, ov := range []int{overlaySource, overlayTarget, overlayPreview, overlayDelete, overlayRename} {
+				m := layoutTestModel()
+				var sessions []list.Item
+				for i := 0; i < 20; i++ {
+					sessions = append(sessions, sessionItem{
+						summary: model.Summary{
+							ID: "session", Provider: "opencode",
+							Title:       "Claude Code v2.1.260 发布说明摘要与后续动作",
+							ProjectPath: "/Users/mingjian/Documents/sync/GitHub/another",
+						},
+					})
+				}
+				m.sessions.SetItems(sessions)
+				m.width, m.height, m.overlay = width, 24, ov
+				m.layout()
 
-			left, right, refRow := -1, -1, -1
-			for row, line := range strings.Split(m.View(), "\n") {
-				plain := ansi.Strip(line)
-				if w := ansi.StringWidth(line); w != 0 && w != width {
-					t.Fatalf("width %d overlay %d: row %d is %d cells wide: %q", width, ov, row, w, plain)
+				left, right, refRow := -1, -1, -1
+				for row, line := range strings.Split(m.View(), "\n") {
+					plain := ansi.Strip(line)
+					if w := ansi.StringWidth(line); w != 0 && w != width {
+						t.Fatalf("%s width %d overlay %d: row %d is %d cells wide: %q", lang, width, ov, row, w, plain)
+					}
+					first, last := strings.IndexAny(plain, "┏┃┗"), strings.LastIndexAny(plain, "┓┃┛")
+					if first < 0 || last <= first {
+						continue
+					}
+					gotLeft, gotRight := ansi.StringWidth(plain[:first]), ansi.StringWidth(plain[:last])
+					if left < 0 {
+						left, right, refRow = gotLeft, gotRight, row
+						continue
+					}
+					if gotLeft != left || gotRight != right {
+						t.Fatalf("%s width %d overlay %d: border moved from (%d,%d) on row %d to (%d,%d) on row %d\n%q",
+							lang, width, ov, left, right, refRow, gotLeft, gotRight, row, plain)
+					}
 				}
-				first, last := strings.IndexAny(plain, "┏┃┗"), strings.LastIndexAny(plain, "┓┃┛")
-				if first < 0 || last <= first {
-					continue
-				}
-				gotLeft, gotRight := ansi.StringWidth(plain[:first]), ansi.StringWidth(plain[:last])
 				if left < 0 {
-					left, right, refRow = gotLeft, gotRight, row
-					continue
+					t.Fatalf("%s width %d overlay %d: no modal border rendered", lang, width, ov)
 				}
-				if gotLeft != left || gotRight != right {
-					t.Fatalf("width %d overlay %d: border moved from (%d,%d) on row %d to (%d,%d) on row %d\n%q",
-						width, ov, left, right, refRow, gotLeft, gotRight, row, plain)
-				}
-			}
-			if left < 0 {
-				t.Fatalf("width %d overlay %d: no modal border rendered", width, ov)
 			}
 		}
 	}
