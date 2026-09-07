@@ -881,7 +881,7 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 		if err != nil {
 			return total, fmt.Errorf("%s: %w", p.ID(), err)
 		}
-		summaries = dropTitlerSessions(summaries)
+		summaries = dropTitlerSessions(ctx, p, summaries)
 		seen := make(map[string]struct{}, len(summaries))
 		for _, sm := range summaries {
 			seen[sm.StoragePath] = struct{}{}
@@ -895,10 +895,13 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 	if n, err := store.PruneTitlerSessions(); err == nil {
 		total -= n
 	}
+	// A full rebuild re-examines every file, so the sweep only has to record
+	// that it is no longer owed.
+	_, _ = PruneIndexedTitlerLeftovers(ctx, reg.All(), store)
 	now := time.Now().UTC().Format(time.RFC3339)
 	_ = store.SetMeta("last_rebuild", now)
 	_ = store.SetMeta("last_update", now)
-	return total, nil
+	return max(total, 0), nil
 }
 
 func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store, providerFilter string) (int, error) {
@@ -933,7 +936,7 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 		// Dropping them from seen as well is what removes rows indexed
 		// before this filter existed: reconcile deletes any indexed path the
 		// scan did not claim.
-		summaries = dropTitlerSessions(summaries)
+		summaries = dropTitlerSessions(ctx, p, summaries)
 		for _, sm := range summaries {
 			seen[sm.StoragePath] = struct{}{}
 		}
@@ -952,23 +955,128 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 	if n, err := store.PruneTitlerSessions(); err == nil {
 		total -= n
 	}
+	// Leftovers an older build indexed are behind unchanged files, which this
+	// scan skipped before it could look at them.
+	if n, err := PruneIndexedTitlerLeftovers(ctx, reg.All(), store); err == nil {
+		total -= n
+	}
 	_ = store.SetMeta("last_update", time.Now().UTC().Format(time.RFC3339))
-	return total, nil
+	// A scan that pruned more than it saw is still a scan that indexed
+	// nothing, not a negative number of sessions.
+	return max(total, 0), nil
 }
 
 // dropTitlerSessions removes the sessions another created itself while asking
 // an agent for a title. Several agents record a headless run with no way to
 // opt out, so their leftovers are dropped on the way into the index instead of
 // cluttering the list another exists to tidy.
-func dropTitlerSessions(summaries []model.Summary) []model.Summary {
+//
+// Title and working directory identify most of them. Antigravity is why that
+// is not enough: it names the run after the answer, so the leftover wears a
+// well-formed title, and it records no project path. Anything short enough to
+// be a leftover is therefore opened and matched against the prompt itself,
+// which every agent keeps. Sessions that fail to load are kept: a session
+// another cannot read is not a session another may hide.
+func dropTitlerSessions(ctx context.Context, p provider.Provider, summaries []model.Summary) []model.Summary {
 	out := summaries[:0]
 	for _, sm := range summaries {
 		if titler.IsGeneratedSession(sm.Title, sm.ProjectPath) {
 			continue
 		}
+		if isTitlerLeftover(ctx, p, sm) {
+			continue
+		}
 		out = append(out, sm)
 	}
 	return out
+}
+
+// isTitlerLeftover opens a short session and reports whether its first user
+// message is the prompt another sends. Longer sessions are never opened.
+func isTitlerLeftover(ctx context.Context, p provider.Provider, sm model.Summary) bool {
+	if p == nil || sm.MessageCount <= 0 || sm.MessageCount > titler.LeftoverMessages {
+		return false
+	}
+	conv, err := p.Load(ctx, provider.SessionRef{
+		ID:          sm.ID,
+		Provider:    sm.Provider,
+		StoragePath: sm.StoragePath,
+		ProjectPath: sm.ProjectPath,
+	})
+	if err != nil || conv == nil {
+		return false
+	}
+	for _, msg := range conv.Messages {
+		if msg.Role != model.RoleUser {
+			continue
+		}
+		return titler.IsGeneratedPrompt(msg.PlainText())
+	}
+	return false
+}
+
+// titlerContentPruneKey records that the one-time content sweep has run. The
+// sweep opens files, so it must not repeat on every refresh; new leftovers are
+// caught on the way in by dropTitlerSessions.
+const titlerContentPruneKey = "titler_content_prune_v1"
+
+// PruneIndexedTitlerLeftovers evicts leftovers that only their prompt can
+// identify and that are already in the index, which the title and directory
+// rules never caught and an incremental scan will never re-examine because
+// their files have not changed. It runs once per index and reads only sessions
+// short enough to be a leftover.
+func PruneIndexedTitlerLeftovers(ctx context.Context, providers []provider.Provider, store *Store) (int, error) {
+	if done, err := store.GetMeta(titlerContentPruneKey); err != nil {
+		return 0, err
+	} else if done != "" {
+		return 0, nil
+	}
+	total := 0
+	for _, p := range providers {
+		if !p.Installed() {
+			continue
+		}
+		candidates, err := store.shortSessions(p.ID())
+		if err != nil {
+			return total, err
+		}
+		var paths []string
+		for _, sm := range candidates {
+			if isTitlerLeftover(ctx, p, sm) {
+				paths = append(paths, sm.StoragePath)
+			}
+		}
+		if len(paths) == 0 {
+			continue
+		}
+		if err := store.dropProviderSources(p.ID(), paths); err != nil {
+			return total, err
+		}
+		total += len(paths)
+	}
+	return total, store.SetMeta(titlerContentPruneKey, time.Now().UTC().Format(time.RFC3339))
+}
+
+// shortSessions lists indexed sessions small enough to be a title-generation
+// leftover, which is the only set worth opening again.
+func (s *Store) shortSessions(providerID string) ([]model.Summary, error) {
+	rows, err := s.db.Query(
+		`SELECT id, COALESCE(title,''), COALESCE(project_path,''), storage_path, COALESCE(message_count,0)
+FROM sessions WHERE provider = ? AND message_count > 0 AND message_count <= ?`,
+		providerID, titler.LeftoverMessages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Summary
+	for rows.Next() {
+		sm := model.Summary{Provider: providerID}
+		if err := rows.Scan(&sm.ID, &sm.Title, &sm.ProjectPath, &sm.StoragePath, &sm.MessageCount); err != nil {
+			return nil, err
+		}
+		out = append(out, sm)
+	}
+	return out, rows.Err()
 }
 
 // PruneTitlerSessions evicts title-generation leftovers that were indexed

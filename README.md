@@ -120,6 +120,8 @@ TUI 默认按当前项目过滤。Git 仓库的主工作区、所有已登记 wo
 
 OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令、数据库、schema 和服务生命周期。
 
+持续实测范围是 **Pi、OpenCode 2、Claude Code、Codex、Antigravity 和 Qwen Code**；这六个进入每次发布的回归检查。Cursor、OpenCode、CommandCode 和 Hermes 保留兼容适配，但不承诺每个版本都在维护者环境完成端到端实测。首次 setup 不会根据本机残留数据自动全选，必须由用户手动选择要索引和展示的 agent。
+
 会话列表用等宽色块标记 agent：名字长短差着九个字符，排成文字会让短名字看起来是个更小的 agent，也会把标题挤到每行不同的位置。来源和去向选择器里色块和全名同时出现，那里就是这张对照表。
 
 | Agent | Provider ID | 列表标记 | 原生恢复命令 | 重命名 | 归档 | 删除 |
@@ -135,7 +137,7 @@ OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令�
 | Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | — | — |
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — |
 
-`—` 表示这个 agent 没有经过验证的原生操作契约。`another` 会直接提示限制，不会维护一份刷新后消失的私有状态。
+`—` 表示这个 agent 没有经过验证的原生操作契约。重命名、归档和删除都直接修改对应 agent 的原生状态，不是 Another 私有标记；Another 只展示当前 agent 真正支持的操作，不会维护一份刷新后消失的私有状态。
 
 检查本机安装状态：
 
@@ -160,7 +162,7 @@ setup 第二页用 `←→` 选标题语言：**Auto**（默认）、**English**
 
 批量页顶部标明这次用的 agent、模型和语言。生成结束或取消后按 `m` 打开和 setup 同一个模型选择器（同样是 CLI 自己给出的列表，输入过滤，最后一行可手输），`Enter` 用新模型重跑当前这批会话。这个模型不会写回配置：给几十条旧会话选一个便宜的模型，不该变成下次单条重命名的默认。
 
-生成标题时，Codex、Claude Code、Antigravity、OpenCode 这些 CLI 会为每次无头调用留下一条自己的会话，而且没有关掉的开关。另一侧 another 会认出这些残留并挡在索引之外：提示词第一行是固定标记，运行目录是 `another-titler-*` 临时目录，两者任一命中即不入库，之前版本已经入库的也会在下次刷新时清掉。清的只是 another 自己的索引，agent 自己的会话文件仍在它自己的目录里。
+生成标题时，Codex、Claude Code、Antigravity、OpenCode 这些 CLI 会为每次无头调用留下一条自己的会话，而且没有关掉的开关。另一侧 another 会认出这些残留并挡在索引之外：提示词第一行是固定标记，运行目录是 `another-titler-*` 临时目录，两者任一命中即不入库。Antigravity 两条都躲得掉——它按模型答案给这次运行命名，于是残留顶着一个符合命名规则的标题，而且根本不记录运行目录——所以短到只可能是残留的会话会被打开，直接比对里面的提示词本身；长会话不会被读取。之前版本已经入库的残留会在下次刷新时清掉。清的只是 another 自己的索引，agent 自己的会话文件仍在它自己的目录里。
 
 <img src="docs/assets/tui-batch.svg" width="100%" alt="another 批量命名确认页：原名到新名的对照表与折叠计数">
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/titler"
 )
@@ -119,6 +121,92 @@ func TestPruneTitlerSessionsEvictsOwnLeftovers(t *testing.T) {
 	// Pruning again is a no-op rather than an error.
 	if n, err := store.PruneTitlerSessions(); err != nil || n != 0 {
 		t.Fatalf("second prune = %d, %v", n, err)
+	}
+}
+
+// leftoverProvider is an agent shaped like Antigravity: it names its headless
+// run after the answer the model gave and records no working directory, so the
+// leftover is indistinguishable from a real session until its prompt is read.
+type leftoverProvider struct {
+	provider.Provider
+	summaries []model.Summary
+	bodies    map[string]string
+	loads     int
+}
+
+func (l *leftoverProvider) ID() string          { return "agy" }
+func (l *leftoverProvider) DisplayName() string { return "Antigravity" }
+func (l *leftoverProvider) Installed() bool     { return true }
+func (l *leftoverProvider) Discover(context.Context, provider.DiscoverOpts) ([]model.Summary, error) {
+	return l.summaries, nil
+}
+
+func (l *leftoverProvider) Load(_ context.Context, ref provider.SessionRef) (*model.Conversation, error) {
+	l.loads++
+	body, ok := l.bodies[ref.ID]
+	if !ok {
+		return nil, errors.New("no such session")
+	}
+	return &model.Conversation{Messages: []model.Message{
+		{Role: model.RoleUser, Content: body},
+		{Role: model.RoleAssistant, Content: "0903｜功能｜迁移会话"},
+	}}, nil
+}
+
+// The leftover wears a title another's own contract would produce, which is
+// exactly why the title cannot decide this. Reading the prompt can.
+func TestPruneIndexedTitlerLeftoversReadsThePrompt(t *testing.T) {
+	store, err := index.Open(filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now()
+	prompt := titler.BuildPrompt(titler.Request{CreatedAt: now}, titler.LangChinese)
+	rows := []model.Summary{
+		{ID: "leftover", Provider: "agy", Title: "0903｜功能｜迁移会话", UpdatedAt: now,
+			MessageCount: 2, StoragePath: "/store/leftover.jsonl", SourceMtime: now.Unix()},
+		{ID: "short-real", Provider: "agy", Title: "0903｜修复｜快捷键冲突", UpdatedAt: now,
+			MessageCount: 2, StoragePath: "/store/short.jsonl", SourceMtime: now.Unix()},
+		{ID: "long-real", Provider: "agy", Title: "0903｜设计｜标题策略", UpdatedAt: now,
+			MessageCount: 40, StoragePath: "/store/long.jsonl", SourceMtime: now.Unix()},
+	}
+	for _, sm := range rows {
+		if err := store.Upsert(sm); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	p := &leftoverProvider{bodies: map[string]string{
+		// Antigravity wraps what another sent.
+		"leftover":   "<USER_REQUEST>\n" + prompt + "\n</USER_REQUEST>",
+		"short-real": "帮我看看这个 bug",
+		"long-real":  prompt,
+	}}
+	n, err := index.PruneIndexedTitlerLeftovers(context.Background(), []provider.Provider{p}, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("pruned %d rows, want only the leftover", n)
+	}
+	// A session too long to be a leftover is never opened, whatever it holds.
+	if p.loads != 2 {
+		t.Fatalf("opened %d sessions, want only the two short ones", p.loads)
+	}
+	items, err := store.List(index.ListOpts{IncludeSubagents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("prune kept the wrong rows: %+v", items)
+	}
+
+	// The sweep opens files, so it must not run again on the next refresh.
+	p.loads = 0
+	if n, err := index.PruneIndexedTitlerLeftovers(context.Background(), []provider.Provider{p}, store); err != nil || n != 0 || p.loads != 0 {
+		t.Fatalf("second sweep = %d, loads=%d, err=%v", n, p.loads, err)
 	}
 }
 

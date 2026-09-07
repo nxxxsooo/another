@@ -165,6 +165,35 @@ func TestIsGeneratedSessionRecognizesOwnLeftovers(t *testing.T) {
 	}
 }
 
+// Antigravity names its headless run after the answer and records no working
+// directory, so the leftover wears a title another itself would have written.
+// Only the prompt inside the session still identifies it.
+func TestIsGeneratedPromptRecognizesWrappedPrompts(t *testing.T) {
+	prompt := titler.BuildPrompt(titler.Request{CreatedAt: time.Now()}, titler.LangChinese)
+	cases := []struct {
+		name, text string
+		want       bool
+	}{
+		{"prompt as sent", prompt, true},
+		{"agy wraps the prompt in a tag", "<USER_REQUEST>\n" + prompt + "\n</USER_REQUEST>", true},
+		{"retired prompt", "Use the title-formatter skill to name one AI coding session.\n- one line", true},
+		{"leading blank lines", "\n\n" + prompt, true},
+		// A person asking about the prompt is not a leftover, however short
+		// the session is.
+		{"real session quoting the prompt", "为什么这段提示词是 " + titler.PromptMarker, false},
+		{"unrelated first message", "帮我看看这个 bug", false},
+		{"only a wrapper", "<USER_REQUEST>", false},
+		{"empty", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := titler.IsGeneratedPrompt(tc.text); got != tc.want {
+				t.Fatalf("IsGeneratedPrompt(%.40q) = %v, want %v", tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
 // The marker must survive prompt edits: it is what identifies the leftovers.
 func TestPromptOpensWithTheMarker(t *testing.T) {
 	prompt := titler.BuildPrompt(titler.Request{CreatedAt: time.Now()}, titler.LangChinese)

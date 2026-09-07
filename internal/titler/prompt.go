@@ -200,6 +200,49 @@ func PromptMarkers() []string {
 	return []string{PromptMarker, legacyPromptMarker}
 }
 
+// LeftoverMessages is the largest a leftover can be: one prompt and one
+// answer. It bounds which sessions are worth opening for IsGeneratedPrompt,
+// so recognizing leftovers never means reading every session on disk.
+const LeftoverMessages = 2
+
+// IsGeneratedPrompt reports whether text is the prompt another sends when it
+// asks an agent for a title. It exists because the title and the working
+// directory are not always enough: Antigravity names its headless session
+// after the answer the model produced — which, by construction, looks exactly
+// like a title another itself would write — and records no project path at
+// all, so both of IsGeneratedSession's signals miss. The prompt inside the
+// session is the one thing every agent keeps.
+//
+// Agents that wrap the prompt in a tag of their own are handled by stripping
+// leading tag-only lines, Antigravity's `<USER_REQUEST>` among them. It stays
+// a prefix test after that: a real session that quotes the prompt somewhere
+// in a longer message must remain visible.
+func IsGeneratedPrompt(text string) bool {
+	text = stripLeadingTags(text)
+	for _, marker := range PromptMarkers() {
+		if strings.HasPrefix(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripLeadingTags removes opening wrapper lines such as `<USER_REQUEST>` so
+// the marker test sees the prompt as another sent it.
+func stripLeadingTags(text string) string {
+	text = strings.TrimSpace(text)
+	for {
+		if !strings.HasPrefix(text, "<") {
+			return text
+		}
+		line, rest, ok := strings.Cut(text, "\n")
+		if !ok || !strings.HasSuffix(strings.TrimSpace(line), ">") {
+			return text
+		}
+		text = strings.TrimSpace(rest)
+	}
+}
+
 // ResolveLanguage makes Auto deterministic from the first meaningful user
 // message: any Han character selects Chinese; otherwise English.
 func ResolveLanguage(preference Language, messages []model.Message) Language {

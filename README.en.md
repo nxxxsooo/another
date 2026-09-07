@@ -116,6 +116,8 @@ Esc       close a picker or dismiss transient state
 q         quit
 ```
 
+On macOS, opening the TUI temporarily selects the current ASCII-capable keyboard layout so letter shortcuts are not intercepted by a Pinyin IME. The input source active before launch is restored on exit or before handing the terminal to the target agent. Linux input sources are left untouched.
+
 Migration shows the exact resume command first. Press `Enter` to hand the terminal to the target agent, `c` to copy the command, or `Esc` to keep browsing.
 
 The TUI starts scoped to the current project. A Git repository's main worktree, every registered linked worktree, and their subdirectories form one project; outside Git, the scope is an exact current-directory match. The header always shows the active scope, and search keeps that scope. An empty project view stays empty rather than silently switching global; press `f` to view all projects.
@@ -123,6 +125,8 @@ The TUI starts scoped to the current project. A Git repository's main worktree, 
 ## Agents
 
 OpenCode and OpenCode 2 are deliberately separate. They use different commands, databases, schemas, and service lifecycles.
+
+The continuously tested set is **Pi, OpenCode 2, Claude Code, Codex, Antigravity, and Qwen Code**; these six enter every release regression pass. Cursor, OpenCode, CommandCode, and Hermes remain compatibility adapters, but are not promised an end-to-end maintainer test on every release. First-run setup does not auto-select agents from detected binaries or stale local data; the user chooses what another indexes and exposes.
 
 The session list marks each agent with a fixed-width color chip. Agent names differ by up to nine characters, and set as words they leave a ragged column where a short name reads as a lesser agent and every row starts its title somewhere else. The source and target pickers show the chip next to the full name, which is where this table is read from.
 
@@ -139,7 +143,7 @@ The session list marks each agent with a fixed-width color chip. Agent names dif
 | Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | — | — |
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — |
 
-A dash means that agent has no verified native contract for the operation. `another` reports the limitation instead of storing a private state that disappears on refresh.
+A dash means that agent has no verified native contract for the operation. Rename, archive, and delete change the corresponding agent's native state rather than an another-only marker; `another` shows only operations the selected agent actually supports and does not keep private state that disappears on refresh.
 
 Check the local installation:
 
@@ -160,7 +164,7 @@ For more than one title at a time, mark sessions with `x` (`X` toggles the whole
 
 The batch header names the agent, model, and language this run uses, and `m` opens the same picker setup uses.
 
-Generating titles leaves a trace of its own: Codex, Claude Code, Antigravity, and OpenCode record a session for every headless run with no way to opt out. another recognizes those leftovers and keeps them out of the index — the prompt's fixed first line, or the `another-titler-*` throwaway directory the run happened in, identifies them — and evicts any that an older build already indexed. Only another's index is touched; the agent's own session files stay where that agent put them. Once generation finishes or is cancelled, `m` swaps the model for this batch only — empty means that CLI's default — and `Enter` re-runs the same sessions on it. The override is never written back to config: a cheap model for forty old sessions should not become the default for the next single rename.
+Generating titles leaves a trace of its own: Codex, Claude Code, Antigravity, and OpenCode record a session for every headless run with no way to opt out. another recognizes those leftovers and keeps them out of the index — the prompt's fixed first line, or the `another-titler-*` throwaway directory the run happened in, identifies them. Antigravity evades both, because it names the run after the answer, which leaves the leftover wearing a title that satisfies another's own naming contract, and it records no working directory at all; sessions short enough to be a leftover are therefore opened and matched against the prompt itself, while longer ones are never read. Leftovers an older build already indexed are evicted too. Only another's index is touched; the agent's own session files stay where that agent put them. Once generation finishes or is cancelled, `m` swaps the model for this batch only — empty means that CLI's default — and `Enter` re-runs the same sessions on it. The override is never written back to config: a cheap model for forty old sessions should not become the default for the next single rename.
 
 OpenCode 2 can enforce the same contract during its native first-title request without a second model call; see [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/). The Pi session-title patch is under [`integrations/pi-session-title-policy/`](integrations/pi-session-title-policy/). Codex has no stable native title-policy surface yet and remains managed through another.
 
