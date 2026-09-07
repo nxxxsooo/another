@@ -28,7 +28,7 @@
 
 - **原生会话**：在目标 agent 中按其原生格式恢复，不是粘贴一份摘要。
 - **十个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、OpenCode 2、CommandCode、Hermes、Qwen Code 和 Antigravity。
-- **一个界面**：直接浏览、搜索、预览、重命名、归档、删除或迁移会话。
+- **一个界面**：直接浏览、搜索、预览、重命名、归档、删除、换目录或迁移会话。
 - **项目聚合**：默认只看当前 Git 项目，并把主工作区与所有已登记 worktree 的会话放在一起；按 `f` 可切换到全部项目。
 - **迁移后校验**：重新读取每次写入，比较内容摘要；不一致时回滚，来源会话始终保持原样。
 - **中英双语界面**：默认跟随终端 locale，也可以在 setup 里固定为 English 或中文；与标题语言各自独立。
@@ -102,6 +102,7 @@ Space     预览会话
 f         在当前项目和全部项目之间切换
 Ctrl+R    在来源 agent 的原生标题存储中重命名
 Tab       已配置 AI 标题且建议到达时，接受建议
+m         把会话复制或搬到另一个项目目录
 a         归档；再次按 a 可撤销上一步归档
 x / X     标记光标所在会话 / 整页全选或全清
 Ctrl+D    明确确认后永久删除
@@ -121,6 +122,17 @@ TUI 运行期间会把终端标题设为 `another`（setup 页为 `another setup
 
 TUI 默认按当前项目过滤。Git 仓库的主工作区、所有已登记 worktree 及其子目录视为同一项目；非 Git 目录按当前目录精确匹配。顶部始终显示当前范围，搜索也沿用该范围。当前项目没有会话时不会自动跳到全局，按 `f` 即可查看全部。
 
+## 换目录
+
+同一个 agent，换一个工作目录继续：新开的 worktree、搬过位置的仓库、或者本来就该在隔壁项目里做的事。按 `m` 输入目标目录，`Tab` 在两种语义之间切换：
+
+- **复制**（默认）：原会话留在原地，目标目录里多出一份可以继续的会话；
+- **移动**：会话本身换目录，原目录不再有它。
+
+这不是迁移。迁移会把对话经可移植格式重写一遍，工具调用和 reasoning 会在这一步丢掉；换目录走的是各 agent 自己的原生操作，内容原样保留：OpenCode 2 调用官方的 `fork` 和 `move` 接口，Pi 逐行复制自己的会话文件、只改写文件头里的 `id` 和 `cwd`。没有经过验证的原生契约的 agent 会如实报告不支持，而不是用重写冒充搬家。
+
+每次换目录都会回读校验后才报告成功：OpenCode 2 比对会话行里的目录，Pi 比对内容摘要。移动模式只有在新文件校验通过之后才删除原文件；复制模式如果目标建不起来，不会在源目录留下半个副本。目标目录必须真实存在——写错一个路径应该当场失败，而不是生成一个指向空处的会话。
+
 ## 支持的 agent
 
 OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令、数据库、schema 和服务生命周期。
@@ -129,20 +141,20 @@ OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令�
 
 会话列表用等宽色块标记 agent：名字长短差着九个字符，排成文字会让短名字看起来是个更小的 agent，也会把标题挤到每行不同的位置。来源和去向选择器里色块和全名同时出现，那里就是这张对照表。
 
-| Agent | Provider ID | 列表标记 | 原生恢复命令 | 重命名 | 归档 | 删除 |
-|---|---|:---:|---|:---:|:---:|:---:|
-| Pi | `pi` | `PI` | `pi --session <file>` | ✓ | — | ✓ |
-| Codex | `codex` | `CDX` | `codex resume <id>` | ✓ | ✓ | ✓ |
-| Claude Code | `claude-code` | `CLA` | `claude --resume <id>` | ✓ | — | ✓ |
-| Cursor | `cursor` | `CUR` | `cursor-agent --resume <id>` | — | — | ✓ |
-| OpenCode | `opencode` | `OPC` | `opencode --session <id>` | ✓ | ✓ | ✓ |
-| OpenCode 2 | `opencode2` | `OC2` | `opencode2 --session <id>` | ✓ | — | ✓ |
-| CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | ✓ |
-| Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | ✓ |
-| Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | — | — |
-| Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — |
+| Agent | Provider ID | 列表标记 | 原生恢复命令 | 重命名 | 归档 | 换目录 | 删除 |
+|---|---|:---:|---|:---:|:---:|:---:|:---:|
+| Pi | `pi` | `PI` | `pi --session <file>` | ✓ | — | ✓ | ✓ |
+| Codex | `codex` | `CDX` | `codex resume <id>` | ✓ | ✓ | — | ✓ |
+| Claude Code | `claude-code` | `CLA` | `claude --resume <id>` | ✓ | — | — | ✓ |
+| Cursor | `cursor` | `CUR` | `cursor-agent --resume <id>` | — | — | — | ✓ |
+| OpenCode | `opencode` | `OPC` | `opencode --session <id>` | ✓ | ✓ | — | ✓ |
+| OpenCode 2 | `opencode2` | `OC2` | `opencode2 --session <id>` | ✓ | — | ✓ | ✓ |
+| CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | — | ✓ |
+| Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
+| Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | — | — | — |
+| Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | — |
 
-`—` 表示这个 agent 没有经过验证的原生操作契约。重命名、归档和删除都直接修改对应 agent 的原生状态，不是 Another 私有标记；Another 只展示当前 agent 真正支持的操作，不会维护一份刷新后消失的私有状态。
+`—` 表示这个 agent 没有经过验证的原生操作契约。重命名、归档、换目录和删除都直接修改对应 agent 的原生状态，不是 Another 私有标记；Another 只展示当前 agent 真正支持的操作，不会维护一份刷新后消失的私有状态。
 
 Codex 把会话名存了三处：CLI 的线程库、旧版 Desktop 的 `session_index.jsonl`，以及 Codex Desktop 侧边栏实际读的 Electron 状态。重命名三处全写。Desktop 运行时会整份重写自己的状态，写在它下面不是丢改动就是丢它没落盘的东西，所以这种情况不硬写：CLI 侧已经改名，界面会明说侧边栏要等 Desktop 重启才更新，而不是把这次重命名报成失败。
 
@@ -196,6 +208,10 @@ another migrate <session-id> --to <provider> [--from ID] [-y]
 another migrate <session-id> --to codex --context full -y
 another resume <session-id> --to <provider> [--from ID]
 
+# 换目录（同一个 agent，另一个项目目录）
+another relocate <session-id> --to-dir <path> [--from ID] [--dry-run] [-y]
+another relocate <session-id> --to-dir ../feature-worktree --move -y
+
 # 可移植备份
 another export <session-id> -o session.another.json
 another import session.another.json --to <provider> [--context MODE] [--dry-run] -y
@@ -239,7 +255,8 @@ OpenCode 和 OpenCode 2 通过各自的官方导入／API 接口写入。Codex D
 - 每个迁移目标都会重新加载并校验内容，然后才报告成功。
 - 校验失败时，只删除本次迁移创建的产物。
 - `Ctrl+D` 默认选择 **Cancel**，确认框会显示 provider、标题、项目目录和完整 session ID。
-- 能被准确识别的活动会话禁止重命名、归档和删除。
+- 换目录每次都从「复制」开始，「移动」需要显式切换；移动只在新位置校验通过之后才删除原文件。
+- 能被准确识别的活动会话禁止重命名、归档、换目录和删除。
 - 配置目录权限为 `0700`，配置文件和 SQLite 索引权限为 `0600`。
 - 在 setup 中停用 agent 只会移除本地索引记录，不会删除原生会话。
 - 标题建议复用你已认证的 agent CLI；`another` 自身不保存 API key。

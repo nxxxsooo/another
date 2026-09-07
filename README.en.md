@@ -32,7 +32,7 @@ store, so you open it there and keep going.
 
 - **Native sessions:** resumes in the target agent's own format — not a pasted summary.
 - **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, Qwen Code, and Antigravity.
-- **One screen:** browse, search, preview, rename, archive, delete, and migrate without leaving the list.
+- **One screen:** browse, search, preview, rename, archive, delete, relocate, and migrate without leaving the list.
 - **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects.
 - **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
@@ -108,6 +108,7 @@ Space     preview the conversation
 f         switch between the current project and all projects
 Ctrl+R    rename in the source agent's native title store
 Tab       accept the AI title suggestion, when one is configured and arrives
+m         fork or move the session into another project directory
 a         archive; press a again for one-step undo
 x / X     mark the row under the cursor / mark or clear the whole page
 Ctrl+D    permanently delete after an explicit confirmation
@@ -127,6 +128,17 @@ Migration shows the exact resume command first. Press `Enter` to hand the termin
 
 The TUI starts scoped to the current project. A Git repository's main worktree, every registered linked worktree, and their subdirectories form one project; outside Git, the scope is an exact current-directory match. The header always shows the active scope, and search keeps that scope. An empty project view stays empty rather than silently switching global; press `f` to view all projects.
 
+## Relocate
+
+Same agent, different working directory: a worktree you just created, a repository that moved, or work that belonged in the project next door all along. Press `m`, type the target directory, and `Tab` chooses between two readings:
+
+- **Fork** (the default): the original stays where it is, and the target directory gains a session you can continue.
+- **Move:** the session itself changes directory, and the old one no longer has it.
+
+This is not a migration. Migration rewrites the conversation through a portable format, and tool calls and reasoning are dropped in that step. Relocation runs each agent's own native operation and keeps the content intact: OpenCode 2 calls the official `fork` and `move` endpoints, and Pi copies its own session file line for line, rewriting only the `id` and `cwd` in the header. An agent with no verified native contract reports the action as unsupported rather than passing a rewrite off as a move.
+
+Every relocation is read back before it is reported: OpenCode 2 compares the directory in the session's own row, Pi compares a content digest. Move deletes the original only after the new file verifies, and a fork that cannot be created leaves nothing behind in the source directory. The target directory has to exist — a mistyped path should fail immediately instead of producing a session that points at nothing.
+
 ## Agents
 
 OpenCode and OpenCode 2 are deliberately separate. They use different commands, databases, schemas, and service lifecycles.
@@ -135,20 +147,20 @@ The continuously tested set is **Pi, OpenCode 2, Claude Code, Codex, Antigravity
 
 The session list marks each agent with a fixed-width color chip. Agent names differ by up to nine characters, and set as words they leave a ragged column where a short name reads as a lesser agent and every row starts its title somewhere else. The source and target pickers show the chip next to the full name, which is where this table is read from.
 
-| Agent | Provider ID | List tag | Native resume | Rename | Archive | Delete |
-|---|---|:---:|---|:---:|:---:|:---:|
-| Pi | `pi` | `PI` | `pi --session <file>` | ✓ | — | ✓ |
-| Codex | `codex` | `CDX` | `codex resume <id>` | ✓ | ✓ | ✓ |
-| Claude Code | `claude-code` | `CLA` | `claude --resume <id>` | ✓ | — | ✓ |
-| Cursor | `cursor` | `CUR` | `cursor-agent --resume <id>` | — | — | ✓ |
-| OpenCode | `opencode` | `OPC` | `opencode --session <id>` | ✓ | ✓ | ✓ |
-| OpenCode 2 | `opencode2` | `OC2` | `opencode2 --session <id>` | ✓ | — | ✓ |
-| CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | ✓ |
-| Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | ✓ |
-| Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | — | — |
-| Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — |
+| Agent | Provider ID | List tag | Native resume | Rename | Archive | Relocate | Delete |
+|---|---|:---:|---|:---:|:---:|:---:|:---:|
+| Pi | `pi` | `PI` | `pi --session <file>` | ✓ | — | ✓ | ✓ |
+| Codex | `codex` | `CDX` | `codex resume <id>` | ✓ | ✓ | — | ✓ |
+| Claude Code | `claude-code` | `CLA` | `claude --resume <id>` | ✓ | — | — | ✓ |
+| Cursor | `cursor` | `CUR` | `cursor-agent --resume <id>` | — | — | — | ✓ |
+| OpenCode | `opencode` | `OPC` | `opencode --session <id>` | ✓ | ✓ | — | ✓ |
+| OpenCode 2 | `opencode2` | `OC2` | `opencode2 --session <id>` | ✓ | — | ✓ | ✓ |
+| CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | — | ✓ |
+| Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
+| Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | — | — | — |
+| Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | — |
 
-A dash means that agent has no verified native contract for the operation. Rename, archive, and delete change the corresponding agent's native state rather than an another-only marker; `another` shows only operations the selected agent actually supports and does not keep private state that disappears on refresh.
+A dash means that agent has no verified native contract for the operation. Rename, archive, relocate, and delete change the corresponding agent's native state rather than an another-only marker; `another` shows only operations the selected agent actually supports and does not keep private state that disappears on refresh.
 
 Codex keeps a session's name in three places: the CLI's thread store, the legacy `session_index.jsonl`, and the Electron state Codex Desktop's sidebar actually reads. Rename writes all three. Desktop rewrites its whole state from memory while it runs, so writing underneath it would lose either the rename or whatever Desktop has not flushed; that case is reported instead of forced. The CLI store is already renamed, and the interface says the sidebar catches up when Desktop restarts rather than calling the rename a failure.
 
@@ -196,6 +208,10 @@ another migrate <session-id> --to <provider> [--from ID] [-y]
 another migrate <session-id> --to codex --context full -y
 another resume <session-id> --to <provider> [--from ID]
 
+# Relocate (same agent, another project directory)
+another relocate <session-id> --to-dir <path> [--from ID] [--dry-run] [-y]
+another relocate <session-id> --to-dir ../feature-worktree --move -y
+
 # Portable backup
 another export <session-id> -o session.another.json
 another import session.another.json --to <provider> [--context MODE] [--dry-run] -y
@@ -239,7 +255,8 @@ OpenCode and OpenCode 2 writes use their official import/API surfaces. Codex Des
 - Every migrated target is reloaded and content-verified before success is reported.
 - Failed verification removes only the artifact created by that migration.
 - `Ctrl+D` defaults to **Cancel** and shows the provider, title, project, and full session ID.
-- Exactly identified active sessions are protected from rename, archive, and delete.
+- Relocation opens on fork every time; move is an explicit choice, and it deletes the original only after the new location verifies.
+- Exactly identified active sessions are protected from rename, archive, relocate, and delete.
 - The configuration directory is mode `0700`; configuration and SQLite index files are mode `0600`.
 - Disabling an agent in setup removes only its local index rows, never its native sessions.
 - Title suggestions borrow an agent CLI you already authenticated; `another` stores no API keys of its own.
