@@ -779,3 +779,79 @@ func TestOpenRefusesSymlinkDatabaseFilesWithoutTouchingTargets(t *testing.T) {
 		})
 	}
 }
+
+// An incremental update skips a file whose mtime has not moved, so a change to
+// the rule that decides which directory owns a session would never reach rows
+// an older build indexed. The recorded rule forces one full re-read.
+func TestUpdateIncrementalRereadsRowsIndexedUnderAnOlderAttributionRule(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", home)
+	dir := filepath.Join(home, "projects", "-home-user-proj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "s1.jsonl")
+	line := `{"type":"user","sessionId":"s1","cwd":"/home/user/proj","timestamp":"2025-06-01T10:00:00Z","message":{"role":"user","content":"hello"}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := index.Open(filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	reg := registry.New()
+	if _, err := index.Rebuild(context.Background(), reg, store, "claude-code"); err != nil {
+		t.Fatal(err)
+	}
+	if store.AttributionRuleStale("claude-code") {
+		t.Fatal("rebuild did not record the attribution rule")
+	}
+
+	// Stand in for rows an older build wrote: a directory this build would
+	// not choose, behind a file whose mtime never changed.
+	items, err := store.List(index.ListOpts{Provider: "claude-code", IncludeSubagents: true})
+	if err != nil || len(items) != 1 {
+		t.Fatalf("initial list: items=%d err=%v", len(items), err)
+	}
+	stale := items[0]
+	stale.ProjectPath = "/private/tmp"
+	if err := store.Upsert(stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetMeta("attribution_rule:claude-code", "origin-cwd-0"); err != nil {
+		t.Fatal(err)
+	}
+	if !store.AttributionRuleStale("claude-code") {
+		t.Fatal("AttributionRuleStale = false for an older recorded rule")
+	}
+
+	if _, err := index.UpdateIncremental(context.Background(), reg, store, "claude-code"); err != nil {
+		t.Fatal(err)
+	}
+	items, err = store.List(index.ListOpts{Provider: "claude-code", IncludeSubagents: true})
+	if err != nil || len(items) != 1 {
+		t.Fatalf("list after update: items=%d err=%v", len(items), err)
+	}
+	if items[0].ProjectPath != "/home/user/proj" {
+		t.Fatalf("ProjectPath = %q, want the re-read directory /home/user/proj", items[0].ProjectPath)
+	}
+	if store.AttributionRuleStale("claude-code") {
+		t.Fatal("update did not record the current attribution rule")
+	}
+
+	// The next update must go back to skipping unchanged files.
+	if err := store.Upsert(stale); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := index.UpdateIncremental(context.Background(), reg, store, "claude-code"); err != nil {
+		t.Fatal(err)
+	}
+	items, err = store.List(index.ListOpts{Provider: "claude-code", IncludeSubagents: true})
+	if err != nil || len(items) != 1 {
+		t.Fatalf("second update list: items=%d err=%v", len(items), err)
+	}
+	if items[0].ProjectPath != "/private/tmp" {
+		t.Fatalf("ProjectPath = %q, want the unchanged file to stay skipped", items[0].ProjectPath)
+	}
+}

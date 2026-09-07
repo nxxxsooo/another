@@ -207,7 +207,16 @@ another integrations install [--force]    # install or update the OpenCode 2 tit
 another integrations remove
 another index update
 another index rebuild
+
+# When a project moves
+another paths
+another paths link <old-directory> <new-directory>
+another paths unlink <old-directory>
 ```
+
+A session belongs to the directory it **started** in. Agents record their working directory on every turn, so moving into a subdirectory, a temporary path, or another repository mid-session does not change the owner; project filtering then covers a directory together with everything below it, and every registered worktree of a Git repository.
+
+After a project is renamed or relocated, its earlier sessions still point at the directory the agent recorded. `another paths` lists those directories with checkable candidates — a live path that shares a provider storage folder with the missing one, or an existing directory ending in the same path segments — and `another paths link` records your decision and re-projects the index. The directory the agent wrote is kept as evidence, so `another paths unlink` restores it.
 
 `--json` makes `list` and `search` emit machine-readable records. Child agent sessions are hidden by default; `--include-subagents` includes them.
 

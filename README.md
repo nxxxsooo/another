@@ -207,7 +207,16 @@ another integrations install [--force]    # 安装或更新 OpenCode 2 标题插
 another integrations remove
 another index update
 another index rebuild
+
+# 项目换了目录
+another paths
+another paths link <旧目录> <新目录>
+another paths unlink <旧目录>
 ```
+
+会话属于它**开始**的目录。agent 每一轮都会记录当前工作目录，中途 `cd` 进子目录、临时目录或另一个仓库都不改变归属；按项目过滤时，一个目录连同其子目录（Git 仓库则连同全部注册 worktree）算作同一个项目。
+
+重命名或移动项目后，早期会话仍指向 agent 当时记录的旧目录。`another paths` 列出这些已不存在的目录，并给出可核对的候选（同一 provider 存储目录中出现的新路径，或结尾路径段相同的现有目录）；`another paths link` 记录你的决定并重建索引投影。agent 写下的原始目录始终保留，`another paths unlink` 可随时还原。
 
 `list` 和 `search` 加上 `--json` 后会输出机器可读记录。子 agent 会话默认隐藏；加上 `--include-subagents` 可显示。
 

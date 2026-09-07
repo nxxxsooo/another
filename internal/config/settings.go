@@ -30,6 +30,11 @@ type Settings struct {
 	// answer is stored rather than asked again on every upgrade. Absent
 	// means no, which is what a person who has never been asked expects.
 	Integrations Integrations `json:"integrations,omitempty"`
+	// PathAliases follow a project that moved. Agents record the directory
+	// they ran in, so renaming or relocating a project strands every earlier
+	// session at a path that no longer exists. Each alias is a person's
+	// decision, never a guess another made on its own.
+	PathAliases []PathAlias `json:"path_aliases,omitempty"`
 }
 
 // Integrations is one flag per adapter another can install. The flag is
@@ -37,6 +42,14 @@ type Settings struct {
 // current, or edited is read from the agent's configuration directory.
 type Integrations struct {
 	OpenCode2TitlePolicy bool `json:"opencode2_title_policy,omitempty"`
+}
+
+// PathAlias redirects sessions recorded under From to where that project lives
+// now. It matches From itself and anything below it, on path-segment
+// boundaries, so /a/Projects/fit never captures /a/Projects/fitx.
+type PathAlias struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 type TitlePolicy struct {

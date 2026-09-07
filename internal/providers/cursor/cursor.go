@@ -404,7 +404,7 @@ func (p *Provider) summarizeTranscript(path string) (model.Summary, error) {
 		return model.Summary{}, err
 	}
 	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
-	project := util.DecodeCursorProjectPath(transcriptProjectDir(path))
+	origin := util.NewOriginDirectory(util.DecodeCursorProjectPath(transcriptProjectDir(path)))
 	picker := util.NewTitlePicker(80)
 	var migration *model.MigrationMeta
 	var msgCount int
@@ -417,9 +417,9 @@ func (p *Provider) summarizeTranscript(path string) (model.Summary, error) {
 			return nil
 		}
 		if value, _ := row["cwd"].(string); value != "" {
-			project = value
+			origin.Note(value)
 		} else if value, _ := row["projectPath"].(string); value != "" {
-			project = value
+			origin.Note(value)
 		}
 		role, _ := row["role"].(string)
 		if role == "" {
@@ -466,6 +466,7 @@ func (p *Provider) summarizeTranscript(path string) (model.Summary, error) {
 		}
 		title = picker.Title()
 	}
+	project := origin.Path()
 	if title == "" && project != "" {
 		title = util.FirstUserSnippet(util.TildePath(project), 80)
 	}
@@ -672,9 +673,10 @@ func canonicalProject(project string) string {
 }
 
 func (p *Provider) loadTranscript(path, id string) (*model.Conversation, error) {
+	origin := util.NewOriginDirectory(util.DecodeCursorProjectPath(transcriptProjectDir(path)))
 	conv := &model.Conversation{
 		ID: id, Provider: ProviderID, StoragePath: path,
-		ProjectPath: canonicalProject(util.DecodeCursorProjectPath(transcriptProjectDir(path))),
+		ProjectPath: canonicalProject(origin.Path()),
 	}
 	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
 		if meta, ok := model.ParseMigrationMeta(line); ok {
@@ -685,10 +687,11 @@ func (p *Provider) loadTranscript(path, id string) (*model.Conversation, error) 
 			return nil
 		}
 		if value, _ := row["cwd"].(string); value != "" {
-			conv.ProjectPath = value
+			origin.Note(value)
 		} else if value, _ := row["projectPath"].(string); value != "" {
-			conv.ProjectPath = value
+			origin.Note(value)
 		}
+		conv.ProjectPath = canonicalProject(origin.Path())
 		roleStr, _ := row["role"].(string)
 		if roleStr != "user" && roleStr != "assistant" {
 			return nil

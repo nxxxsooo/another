@@ -111,7 +111,7 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 	base := filepath.Base(path)
 	id := strings.TrimSuffix(base, ".jsonl")
 	encoded := p.encodedProjectForPath(path)
-	project := util.DecodeClaudeProjectPath(encoded)
+	origin := util.NewOriginDirectory(util.DecodeClaudeProjectPath(encoded))
 	kind := model.SessionKindRoot
 	parentID := ""
 	if filepath.Base(filepath.Dir(path)) == "subagents" || strings.Contains(filepath.ToSlash(path), "/subagents/") {
@@ -130,9 +130,7 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 		if json.Unmarshal(line, &row) != nil {
 			return nil
 		}
-		if row.CWD != "" {
-			project = row.CWD
-		}
+		origin.Note(row.CWD)
 		if row.IsSidechain {
 			kind = model.SessionKindSubagent
 		}
@@ -184,7 +182,7 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 		title = picker.TitleOr("(no title)")
 	}
 	return model.Summary{
-		ID: id, Provider: ProviderID, ProjectPath: project, Title: title,
+		ID: id, Provider: ProviderID, ProjectPath: origin.Path(), Title: title,
 		CreatedAt: first, UpdatedAt: last, MessageCount: msgCount,
 		StoragePath: path, Kind: kind, ParentID: parentID,
 		SourceMtime: st.ModTime().UnixNano(), SourceSize: st.Size(),
@@ -230,10 +228,10 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		return nil, provider.ErrNotFound
 	}
 	encoded := p.encodedProjectForPath(path)
-	project := util.DecodeClaudeProjectPath(encoded)
+	origin := util.NewOriginDirectory(util.DecodeClaudeProjectPath(encoded))
 	isSubagent := strings.Contains(filepath.ToSlash(path), "/subagents/")
 	conv := &model.Conversation{
-		ID: ref.ID, Provider: ProviderID, ProjectPath: project, StoragePath: path,
+		ID: ref.ID, Provider: ProviderID, ProjectPath: origin.Path(), StoragePath: path,
 	}
 	var aiTitle string
 	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
@@ -247,9 +245,8 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		if !isSubagent && row.SessionID != "" {
 			conv.ID = row.SessionID
 		}
-		if row.CWD != "" {
-			conv.ProjectPath = row.CWD
-		}
+		origin.Note(row.CWD)
+		conv.ProjectPath = origin.Path()
 		if row.Type == "custom-title" && strings.TrimSpace(row.CustomTitle) != "" {
 			conv.Title = strings.TrimSpace(row.CustomTitle)
 		}

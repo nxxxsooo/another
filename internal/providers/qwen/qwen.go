@@ -182,15 +182,14 @@ func scan(ctx context.Context, path string) (transcript, error) {
 		chain[left], chain[right] = chain[right], chain[left]
 	}
 
-	out := transcript{id: rows[0].SessionID, project: rows[0].CWD, migration: migration}
+	out := transcript{id: rows[0].SessionID, migration: migration}
+	origin := util.NewOriginDirectory(rows[0].CWD)
 	picker := util.NewTitlePicker(80)
 	for _, row := range chain {
 		if row.SessionID != "" {
 			out.id = row.SessionID
 		}
-		if row.CWD != "" {
-			out.project = row.CWD
-		}
+		origin.Note(row.CWD)
 		if row.Type == "system" && row.Subtype == "custom_title" {
 			var payload struct {
 				CustomTitle string `json:"customTitle"`
@@ -220,6 +219,7 @@ func scan(ctx context.Context, path string) (transcript, error) {
 			picker.Note(text)
 		}
 	}
+	out.project = origin.Path()
 	if out.title == "" {
 		out.title = picker.TitleOr("(qwen session)")
 	}

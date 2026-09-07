@@ -110,3 +110,38 @@ func TestCleanupRejectsOutsideStore(t *testing.T) {
 		t.Fatal("cleanup accepted a path outside QWEN_HOME")
 	}
 }
+
+// Qwen Code stamps cwd on every row, so an agent that moved into a temporary
+// directory used to drag the whole session there. Attribution follows the
+// first directory the session recorded.
+func TestSessionKeepsItsStartingDirectoryAcrossLaterCwdChanges(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("QWEN_HOME", root)
+	path := filepath.Join(root, "projects", "-p", "chats", "s1.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{
+		`{"uuid":"u1","parentUuid":null,"sessionId":"s1","timestamp":"2026-09-04T10:00:00Z","type":"user","cwd":"/home/user/proj","version":"0.23.0","message":{"role":"user","parts":[{"text":"start here"}]}}`,
+		`{"uuid":"a1","parentUuid":"u1","sessionId":"s1","timestamp":"2026-09-04T10:00:01Z","type":"assistant","cwd":"/home/user/proj/src","version":"0.23.0","message":{"role":"model","parts":[{"text":"answer"}]}}`,
+		`{"uuid":"u2","parentUuid":"a1","sessionId":"s1","timestamp":"2026-09-04T10:00:02Z","type":"user","cwd":"/private/tmp","version":"0.23.0","message":{"role":"user","parts":[{"text":"one last check"}]}}`,
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := qwen.New()
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 1 {
+		t.Fatalf("summaries=%+v err=%v", sums, err)
+	}
+	if sums[0].ProjectPath != "/home/user/proj" {
+		t.Fatalf("ProjectPath = %q, want /home/user/proj", sums[0].ProjectPath)
+	}
+	conv, err := p.Load(context.Background(), provider.SessionRef{ID: "s1", StoragePath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conv.ProjectPath != "/home/user/proj" {
+		t.Fatalf("Load ProjectPath = %q, want /home/user/proj", conv.ProjectPath)
+	}
+}

@@ -453,6 +453,7 @@ type modelState struct {
 	searchQuery     string
 	totalSessions   int
 	cwd             string
+	movedAway       []string
 	projectScope    util.ProjectScope
 	projectOnly     bool
 	sessionSpacing  int
@@ -550,6 +551,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		sources: sources, cwd: cwd, projectScope: projectScope, projectOnly: cwd != "",
 		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
+		movedAway: movedAwayDirectories(idx, initialOpts.ProjectRoots),
 	}
 	if err != nil {
 		m.err = txt.cwdUnreadable + err.Error()
@@ -2267,12 +2269,36 @@ func (m modelState) scopeView(showPath bool) string {
 	return line
 }
 
+// movedAwayDirectories finds directories that once held this project and no
+// longer exist. It runs once, at startup, so an index full of dead paths never
+// costs a redraw.
+func movedAwayDirectories(idx *index.Store, roots []string) []string {
+	dirs, err := idx.MissingDirectoriesFor(roots)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, dir := range dirs {
+		out = append(out, fmt.Sprintf("%s (%d)", util.TildePath(dir.Path), dir.Sessions))
+		if len(out) == 3 {
+			break
+		}
+	}
+	return out
+}
+
 func (m modelState) emptySessionsView() string {
 	if m.searchQuery != "" {
 		return mutedStyle.Render(txt.emptySearch)
 	}
 	if m.projectOnly {
-		return mutedStyle.Render(txt.emptyProject)
+		body := txt.emptyProject
+		// A project that was renamed or relocated looks empty here while its
+		// sessions sit under the directory the agents recorded.
+		if len(m.movedAway) > 0 {
+			body += "\n" + fmt.Sprintf(txt.emptyProjectMoved, strings.Join(m.movedAway, ", "))
+		}
+		return mutedStyle.Render(body)
 	}
 	return mutedStyle.Render(txt.emptyAll)
 }

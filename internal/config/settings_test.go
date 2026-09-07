@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/nxxxsooo/another/internal/config"
@@ -131,5 +132,52 @@ func TestLegacyTitlePolicyMigratesIntoModel(t *testing.T) {
 	}
 	if got.TitleModel == nil || got.TitleModel.Language != "auto" {
 		t.Fatalf("shared policy did not migrate into title model: %+v", got)
+	}
+}
+
+// A config written before path aliases existed must keep loading, and saving
+// one back must not invent a field the person never set.
+func TestSettingsWithoutPathAliasesStillLoad(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "another", "config.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"version":1,"enabled_providers":["codex"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(settings.PathAliases) != 0 {
+		t.Fatalf("PathAliases = %+v, want none", settings.PathAliases)
+	}
+	if err := config.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "path_aliases") {
+		t.Fatalf("saved config invented a field: %s", data)
+	}
+}
+
+func TestPathAliasesRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	want := []config.PathAlias{{From: "/old/Projects/fit", To: "/new/Work/fit/projects"}}
+	if err := config.SaveSettings(config.Settings{Version: config.SettingsVersion, PathAliases: want}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(settings.PathAliases) != 1 || settings.PathAliases[0] != want[0] {
+		t.Fatalf("PathAliases = %+v, want %+v", settings.PathAliases, want)
 	}
 }

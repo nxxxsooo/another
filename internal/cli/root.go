@@ -117,6 +117,7 @@ func (a *App) Root() *cobra.Command {
 	root.AddCommand(a.showCmd())
 	root.AddCommand(a.migrateCmd())
 	root.AddCommand(a.indexCmd())
+	root.AddCommand(a.pathsCmd())
 	root.AddCommand(a.providersCmd())
 	root.AddCommand(a.setupCmd())
 	root.AddCommand(a.integrationsCmd())
@@ -364,6 +365,7 @@ func (a *App) indexCmd() *cobra.Command {
 			rebuild, _ := a.Index.GetMeta("last_rebuild")
 			fmt.Printf("Last update: %s\n", last)
 			fmt.Printf("Last rebuild: %s\n", rebuild)
+			fmt.Printf("Attribution rule: %s\n", index.AttributionRule)
 			ids := make([]string, 0, len(counts))
 			for id := range counts {
 				ids = append(ids, id)

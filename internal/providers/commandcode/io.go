@@ -75,7 +75,7 @@ func summarizeCCFile(path, providerID string) (model.Summary, error) {
 	}
 	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	encoded := filepath.Base(filepath.Dir(path))
-	project := util.DecodeClaudeProjectPath(encoded)
+	origin := util.NewOriginDirectory(util.DecodeClaudeProjectPath(encoded))
 	picker := util.NewTitlePicker(80)
 	var migration *model.MigrationMeta
 	var msgCount int
@@ -91,9 +91,7 @@ func summarizeCCFile(path, providerID string) (model.Summary, error) {
 		if row.SessionID != "" {
 			id = row.SessionID
 		}
-		if row.Cwd != "" {
-			project = row.Cwd
-		}
+		origin.Note(row.Cwd)
 		if row.Role != "user" && row.Role != "assistant" {
 			return nil
 		}
@@ -128,7 +126,7 @@ func summarizeCCFile(path, providerID string) (model.Summary, error) {
 	}
 	mtime, size := ccSourceStamp(path, st)
 	return model.Summary{
-		ID: id, Provider: providerID, ProjectPath: project, Title: title,
+		ID: id, Provider: providerID, ProjectPath: origin.Path(), Title: title,
 		CreatedAt: first, UpdatedAt: last, MessageCount: msgCount,
 		StoragePath: path, SourceMtime: mtime.UnixNano(), SourceSize: size,
 		Kind: model.SessionKindRoot, Migration: migration,
@@ -172,7 +170,8 @@ func loadWithRoot(ref provider.SessionRef, root string) (*model.Conversation, er
 	if _, err := os.Stat(path); err != nil {
 		return nil, provider.ErrNotFound
 	}
-	conv := &model.Conversation{ID: ref.ID, Provider: ProviderID, StoragePath: path, ProjectPath: ref.ProjectPath}
+	origin := util.NewOriginDirectory(ref.ProjectPath)
+	conv := &model.Conversation{ID: ref.ID, Provider: ProviderID, StoragePath: path, ProjectPath: origin.Path()}
 	if data, err := os.ReadFile(strings.TrimSuffix(path, ".jsonl") + ".meta.json"); err == nil {
 		var meta ccMeta
 		if json.Unmarshal(data, &meta) == nil {
@@ -190,9 +189,8 @@ func loadWithRoot(ref provider.SessionRef, root string) (*model.Conversation, er
 		if row.SessionID != "" {
 			conv.ID = row.SessionID
 		}
-		if row.Cwd != "" {
-			conv.ProjectPath = row.Cwd
-		}
+		origin.Note(row.Cwd)
+		conv.ProjectPath = origin.Path()
 		if row.Role != "user" && row.Role != "assistant" {
 			return nil
 		}

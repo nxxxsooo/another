@@ -204,3 +204,77 @@ func TestDiscoverSubagentDoesNotOverwriteParentID(t *testing.T) {
 		t.Fatalf("subagent summary = %+v", items)
 	}
 }
+
+// A session's directory is where it started. Claude Code records cwd on every
+// row, so an agent that cd's into a subdirectory, a temporary path, or another
+// repository used to move the whole session there: a real fit-onboarding
+// worktree session ended up filed under /private/tmp.
+func TestSessionKeepsItsStartingDirectoryAcrossLaterCwdChanges(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	dir := filepath.Join(root, "projects", "-home-user-worktree")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{
+		`{"type":"user","sessionId":"s1","cwd":"/home/user/onboarding-portal/.worktrees/edge","timestamp":"2025-06-01T10:00:00Z","message":{"role":"user","content":"start here"}}`,
+		`{"type":"assistant","sessionId":"s1","cwd":"/home/user/onboarding-portal/.worktrees/edge/edge","timestamp":"2025-06-01T10:00:05Z","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}`,
+		`{"type":"user","sessionId":"s1","cwd":"/private/tmp","timestamp":"2025-06-01T10:00:09Z","message":{"role":"user","content":"one last check"}}`,
+	}
+	path := filepath.Join(dir, "s1.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := claude.New()
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 1 {
+		t.Fatalf("summaries=%+v err=%v", sums, err)
+	}
+	const want = "/home/user/onboarding-portal/.worktrees/edge"
+	if sums[0].ProjectPath != want {
+		t.Fatalf("ProjectPath = %q, want %q", sums[0].ProjectPath, want)
+	}
+	conv, err := p.Load(context.Background(), provider.SessionRef{ID: "s1", StoragePath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conv.ProjectPath != want {
+		t.Fatalf("Load ProjectPath = %q, want %q", conv.ProjectPath, want)
+	}
+}
+
+// The directory decoded from the storage folder name loses every dash, so
+// -home-user-codex-minus decodes to /home/user/codex/minus. It is a fallback
+// for a session that never recorded a cwd, and the first recorded cwd must
+// replace it.
+func TestRecordedCwdReplacesTheLossyFolderNameGuess(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	dir := filepath.Join(root, "projects", "-home-user-codex-minus")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	withCwd := filepath.Join(dir, "s1.jsonl")
+	if err := os.WriteFile(withCwd, []byte(`{"type":"user","sessionId":"s1","cwd":"/home/user/codex-minus","timestamp":"2025-06-01T10:00:00Z","message":{"role":"user","content":"hello"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	noCwd := filepath.Join(dir, "s2.jsonl")
+	if err := os.WriteFile(noCwd, []byte(`{"type":"user","sessionId":"s2","timestamp":"2025-06-01T10:00:00Z","message":{"role":"user","content":"hello"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := claude.New()
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, s := range sums {
+		got[s.ID] = s.ProjectPath
+	}
+	if got["s1"] != "/home/user/codex-minus" {
+		t.Fatalf("s1 ProjectPath = %q, want the recorded cwd", got["s1"])
+	}
+	if got["s2"] != "/home/user/codex/minus" {
+		t.Fatalf("s2 ProjectPath = %q, want the decoded folder fallback", got["s2"])
+	}
+}

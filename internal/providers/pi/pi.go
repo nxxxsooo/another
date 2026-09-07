@@ -226,7 +226,7 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 		return model.Summary{}, err
 	}
 	id := sessionIDFromFilename(filepath.Base(path))
-	project := decodeProjectDir(filepath.Base(filepath.Dir(path)))
+	origin := util.NewOriginDirectory(decodeProjectDir(filepath.Base(filepath.Dir(path))))
 	name := ""
 	picker := util.NewTitlePicker(80)
 	var migration *model.MigrationMeta
@@ -246,9 +246,7 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 			if e.ID != "" {
 				id = e.ID
 			}
-			if e.CWD != "" {
-				project = e.CWD
-			}
+			origin.Note(e.CWD)
 			if ts := util.ParseTime(e.Timestamp); !ts.IsZero() {
 				first = ts
 			}
@@ -295,7 +293,7 @@ func (p *Provider) summarizeFile(path string) (model.Summary, error) {
 		title = picker.TitleOr("(no title)")
 	}
 	return model.Summary{
-		ID: id, Provider: ProviderID, ProjectPath: project, Title: title,
+		ID: id, Provider: ProviderID, ProjectPath: origin.Path(), Title: title,
 		CreatedAt: first, UpdatedAt: last, MessageCount: msgCount,
 		StoragePath: path, Kind: model.SessionKindRoot,
 		SourceMtime: st.ModTime().UnixNano(), SourceSize: st.Size(),
@@ -325,9 +323,10 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if _, err := os.Stat(path); err != nil {
 		return nil, provider.ErrNotFound
 	}
+	origin := util.NewOriginDirectory(decodeProjectDir(filepath.Base(filepath.Dir(path))))
 	conv := &model.Conversation{
 		ID: ref.ID, Provider: ProviderID, StoragePath: path,
-		ProjectPath: decodeProjectDir(filepath.Base(filepath.Dir(path))),
+		ProjectPath: origin.Path(),
 	}
 	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
 		if err := ctx.Err(); err != nil {
@@ -345,9 +344,8 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 			if e.ID != "" {
 				conv.ID = e.ID
 			}
-			if e.CWD != "" {
-				conv.ProjectPath = e.CWD
-			}
+			origin.Note(e.CWD)
+			conv.ProjectPath = origin.Path()
 		case "session_info":
 			conv.Title = strings.TrimSpace(e.Name)
 		case "message":

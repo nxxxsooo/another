@@ -34,7 +34,10 @@ type uiText struct {
 	// Empty states.
 	emptySearch  string
 	emptyProject string
-	emptyAll     string
+	// emptyProjectMoved takes the list of directories this project used to
+	// live in, each with its session count.
+	emptyProjectMoved string
+	emptyAll          string
 
 	// Footer.
 	working         string
@@ -260,9 +263,10 @@ var englishText = uiText{
 	scopeThis:      "this project",
 	scopeAll:       "all",
 
-	emptySearch:  "\n  No session matches",
-	emptyProject: "\n  No sessions in this project\n  Press f to see all",
-	emptyAll:     "\n  No sessions",
+	emptySearch:       "\n  No session matches",
+	emptyProject:      "\n  No sessions in this project\n  Press f to see all",
+	emptyProjectMoved: "  Earlier sessions are still under %s\n  Run `another paths` to follow them here",
+	emptyAll:          "\n  No sessions",
 
 	working:         " working…",
 	indexing:        "indexing…",
@@ -471,9 +475,10 @@ var chineseText = uiText{
 	scopeThis:      "当前项目",
 	scopeAll:       "全部",
 
-	emptySearch:  "\n  没有匹配的会话",
-	emptyProject: "\n  当前项目没有会话\n  按 f 查看全部",
-	emptyAll:     "\n  没有会话",
+	emptySearch:       "\n  没有匹配的会话",
+	emptyProject:      "\n  当前项目没有会话\n  按 f 查看全部",
+	emptyProjectMoved: "  早期会话还留在 %s\n  运行 `another paths` 把它们接回来",
+	emptyAll:          "\n  没有会话",
 
 	working:         " 处理中…",
 	indexing:        "正在建立索引…",

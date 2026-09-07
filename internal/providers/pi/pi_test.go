@@ -568,3 +568,32 @@ func TestRoundTripPreservesConversation(t *testing.T) {
 		}
 	}
 }
+
+// pi writes a `session` event whenever a session starts or resumes, each with
+// its own cwd. The session belongs to the directory of the first one; a later
+// resume somewhere else must not move it.
+func TestSessionKeepsItsStartingDirectoryAcrossResumeElsewhere(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PI_AGENT_DIR", root)
+	path := writeSession(t, root, "/home/user/proj", "01a065a5-edfc-73df-89b3-f14b9b01f243.jsonl", []string{
+		`{"type":"session","version":3,"id":"01a065a5-edfc-73df-89b3-f14b9b01f243","timestamp":"2026-09-03T05:02:48.316Z","cwd":"/home/user/proj"}`,
+		`{"type":"message","id":"m1","timestamp":"2026-09-03T05:02:49.000Z","message":{"role":"user","content":[{"type":"text","text":"start here"}]}}`,
+		`{"type":"session","version":3,"id":"01a065a5-edfc-73df-89b3-f14b9b01f243","timestamp":"2026-09-03T06:00:00.000Z","cwd":"/private/tmp"}`,
+		`{"type":"message","id":"m2","timestamp":"2026-09-03T06:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"answer"}]}}`,
+	})
+	p := pi.New()
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 1 {
+		t.Fatalf("summaries=%+v err=%v", sums, err)
+	}
+	if sums[0].ProjectPath != "/home/user/proj" {
+		t.Fatalf("ProjectPath = %q, want /home/user/proj", sums[0].ProjectPath)
+	}
+	conv, err := p.Load(context.Background(), provider.SessionRef{ID: sums[0].ID, StoragePath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conv.ProjectPath != "/home/user/proj" {
+		t.Fatalf("Load ProjectPath = %q, want /home/user/proj", conv.ProjectPath)
+	}
+}

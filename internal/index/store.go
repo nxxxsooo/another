@@ -22,7 +22,8 @@ import (
 )
 
 type Store struct {
-	db *sql.DB
+	db          *sql.DB
+	pathAliases []config.PathAlias
 }
 
 func Open(path string) (*Store, error) {
@@ -59,6 +60,11 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{db: db}
+	// A missing or unreadable config is not a reason to refuse to open the
+	// index; it only means there are no aliases to apply.
+	if settings, settingsErr := config.LoadSettings(); settingsErr == nil {
+		s.SetPathAliases(settings.PathAliases)
+	}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -356,6 +362,9 @@ func (s *Store) Upsert(summary model.Summary) error {
 		return err
 	}
 	if err := rebuildProviderSessions(tx, summary.Provider); err != nil {
+		return err
+	}
+	if err := applyPathAliases(tx, summary.Provider, s.pathAliases); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -912,6 +921,25 @@ func recordDiscoverMeta(store *Store, providerID string, summaries []model.Summa
 	return store.SetMeta(discoverCountMetaKey(providerID), strconv.Itoa(uniqueSummaryIDs(summaries)))
 }
 
+// AttributionRule names the rule that decides which directory owns a session.
+// An incremental update skips a file whose mtime has not moved, so a rule
+// change would otherwise never reach sessions indexed by an older build.
+// Bumping this value makes the next update re-read every file once.
+const AttributionRule = "origin-cwd-1"
+
+func attributionRuleMetaKey(providerID string) string { return "attribution_rule:" + providerID }
+
+// AttributionRuleStale reports whether this provider's rows were indexed under
+// a different attribution rule.
+func (s *Store) AttributionRuleStale(providerID string) bool {
+	current, err := s.GetMeta(attributionRuleMetaKey(providerID))
+	return err != nil || current != AttributionRule
+}
+
+func recordAttributionRule(store *Store, providerID string) error {
+	return store.SetMeta(attributionRuleMetaKey(providerID), AttributionRule)
+}
+
 func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, providerFilter string) (int, error) {
 	total := 0
 	for _, p := range reg.All() {
@@ -923,6 +951,7 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 				return total, err
 			}
 			_ = recordDiscoverMeta(store, p.ID(), nil)
+			_ = recordAttributionRule(store, p.ID())
 			continue
 		}
 		summaries, err := p.Discover(ctx, provider.DiscoverOpts{})
@@ -938,6 +967,7 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 			return total, err
 		}
 		_ = recordDiscoverMeta(store, p.ID(), summaries)
+		_ = recordAttributionRule(store, p.ID())
 		total += len(summaries)
 	}
 	if n, err := store.PruneTitlerSessions(); err == nil {
@@ -977,6 +1007,7 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 				return total, err
 			}
 			_ = recordDiscoverMeta(store, p.ID(), nil)
+			_ = recordAttributionRule(store, p.ID())
 			continue
 		}
 		pid := p.ID()
@@ -991,7 +1022,14 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 			need, err := store.NeedsSourceRefresh(pid, storagePath, mtime, size)
 			return err == nil && !need
 		}
-		summaries, err := p.Discover(ctx, provider.DiscoverOpts{SkipUnchanged: skip, SkipSource: skipSource})
+		// Rows indexed under an older attribution rule hold a directory this
+		// build would no longer choose, and their files have not changed, so
+		// the skip filters would hide them forever. Read everything once.
+		discoverOpts := provider.DiscoverOpts{SkipUnchanged: skip, SkipSource: skipSource}
+		if store.AttributionRuleStale(pid) {
+			discoverOpts = provider.DiscoverOpts{}
+		}
+		summaries, err := p.Discover(ctx, discoverOpts)
 		if err != nil {
 			return total, fmt.Errorf("%s: %w", pid, err)
 		}
@@ -1011,6 +1049,7 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 		if n, err := store.Count(ListOpts{Provider: pid, IncludeSubagents: true}); err == nil {
 			_ = store.SetMeta(discoverCountMetaKey(pid), strconv.Itoa(n))
 		}
+		_ = recordAttributionRule(store, pid)
 	}
 	// An unchanged file is skipped before it is ever examined, so leftovers
 	// indexed by an older build would otherwise never be reconsidered.
@@ -1199,6 +1238,9 @@ func (s *Store) dropProviderSources(providerID string, paths []string) error {
 	if err := rebuildProviderSessions(tx, providerID); err != nil {
 		return err
 	}
+	if err := applyPathAliases(tx, providerID, s.pathAliases); err != nil {
+		return err
+	}
 	if err := pruneDerived(tx, providerID); err != nil {
 		return err
 	}
@@ -1251,6 +1293,9 @@ func (s *Store) reconcileProvider(providerID string, changed []model.Summary, se
 		return err
 	}
 	if err := rebuildProviderSessions(tx, providerID); err != nil {
+		return err
+	}
+	if err := applyPathAliases(tx, providerID, s.pathAliases); err != nil {
 		return err
 	}
 	if err := pruneDerived(tx, providerID); err != nil {
