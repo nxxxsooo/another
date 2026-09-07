@@ -454,23 +454,48 @@ func (m setupModel) View() string {
 	if m.width < 48 || m.height < 20 {
 		return ansi.Truncate("Terminal too small — resize to at least 48x20", max(1, m.width), "")
 	}
-	// The panel keeps its padding and border out of the text area, so rows are
-	// cut to what is left inside it. Truncating to the outer width instead lets
-	// a long row wrap and silently costs the page a line.
-	width := min(72, m.width-8) - modalStyle.GetHorizontalFrameSize()
+	// Two different widths, and using one for the other is what wraps rows.
+	// lipgloss counts padding inside Width and the border outside it, so the
+	// panel is asked for one number while text is cut to another: a row cut to
+	// the panel width wraps inside the padding, and every wrapped row costs the
+	// page a line it did not budget for.
+	panelW := min(72, m.width-8) - modalStyle.GetHorizontalBorderSize()
+	width := panelW - modalStyle.GetHorizontalPadding()
 	switch m.page {
 	case setupPageTitle:
-		panel := modalStyle.Width(width).Render(m.titlePageBody(width))
+		panel := modalStyle.Width(panelW).Render(m.titlePageBody(panelW, width))
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
 	case setupPageModel:
-		panel := modalStyle.Width(width).Render(m.modelPageBody(width))
+		panel := modalStyle.Width(panelW).Render(m.modelPageBody(width))
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
 	}
+	head := accentStyle.Render("another setup") + "\n" +
+		titleStyle.Render("选择你使用的 agent") + "  " +
+		mutedStyle.Render(fmt.Sprintf("%d / %d", selectedCount(m.selected), len(m.items))) + "\n" +
+		mutedStyle.Render("Space 开关 agent；Shift+↑↓ 调整显示顺序。") + "\n\n"
+	foot := "\n"
+	if m.err != "" {
+		foot += errStyle.Render("✗ "+m.err) + "\n"
+	}
+	foot += mutedStyle.Render("↑↓ 移动  ·  space 开关  ·  shift+↑↓ 排序  ·  enter 下一步  ·  esc 取消")
+
+	rows := m.rows()
+	// The panel is centred in the terminal, so a body one line too tall does not
+	// clip: the terminal scrolls, and from then on every frame lands lower than
+	// the one before it. The list scrolls instead, and how many rows fit is
+	// measured on the real panel rather than counted by hand, because the help
+	// line wraps at narrow widths and the frame owns four more lines.
+	budget := m.height - lipgloss.Height(modalStyle.Width(panelW).Render(head+foot))
+	hidden := len(rows) - budget
+	if hidden > 0 {
+		budget-- // the "+ N more" line has to fit too
+	}
+	start, end := modelWindow(m.cursor, len(rows), max(1, budget))
+
 	var body strings.Builder
-	body.WriteString(accentStyle.Render("another setup") + "\n")
-	body.WriteString(titleStyle.Render("选择你使用的 agent") + "  " + mutedStyle.Render(fmt.Sprintf("%d / %d", selectedCount(m.selected), len(m.items))) + "\n")
-	body.WriteString(mutedStyle.Render("Space 开关 agent；Shift+↑↓ 调整显示顺序。") + "\n\n")
-	for row, index := range m.rows() {
+	body.WriteString(head)
+	for row := start; row < end; row++ {
+		index := rows[row]
 		cursor := "  "
 		if row == m.cursor {
 			cursor = "› "
@@ -505,12 +530,11 @@ func (m setupModel) View() string {
 		}
 		body.WriteString(ansi.Truncate(line, width, "…") + "\n")
 	}
-	body.WriteString("\n")
-	if m.err != "" {
-		body.WriteString(errStyle.Render("✗ "+m.err) + "\n")
+	if n := len(rows) - (end - start); n > 0 {
+		body.WriteString(ansi.Truncate(mutedStyle.Render(fmt.Sprintf("  + 还有 %d 个，↑↓ 滚动", n)), width, "…") + "\n")
 	}
-	body.WriteString(mutedStyle.Render("↑↓ 移动  ·  space 开关  ·  shift+↑↓ 排序  ·  enter 下一步  ·  esc 取消"))
-	panel := modalStyle.Width(width).Render(body.String())
+	body.WriteString(foot)
+	panel := modalStyle.Width(panelW).Render(body.String())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
 }
 
@@ -531,19 +555,42 @@ func (m setupModel) foldLine(focused bool) string {
 	return "  " + label + mutedStyle.Render("  ·  space "+action)
 }
 
-func (m setupModel) titlePageBody(width int) string {
-	var body strings.Builder
-	body.WriteString(accentStyle.Render("another setup") + "\n")
-	body.WriteString(titleStyle.Render("重命名时的 AI 标题建议") + "\n")
-	body.WriteString(mutedStyle.Render("按 ctrl+r 时调用哪个已装 agent 生成候选标题。") + "\n\n")
+func (m setupModel) titlePageBody(panelW, width int) string {
+	head := accentStyle.Render("another setup") + "\n" +
+		titleStyle.Render("重命名时的 AI 标题建议") + "\n" +
+		mutedStyle.Render("按 ctrl+r 时调用哪个已装 agent 生成候选标题。") + "\n\n"
 
 	if len(m.titleOpts) <= 1 {
-		body.WriteString(mutedStyle.Render("已选的 agent 里没有能生成标题的 CLI，此功能保持关闭。") + "\n\n")
-		body.WriteString(mutedStyle.Render("enter 保存  ·  esc 返回"))
-		return body.String()
+		return head + mutedStyle.Render("已选的 agent 里没有能生成标题的 CLI，此功能保持关闭。") + "\n\n" +
+			mutedStyle.Render("enter 保存  ·  esc 返回")
 	}
 
-	for i, opt := range m.titleOpts {
+	foot := "\n" + mutedStyle.Render("语言") + "  " + m.languageRow() + "\n"
+	if m.titleCursor <= 0 {
+		foot += mutedStyle.Render("建议模型关闭；语言仍供 O2／Pi 原生命名共用。") + "\n"
+	}
+	foot += "\n"
+	if m.err != "" {
+		foot += errStyle.Render("✗ "+m.err) + "\n"
+	}
+	if m.titleCursor > 0 {
+		foot += mutedStyle.Render("↑↓ 选 agent  ·  ←→ 选语言  ·  enter 选模型  ·  esc 返回")
+	} else {
+		foot += mutedStyle.Render("↑↓ 选 agent  ·  ←→ 选语言  ·  enter 保存  ·  esc 返回")
+	}
+
+	// Same budget as the agent page: this list is every agent that can write a
+	// title, so it outgrows a short terminal for the same reason.
+	budget := m.height - lipgloss.Height(modalStyle.Width(panelW).Render(head+foot))
+	if len(m.titleOpts) > budget {
+		budget--
+	}
+	start, end := modelWindow(m.titleCursor, len(m.titleOpts), max(1, budget))
+
+	var body strings.Builder
+	body.WriteString(head)
+	for i := start; i < end; i++ {
+		opt := m.titleOpts[i]
 		cursor := "  "
 		if i == m.titleCursor {
 			cursor = "› "
@@ -569,20 +616,10 @@ func (m setupModel) titlePageBody(width int) string {
 		}
 		body.WriteString(ansi.Truncate(line, width, "…") + "\n")
 	}
-	body.WriteString("\n")
-	body.WriteString(mutedStyle.Render("语言") + "  " + m.languageRow() + "\n")
-	if m.titleCursor <= 0 {
-		body.WriteString(mutedStyle.Render("建议模型关闭；语言仍供 O2／Pi 原生命名共用。") + "\n")
+	if n := len(m.titleOpts) - (end - start); n > 0 {
+		body.WriteString(ansi.Truncate(mutedStyle.Render(fmt.Sprintf("  + 还有 %d 个，↑↓ 滚动", n)), width, "…") + "\n")
 	}
-	body.WriteString("\n")
-	if m.err != "" {
-		body.WriteString(errStyle.Render("✗ "+m.err) + "\n")
-	}
-	if m.titleCursor > 0 {
-		body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  ←→ 选语言  ·  enter 选模型  ·  esc 返回"))
-	} else {
-		body.WriteString(mutedStyle.Render("↑↓ 选 agent  ·  ←→ 选语言  ·  enter 保存  ·  esc 返回"))
-	}
+	body.WriteString(foot)
 	return body.String()
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/titler"
 )
 
@@ -326,7 +328,7 @@ func TestSetupTitlePageRecordsLanguage(t *testing.T) {
 	if cfg := m.titleModel(); cfg == nil || cfg.Language != string(titler.LangAuto) {
 		t.Fatalf("default language = %+v, want auto", cfg)
 	}
-	if body := m.titlePageBody(72); !strings.Contains(body, "中文") || !strings.Contains(body, "Auto") {
+	if body := m.titlePageBody(72, 64); !strings.Contains(body, "中文") || !strings.Contains(body, "Auto") {
 		t.Fatalf("the title page must show the language choices:\n%s", body)
 	}
 
@@ -428,6 +430,70 @@ func TestSetupViewFitsTerminal(t *testing.T) {
 		view := m.View()
 		if lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
 			t.Fatalf("%dx%d rendered %dx%d", size[0], size[1], lipgloss.Width(view), lipgloss.Height(view))
+		}
+	}
+}
+
+// setupWithEveryAgent is the page as a first run actually sees it: every agent
+// another supports, which is what made the panel outgrow the terminal.
+func setupWithEveryAgent() setupModel {
+	reg := registry.NewOrdered(nil)
+	var items []setupItem
+	for _, p := range reg.All() {
+		items = append(items, setupItem{
+			id: p.ID(), name: p.DisplayName(), command: registry.CLICommand(p.ID()),
+			data: true, cli: true, available: true, sessions: 116,
+			adapter: registry.IsCompatibilityAdapter(p.ID()),
+		})
+	}
+	sort.SliceStable(items, func(i, j int) bool { return !items[i].adapter && items[j].adapter })
+	return setupModel{items: items, selected: map[string]bool{"pi": true}, modelInput: textinput.New()}
+}
+
+// The panel is centred, so a body one line too tall does not clip: the terminal
+// scrolls, and from then on every frame lands lower than the one before it —
+// which is how the same agent ends up drawn twice with two cursors.
+func TestSetupNeverOutgrowsTheTerminal(t *testing.T) {
+	for _, folded := range []bool{false, true} {
+		for h := 20; h <= 60; h++ {
+			for _, w := range []int{48, 60, 80, 100, 140, 200} {
+				for _, page := range []int{setupPageAgents, setupPageTitle} {
+					m := setupWithEveryAgent()
+					m.showAdapters = folded
+					m.width, m.height, m.page = w, h, page
+					if page == setupPageTitle {
+						m.titleOpts = titleOptions(m.items, map[string]bool{})
+						for _, item := range m.items {
+							m.titleOpts = append(m.titleOpts, titleOption{id: item.id, name: item.name, command: item.command})
+						}
+					}
+					if rows := len(m.rows()); rows > 0 {
+						m.cursor = min(rows-1, 10)
+					}
+					if got := lipgloss.Height(m.View()); got > h {
+						t.Fatalf("page %d at %dx%d fold=%v: setup renders %d lines", page, w, h, folded, got)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Every row has to survive its own panel: a row cut to the panel width wraps
+// inside the padding, and a wrapped row is a line the page never budgeted for.
+func TestSetupRowsStayOnOneLine(t *testing.T) {
+	m := setupWithEveryAgent()
+	m.showAdapters = true
+	for _, w := range []int{48, 56, 72, 92, 120, 200} {
+		m.width, m.height = w, 40
+		view := ansi.Strip(m.View())
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Count(line, "○")+strings.Count(line, "●") > 1 {
+				t.Fatalf("width %d: two agents share a line: %q", w, line)
+			}
+		}
+		if got := strings.Count(view, "○") + strings.Count(view, "●"); got != len(m.items) {
+			t.Fatalf("width %d: %d of %d agent rows drawn", w, got, len(m.items))
 		}
 	}
 }
