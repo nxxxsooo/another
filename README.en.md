@@ -156,6 +156,8 @@ Codex Desktop's subagent threads â€” the forks it spawns from a parent thread â€
 
 Codex writes each turn to a rollout up to twice, and the message count in the list used to count both halves. That number now matches what the session actually opens with, so a Codex session's count can drop after this upgrade. The index re-summarizes Codex once on the first run after the update; nothing has to be rebuilt by hand.
 
+Child sessions stay out of the list because their parent leads back to them. When the parent is no longer indexed that reasoning fails, so such a child is listed directly; otherwise only knowing its ID would find it, which is indistinguishable from losing it. It becomes a child again as soon as its parent is indexed. A child thread that records no parent at all stays hidden: Codex's guardian threads are written that way, and they are machine assessments of a requested action rather than anyone's conversation.
+
 A session whose directory no longer exists is marked as such. After a workspace is reorganized those sessions still browse and migrate, but their resume command would land on a path that is gone.
 
 Check the local installation:
