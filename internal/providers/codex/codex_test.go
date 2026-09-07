@@ -136,6 +136,77 @@ func TestSummarizeV2Fixture(t *testing.T) {
 	}
 }
 
+// A Codex Desktop subagent or forked thread records assistant turns only as
+// event_msg/agent_message: it has no response_item assistant record, and its
+// only user-role record is injected transport. Reading just the response_item
+// half left every one of those sessions unopenable.
+func TestLoadSubagentForkFixture(t *testing.T) {
+	p := codex.New()
+	path := filepath.Join("..", "..", "..", "testdata", "codex", "sample-subagent-fork.jsonl")
+	conv, err := p.Load(context.Background(), provider.SessionRef{
+		ID: "019d0400-1111-7000-8000-000000000001", StoragePath: path,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conv.Messages) != 2 {
+		t.Fatalf("messages = %+v, want both agent_message turns", conv.Messages)
+	}
+	for i, m := range conv.Messages {
+		if m.Role != model.RoleAssistant {
+			t.Fatalf("message %d role = %q", i, m.Role)
+		}
+	}
+	if conv.Messages[0].PlainText() != "I inventoried every exported API definition in the backend crate." {
+		t.Fatalf("first message = %q", conv.Messages[0].PlainText())
+	}
+	if conv.ProjectPath != "/home/cyrus/Documents/demo" {
+		t.Fatalf("project = %q", conv.ProjectPath)
+	}
+	if conv.Title != "api_definitions · Wegener the 9th" {
+		t.Fatalf("title = %q, want the subagent identity", conv.Title)
+	}
+}
+
+func TestSummarizeSubagentForkFixture(t *testing.T) {
+	p := codex.New()
+	path := filepath.Join("..", "..", "..", "testdata", "codex", "sample-subagent-fork.jsonl")
+	sum, err := p.SummarizeFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.MessageCount != 2 {
+		t.Fatalf("message count = %d, want the agent_message turns", sum.MessageCount)
+	}
+	if sum.Kind != model.SessionKindSubagent || sum.ParentID != "019d0400-0000-7000-8000-000000000000" {
+		t.Fatalf("kind = %q parent = %q", sum.Kind, sum.ParentID)
+	}
+	if sum.Title != "api_definitions · Wegener the 9th" {
+		t.Fatalf("title = %q, want the subagent identity", sum.Title)
+	}
+}
+
+// An indexed message count is shown next to a session and decides whether the
+// index considers a row current, so it has to mean what Load returns rather
+// than counting Codex's mirrored event_msg/response_item pair twice.
+func TestSummarizeMessageCountMatchesLoad(t *testing.T) {
+	p := codex.New()
+	for _, name := range []string{"sample.jsonl", "sample-v2.jsonl", "sample-subagent-fork.jsonl"} {
+		path := filepath.Join("..", "..", "..", "testdata", "codex", name)
+		sum, err := p.SummarizeFile(path)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		conv, err := p.Load(context.Background(), provider.SessionRef{ID: sum.ID, StoragePath: path})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if sum.MessageCount != len(conv.Messages) {
+			t.Fatalf("%s: summarized %d messages, loaded %d", name, sum.MessageCount, len(conv.Messages))
+		}
+	}
+}
+
 func TestSummarizeEmptyUsesProjectPath(t *testing.T) {
 	p := codex.New()
 	path := filepath.Join("..", "..", "..", "testdata", "codex", "sample-empty.jsonl")

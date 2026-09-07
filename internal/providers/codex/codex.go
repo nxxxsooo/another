@@ -153,14 +153,31 @@ func codexTextFromContent(content any) string {
 	return strings.Join(parts, "\n")
 }
 
-func codexApplyMeta(row map[string]any, id, project, parentID, kind *string, seen *bool) {
+// codexMeta is the identity a rollout's session_meta line carries. Subagent
+// and forked threads also name themselves there, which is the only title
+// material they have: such a thread holds no user prompt of its own.
+type codexMeta struct {
+	id        string
+	project   string
+	parentID  string
+	kind      string
+	nickname  string
+	agentPath string
+	seen      bool
+}
+
+func newCodexMeta() codexMeta {
+	return codexMeta{kind: model.SessionKindRoot}
+}
+
+func codexApplyMeta(row map[string]any, meta *codexMeta) {
 	if t, _ := row["type"].(string); t != "session_meta" {
 		return
 	}
-	if *seen {
+	if meta.seen {
 		return
 	}
-	*seen = true
+	meta.seen = true
 	p := codexPayload(row)
 	sid, _ := p["id"].(string)
 	if sid == "" {
@@ -170,64 +187,88 @@ func codexApplyMeta(row map[string]any, id, project, parentID, kind *string, see
 		sid, _ = row["session_id"].(string)
 	}
 	if sid != "" {
-		*id = sid
+		meta.id = sid
 	}
 	if cwd, _ := row["cwd"].(string); cwd != "" {
-		*project = cwd
+		meta.project = cwd
 	} else if cwd, _ := p["cwd"].(string); cwd != "" {
-		*project = cwd
+		meta.project = cwd
 	}
+	meta.nickname = stringField(p, "agent_nickname")
+	meta.agentPath = stringField(p, "agent_path")
 	if source, ok := p["source"].(map[string]any); ok {
 		if subagent, ok := source["subagent"].(map[string]any); ok {
-			*kind = model.SessionKindSubagent
+			meta.kind = model.SessionKindSubagent
 			if spawn, ok := subagent["thread_spawn"].(map[string]any); ok {
-				*parentID = stringField(spawn, "parent_thread_id")
-			}
-		}
-	}
-}
-
-func codexNoteUserText(text string, picker *util.TitlePicker, msgCount *int) {
-	text = strings.TrimSpace(text)
-	if text == "" || util.SkipUserMessage(text) {
-		return
-	}
-	*msgCount++
-	picker.Note(text)
-}
-
-func codexApplyRow(row map[string]any, id, project *string, picker *util.TitlePicker, msgCount *int) {
-	switch t, _ := row["type"].(string); t {
-	case "event_msg":
-		if em, ok := row["event_msg"].(map[string]any); ok {
-			role, _ := em["role"].(string)
-			text, _ := em["message"].(string)
-			if role == "user" {
-				codexNoteUserText(text, picker, msgCount)
-			} else if role == "assistant" {
-				if text != "" {
-					*msgCount++
+				meta.parentID = stringField(spawn, "parent_thread_id")
+				if meta.nickname == "" {
+					meta.nickname = stringField(spawn, "agent_nickname")
+				}
+				if meta.agentPath == "" {
+					meta.agentPath = stringField(spawn, "agent_path")
 				}
 			}
-			return
 		}
+	}
+}
+
+// codexSubagentTitle names a thread that never received a user prompt. The
+// agent_path leaf says what the thread was spawned to do and the nickname is
+// what Codex Desktop calls it, so together they read like a real title.
+func codexSubagentTitle(meta codexMeta) string {
+	leaf := ""
+	if trimmed := strings.Trim(strings.TrimSpace(meta.agentPath), "/"); trimmed != "" {
+		parts := strings.Split(trimmed, "/")
+		if candidate := strings.TrimSpace(parts[len(parts)-1]); candidate != "root" {
+			leaf = candidate
+		}
+	}
+	nickname := strings.TrimSpace(meta.nickname)
+	switch {
+	case leaf != "" && nickname != "":
+		return leaf + " · " + nickname
+	case leaf != "":
+		return leaf
+	default:
+		return nickname
+	}
+}
+
+// codexWireMessage reads the conversation turn out of one rollout record.
+// Codex writes a turn up to twice: as an event_msg (user_message or
+// agent_message) and again as a response_item. Subagent and forked threads
+// only ever carry the event_msg half, so both spellings have to be understood
+// here or their whole transcript reads as empty.
+func codexWireMessage(row map[string]any) (wireType, role, text string, ok bool) {
+	if em, isLegacy := row["event_msg"].(map[string]any); isLegacy {
+		return "event_msg", stringField(em, "role"), stringField(em, "message"), true
+	}
+	switch t, _ := row["type"].(string); t {
+	case "event_msg":
 		p := codexPayload(row)
 		switch pt, _ := p["type"].(string); pt {
 		case "user_message":
-			codexNoteUserText(stringField(p, "message"), picker, msgCount)
+			return "event_msg", "user", stringField(p, "message"), true
+		case "agent_message":
+			return "event_msg", "assistant", stringField(p, "message"), true
 		}
 	case "response_item":
 		p := codexPayload(row)
-		if mt, _ := p["type"].(string); mt != "message" {
-			return
+		if mt, _ := p["type"].(string); mt == "message" {
+			return "response_item", stringField(p, "role"), codexTextFromContent(p["content"]), true
 		}
-		role, _ := p["role"].(string)
-		text := codexTextFromContent(p["content"])
-		if role == "user" {
-			codexNoteUserText(text, picker, msgCount)
-		} else if role == "assistant" && text != "" {
-			*msgCount++
-		}
+	}
+	return "", "", "", false
+}
+
+func codexApplyRow(row map[string]any, last *codexLoadedMessage, picker *util.TitlePicker, msgCount *int, keepInjected bool, ts time.Time) {
+	wireType, role, text, ok := codexWireMessage(row)
+	if !ok || !codexAcceptMessage(last, wireType, role, text, ts, keepInjected) {
+		return
+	}
+	*msgCount++
+	if role == "user" {
+		picker.Note(strings.TrimSpace(text))
 	}
 }
 
@@ -238,15 +279,20 @@ type codexLoadedMessage struct {
 	timestamp time.Time
 }
 
-func codexAppendMessage(conv *model.Conversation, last *codexLoadedMessage, wireType, role, text string, ts time.Time) {
+// codexAcceptMessage reports whether a wire message is a real conversation
+// turn, folding in the injected-transport filter, the synthetic bridge turn,
+// and the mirrored event_msg/response_item pair Codex writes for the same
+// text. Load and the summarize pass share it so an indexed message count means
+// exactly what a loaded conversation holds.
+func codexAcceptMessage(last *codexLoadedMessage, wireType, role, text string, ts time.Time, keepInjected bool) bool {
 	if role != "user" && role != "assistant" || text == "" {
-		return
+		return false
 	}
-	if role == "user" && conv.Migration == nil && codexSkipUserText(text) {
-		return
+	if role == "user" && !keepInjected && codexSkipUserText(text) {
+		return false
 	}
 	if role == "user" && codexIsRestoredUserPrompt(text) {
-		return
+		return false
 	}
 	current := codexLoadedMessage{wireType: wireType, role: role, text: text, timestamp: ts}
 	delta := current.timestamp.Sub(last.timestamp)
@@ -254,9 +300,16 @@ func codexAppendMessage(conv *model.Conversation, last *codexLoadedMessage, wire
 		last.wireType == "response_item" && current.wireType == "event_msg"
 	if last.role == current.role && last.text == current.text && mirroredWireTypes &&
 		!last.timestamp.IsZero() && delta >= 0 && delta <= time.Second {
-		return
+		return false
 	}
 	*last = current
+	return true
+}
+
+func codexAppendMessage(conv *model.Conversation, last *codexLoadedMessage, wireType, role, text string, ts time.Time) {
+	if !codexAcceptMessage(last, wireType, role, text, ts, conv.Migration != nil) {
+		return
+	}
 	mrole := model.RoleUser
 	if role == "assistant" {
 		mrole = model.RoleAssistant
@@ -269,35 +322,36 @@ func (p *Provider) summarizeFileWithGUI(path string, gui guiTitles) (model.Summa
 	if err != nil {
 		return model.Summary{}, err
 	}
-	id := sessionIDFromRollout(path)
 	picker := util.NewTitlePicker(80)
 	var msgCount int
 	var first, last time.Time
-	var project string
-	kind := model.SessionKindRoot
-	parentID := ""
-	metaSeen := false
+	meta := newCodexMeta()
+	meta.id = sessionIDFromRollout(path)
+	var lastMessage codexLoadedMessage
 	var migration *model.MigrationMeta
 	if err := util.ReadJSONLPrefix(path, codexSummarizeMaxBytes, codexSummarizeMaxLines, func(line []byte) error {
 		var row map[string]any
 		if json.Unmarshal(line, &row) != nil {
 			return nil
 		}
-		if meta, ok := model.ParseMigrationMeta(line); ok {
-			migration = meta
+		if m, ok := model.ParseMigrationMeta(line); ok {
+			migration = m
 		}
-		codexApplyMeta(row, &id, &project, &parentID, &kind, &metaSeen)
-		if ts := util.ParseTime(stringField(row, "timestamp")); !ts.IsZero() {
+		codexApplyMeta(row, &meta)
+		ts := util.ParseTime(stringField(row, "timestamp"))
+		if !ts.IsZero() {
 			if first.IsZero() {
 				first = ts
 			}
 			last = ts
 		}
-		codexApplyRow(row, &id, &project, picker, &msgCount)
+		codexApplyRow(row, &lastMessage, picker, &msgCount, migration != nil, ts)
 		return nil
 	}); err != nil {
 		return model.Summary{}, err
 	}
+	id, project := meta.id, meta.project
+	kind, parentID := meta.kind, meta.parentID
 	tail, err := util.TailJSONLLines(path, 5)
 	if err != nil {
 		return model.Summary{}, err
@@ -321,6 +375,9 @@ func (p *Provider) summarizeFileWithGUI(path string, gui guiTitles) (model.Summa
 		last = st.ModTime()
 	}
 	title := picker.Title()
+	if title == "" {
+		title = codexSubagentTitle(meta)
+	}
 	if guiTitle := strings.TrimSpace(gui.names[id]); guiTitle != "" {
 		title = guiTitle
 		kind = model.SessionKindRoot
@@ -355,48 +412,31 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	}
 	conv := &model.Conversation{ID: ref.ID, Provider: ProviderID, StoragePath: path}
 	var lastMessage codexLoadedMessage
-	metaSeen := false
-	kind := model.SessionKindRoot
-	parentID := ""
+	meta := newCodexMeta()
 	if err := util.ReadJSONLLines(path, 0, func(line []byte) error {
-		if meta, ok := model.ParseMigrationMeta(line); ok {
-			conv.Migration = meta
+		if m, ok := model.ParseMigrationMeta(line); ok {
+			conv.Migration = m
 		}
 		var row map[string]any
 		if json.Unmarshal(line, &row) != nil {
 			return nil
 		}
-		var id, project string
-		codexApplyMeta(row, &id, &project, &parentID, &kind, &metaSeen)
-		if id != "" {
-			conv.ID = id
-		}
-		if project != "" {
-			conv.ProjectPath = project
-		}
+		codexApplyMeta(row, &meta)
 		ts := util.ParseTime(stringField(row, "timestamp"))
-		if em, ok := row["event_msg"].(map[string]any); ok {
-			codexAppendMessage(conv, &lastMessage, "event_msg", stringField(em, "role"), stringField(em, "message"), ts)
-			return nil
-		}
-		switch t, _ := row["type"].(string); t {
-		case "event_msg":
-			p := codexPayload(row)
-			if pt, _ := p["type"].(string); pt == "user_message" {
-				codexAppendMessage(conv, &lastMessage, "event_msg", "user", stringField(p, "message"), ts)
-			}
-		case "response_item":
-			p := codexPayload(row)
-			if mt, _ := p["type"].(string); mt != "message" {
-				return nil
-			}
-			role, _ := p["role"].(string)
-			codexAppendMessage(conv, &lastMessage, "response_item", role, codexTextFromContent(p["content"]), ts)
+		if wireType, role, text, ok := codexWireMessage(row); ok {
+			codexAppendMessage(conv, &lastMessage, wireType, role, text, ts)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
+	if meta.id != "" {
+		conv.ID = meta.id
+	}
+	if meta.project != "" {
+		conv.ProjectPath = meta.project
+	}
+	kind, parentID := meta.kind, meta.parentID
 	if len(conv.Messages) == 0 {
 		return nil, provider.ErrNotFound
 	}
@@ -410,6 +450,9 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 		}
 	}
 	conv.Title = picker.Title()
+	if conv.Title == "" {
+		conv.Title = codexSubagentTitle(meta)
+	}
 	if guiTitle := strings.TrimSpace(p.loadGUITitles().names[conv.ID]); guiTitle != "" {
 		conv.Title = guiTitle
 		kind = model.SessionKindRoot

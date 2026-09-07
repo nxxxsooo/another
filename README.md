@@ -146,6 +146,10 @@ OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令�
 
 Codex 把会话名存了三处：CLI 的线程库、旧版 Desktop 的 `session_index.jsonl`，以及 Codex Desktop 侧边栏实际读的 Electron 状态。重命名三处全写。Desktop 运行时会整份重写自己的状态，写在它下面不是丢改动就是丢它没落盘的东西，所以这种情况不硬写：CLI 侧已经改名，界面会明说侧边栏要等 Desktop 重启才更新，而不是把这次重命名报成失败。
 
+Codex Desktop 派生出的子 agent 会话（fork 线程）只把回答写成 `event_msg`，没有 `response_item` 那一份，用户角色的记录也只剩注入的插件清单。这类会话现在能正常打开和迁移；它们没有属于自己的提问，标题就取 Codex 记的子 agent 身份，例如 `api_definitions · Wegener the 9th`。
+
+Codex 每轮对话在 rollout 里最多写两遍，列表里的消息数以前把这两份分开数。现在这个数字和会话真正打开时的条数一致，所以升级后 Codex 会话的消息数可能变小。索引会在升级后第一次运行时把 Codex 重新汇总一遍，不需要手动操作。
+
 会话所在目录已经不存在时，行内会标出来——重整过工作区之后，这类会话仍能浏览和迁移，但恢复命令会落在一个不存在的路径上。
 
 检查本机安装状态：

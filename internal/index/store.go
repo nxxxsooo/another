@@ -846,9 +846,31 @@ func (s *Store) LastUpdateStale(maxAge time.Duration) bool {
 	return time.Since(t) > maxAge
 }
 
+// codexWireSchemaKey records that the index has been rebuilt since another
+// learned to read Codex threads that only carry event_msg records, and to
+// count Codex turns the way Load returns them. A rollout file does not change
+// when another's reading of it changes, so an incremental scan would never
+// revisit one: every stored Codex row has to be summarized again exactly once.
+const codexWireSchemaKey = "codex_wire_schema_v2"
+
+// codexProviderID avoids importing the provider package here; the index only
+// needs the registry's name for it.
+const codexProviderID = "codex"
+
+// codexRebuildOwed reports whether that one-time Codex re-summarize is still
+// owed. A store that cannot be read is treated as settled so a broken meta
+// table cannot rebuild on every command.
+func codexRebuildOwed(store *Store) bool {
+	done, err := store.GetMeta(codexWireSchemaKey)
+	return err == nil && done == ""
+}
+
 // NeedsIncrementalIndex reports whether an incremental scan should run before listing.
 func NeedsIncrementalIndex(reg *registry.Registry, store *Store, maxAge time.Duration) bool {
 	if AnyInstalledUnindexed(reg, store) {
+		return true
+	}
+	if codexRebuildOwed(store) {
 		return true
 	}
 	if IndexMetadataMissing(reg, store) {
@@ -901,10 +923,24 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 	now := time.Now().UTC().Format(time.RFC3339)
 	_ = store.SetMeta("last_rebuild", now)
 	_ = store.SetMeta("last_update", now)
+	// Every Codex row this run touched was summarized by the current reader,
+	// which is exactly what the one-time re-summarize owes.
+	if providerFilter == "" || providerFilter == codexProviderID {
+		_ = store.SetMeta(codexWireSchemaKey, now)
+	}
 	return max(total, 0), nil
 }
 
 func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store, providerFilter string) (int, error) {
+	// Codex rows indexed before another could read event_msg-only threads hold
+	// a stale title and message count that no incremental scan will revisit,
+	// because their files are unchanged. Settle that debt once, then continue
+	// with the normal pass.
+	if codexRebuildOwed(store) {
+		if _, err := Rebuild(ctx, reg, store, codexProviderID); err != nil {
+			return 0, err
+		}
+	}
 	total := 0
 	for _, p := range reg.All() {
 		if providerFilter != "" && p.ID() != providerFilter {

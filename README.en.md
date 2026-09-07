@@ -152,6 +152,10 @@ A dash means that agent has no verified native contract for the operation. Renam
 
 Codex keeps a session's name in three places: the CLI's thread store, the legacy `session_index.jsonl`, and the Electron state Codex Desktop's sidebar actually reads. Rename writes all three. Desktop rewrites its whole state from memory while it runs, so writing underneath it would lose either the rename or whatever Desktop has not flushed; that case is reported instead of forced. The CLI store is already renamed, and the interface says the sidebar catches up when Desktop restarts rather than calling the rename a failure.
 
+Codex Desktop's subagent threads — the forks it spawns from a parent thread — record their answers only as `event_msg`, never as the mirrored `response_item`, and their only user-role record is injected plugin transport. Those sessions now open and migrate like any other. Having no prompt of their own, they are named after the subagent identity Codex recorded, such as `api_definitions · Wegener the 9th`.
+
+Codex writes each turn to a rollout up to twice, and the message count in the list used to count both halves. That number now matches what the session actually opens with, so a Codex session's count can drop after this upgrade. The index re-summarizes Codex once on the first run after the update; nothing has to be rebuilt by hand.
+
 A session whose directory no longer exists is marked as such. After a workspace is reorganized those sessions still browse and migrate, but their resume command would land on a path that is gone.
 
 Check the local installation:
