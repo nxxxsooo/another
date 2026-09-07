@@ -2,16 +2,28 @@
 
 package tui
 
-// wordmarkRows is `another` rasterized from JetBrains Mono ExtraBold at
-// 10 square sub-pixels and folded into half-block characters, so the
-// mark occupies 5 terminal rows instead of the 10 a whole-block face
-// would need. Each row is exactly markWidth cells wide.
-var wordmarkRows = []string{
-	"                          ██     ██                     ",
-	" ▄▄██▄  ▄█▄▄█▄   ▄▄██▄▄ ▄▄███▄█  ██▄██▄   ▄██▄▄  ▄█▄▄█▄ ",
-	" ▀▄▄▄██ ██▀ ▀██  ██  ██   ██     ██  ██  ██▄▄██▄ ██▀ ▀██",
-	"██▀▀▀██ ██   ██  ██  ██   ██     ██  ██  ██▀▀    ██     ",
-	"▀███▀██ ▀█   ██  ▀████▀    ████  ██  ▀█  ▀████▀  ▀█     ",
+// faceBits is `another` rasterized from JetBrains Mono ExtraBold at
+// 10 square sub-pixels, one string per sub-pixel row, where
+// '#' is ink and ' ' is bare.
+//
+// The rows are deliberately left unpacked. The goodbye overlays two
+// horizontally offset copies of this bitmap, and that has to happen
+// before pairs of sub-rows are folded into half-block cells, so the
+// packing lives in logo.go instead of here.
+var faceBits = []string{
+	"                          ##     ##                     ",
+	"                          ##     ##                     ",
+	"   ##    #  #      ##    ######  ## ##     ##    #  ##  ",
+	" ######  ######  ###### #######  ######  ######  ###### ",
+	" ##  ##  ##  ##  ##  ##   ##     ##  ##  ##  ##  ##  ## ",
+	"  #####  ##  ##  ##  ##   ##     ##  ##  ######  ##  ## ",
+	" ######  ##  ##  ##  ##   ##     ##  ##  ####    ##     ",
+	" ##  ##  ##  ##  ##  ##   ##     ##  ##  ##      ##     ",
+	" ######  ##  ##  ######   #####  ##  ##  ######  ##     ",
+	"  ## ##  ##  ##   ####     ####  ##  ##   ####   ##     ",
 }
 
-const markWidth = 56
+const (
+	markWidth   = 56
+	faceSubRows = 10
+)

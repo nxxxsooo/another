@@ -301,7 +301,7 @@ python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # 字标，�
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/tui-goodbye-static.png">
-    <img src="docs/assets/tui-goodbye.gif" width="500" alt="another 退出时打印的字标；上半部分错开两个字符并变成洋红色，随后恢复紫色并重新对齐">
+    <img src="docs/assets/tui-goodbye.gif" width="500" alt="another 退出时打印的字标；整块紫色的字标先亮成白色，随后分离成错开一格的两份，左缘紫色、右缘薄荷绿，白色内核留在中间">
   </picture>
 </p>
 
