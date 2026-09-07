@@ -26,14 +26,21 @@ func TestListOptsDefaultsToCurrentGitProject(t *testing.T) {
 	var _ index.ListOpts = opts
 }
 
-func TestListOptsNonGitScopeIsExactAndToggleShowsAll(t *testing.T) {
+// A folder that is not a Git repository still owns the sessions beneath it.
+// Agents record the directory they ran in, so a parent like Work/huatu never
+// matches exactly and an exact filter showed an empty list.
+func TestListOptsNonGitScopeCoversSubdirectoriesAndToggleShowsAll(t *testing.T) {
 	m := modelState{cwd: "/tmp/notes", projectOnly: true,
 		projectScope: util.ProjectScope{CWD: "/tmp/notes", Root: "/tmp/notes"}}
-	if got := listOptsFor(m).ProjectExact; got != "/tmp/notes" {
-		t.Fatalf("ProjectExact = %q", got)
+	opts := listOptsFor(m)
+	if !reflect.DeepEqual(opts.ProjectRoots, []string{"/tmp/notes"}) {
+		t.Fatalf("ProjectRoots = %#v, want the directory as a root", opts.ProjectRoots)
+	}
+	if opts.ProjectExact != "" {
+		t.Fatalf("ProjectExact = %q, want the root filter instead", opts.ProjectExact)
 	}
 	m.projectOnly = false
-	opts := listOptsFor(m)
+	opts = listOptsFor(m)
 	if opts.ProjectExact != "" || len(opts.ProjectRoots) != 0 {
 		t.Fatalf("all-project opts still scoped: %+v", opts)
 	}

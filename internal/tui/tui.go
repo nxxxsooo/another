@@ -695,8 +695,12 @@ func applyProjectScope(opts *index.ListOpts, scope util.ProjectScope) {
 		opts.ProjectRoots = append([]string(nil), scope.Worktrees...)
 		return
 	}
+	// Outside Git a directory means that directory and what is under it. An
+	// exact match hid entire trees: opening another in ~/Documents/sync/Work/
+	// huatu showed nothing at all while 79 sessions sat in its subfolders,
+	// because agents record the directory they ran in, not its parent.
 	if scope.CWD != "" {
-		opts.ProjectExact = scope.CWD
+		opts.ProjectRoots = []string{scope.CWD}
 	}
 }
 
