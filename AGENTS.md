@@ -1,0 +1,24 @@
+# another — Project Instructions
+
+## Release Contract
+
+Treat implementation, publication, distribution, and maintainer installation as separate states. A change intended for delivery is not complete merely because code and tests pass.
+
+For every release, update and verify the full release-surface matrix:
+
+1. **GitHub source** — commit the exact intended files, push the default branch, and verify the remote commit.
+2. **GitHub README** — keep `README.md` and `README.en.md` aligned with current behavior, installation, update, compatibility, and user-visible changes.
+3. **GitHub Release** — create the version tag on the verified commit, publish release notes, wait for release automation, and verify downloadable artifacts and checksums.
+4. **Homebrew** — verify the generated Cask update in the public `nxxxsooo/homebrew-tap`, then test the real consumer upgrade path.
+5. **Local installation** — update Mingjian's installed `another` through its real installation source and verify both `which another` and `another --version`; a successful remote release does not imply the local binary changed.
+6. **Project website** — once the website exists, update both the release blog post and the project case page for every release. Until then, report this surface as not yet available rather than silently omitting it or claiming full cross-surface publication.
+7. **WeChat Official Account** — prepare the matching release article and verify it in the draft box for every release. Public broadcast requires Mingjian's explicit confirmation.
+
+Before publishing, record the target version and all surfaces. Do not mix unexplained working-tree changes into a release. Do not report “released”, “published”, or “fully updated” until every applicable surface has been verified through its consumer-facing entry point; report partial success and blocked or unavailable surfaces explicitly.
+
+## Provider Support Tiers
+
+- **Continuously tested:** Pi, OpenCode 2, Claude Code, Codex, Antigravity, and Qwen Code. Include all six in every release regression plan.
+- **Compatibility adapters:** Cursor, OpenCode, CommandCode, and Hermes. Preserve working adapters, but do not imply they receive end-to-end maintainer testing on every release.
+- Setup must start with no providers selected on first run. Detection means “available”, never “chosen”; users explicitly select which agents another indexes and exposes.
+- Session management is capability-driven. Show rename, archive, and delete only when the selected provider implements the corresponding native operation. Never emulate unsupported lifecycle actions with another-only state.
