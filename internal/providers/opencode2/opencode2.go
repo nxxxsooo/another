@@ -383,7 +383,58 @@ func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, t
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("opencode2 rename: %w: %s", err, strings.TrimSpace(string(out)))
 	}
+	// `opencode2 api` exits 0 on an HTTP 500, so a refused rename arrives here
+	// looking exactly like a successful one. The session's own row decides:
+	// the server owns it, and it is what another indexes and displays. The
+	// common refusal is a session whose directory has been deleted — an old
+	// worktree or a temporary checkout — which the server cannot open.
+	if err := p.awaitTitle(ctx, ref.ID, title); err != nil {
+		return err
+	}
 	return nil
+}
+
+// awaitTitle waits briefly for the server to persist a title, because the API
+// call returns before the write is visible in the database.
+func (p *Provider) awaitTitle(ctx context.Context, sessionID, want string) error {
+	deadline := time.Now().Add(2 * time.Second)
+	var stored string
+	for {
+		var err error
+		stored, err = p.storedTitle(sessionID)
+		if err != nil {
+			return fmt.Errorf("opencode2 rename: %w", err)
+		}
+		if stored == want {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("opencode2 rename: OpenCode 2 refused the rename, the title is still %q; a session whose directory no longer exists cannot be renamed", stored)
+}
+
+func (p *Provider) storedTitle(sessionID string) (string, error) {
+	db, err := p.openRO()
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	var title sql.NullString
+	err = db.QueryRow(`SELECT title FROM session_v2 WHERE id = ?`, sessionID).Scan(&title)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("session %s is gone", sessionID)
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(title.String), nil
 }
 
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {
@@ -402,5 +453,30 @@ func (p *Provider) delete(ctx context.Context, sessionID string) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("opencode2 delete: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	return nil
+	// Same hidden refusal as rename: the CLI exits 0 on an HTTP 500, and a
+	// deletion another believes in but the server refused would be reported as
+	// a cleaned-up session that is still there.
+	return p.awaitGone(ctx, sessionID)
+}
+
+// awaitGone waits for a deleted session to leave the database.
+func (p *Provider) awaitGone(ctx context.Context, sessionID string) error {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, err := p.storedTitle(sessionID)
+		if err != nil && strings.Contains(err.Error(), "is gone") {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("opencode2 delete: %w", err)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("opencode2 delete: OpenCode 2 refused the deletion, session %s is still there; a session whose directory no longer exists cannot be deleted", sessionID)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }

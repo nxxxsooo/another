@@ -129,6 +129,19 @@ func TestWriteUsesOfficialImportContract(t *testing.T) {
 	}
 }
 
+// storeTitle stands in for the server applying a rename to its own database.
+func storeTitle(t *testing.T, path, title string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE session_v2 SET title = ? WHERE id = 'ses_fixture'`, title); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRenameUsesOfficialAPI(t *testing.T) {
 	path := fixtureDB(t)
 	capture := filepath.Join(t.TempDir(), "args")
@@ -140,6 +153,9 @@ func TestRenameUsesOfficialAPI(t *testing.T) {
 	t.Setenv("OPENCODE2_DB_PATH", path)
 	t.Setenv("OPENCODE2_COMMAND", script)
 	t.Setenv("CAPTURE", capture)
+	// The stub cannot write the database, so the applied rename is staged the
+	// way a server would leave it: visible in the session's own row.
+	storeTitle(t, path, "new title")
 	if err := opencode2.New().RenameSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}, "new title"); err != nil {
 		t.Fatal(err)
 	}
@@ -147,6 +163,29 @@ func TestRenameUsesOfficialAPI(t *testing.T) {
 	text := strings.TrimSpace(string(got))
 	if !strings.Contains(text, "api POST /api/session/ses_fixture/rename --data") || !strings.Contains(text, `new title`) {
 		t.Fatalf("rename command = %q", got)
+	}
+}
+
+// `opencode2 api` exits 0 on an HTTP 500, which is how a refused rename used
+// to be reported to the person as "已重命名" while nothing changed. OpenCode 2
+// refuses sessions whose directory has been deleted, so this is reachable
+// through ordinary use: an old worktree, a temporary checkout.
+func TestRenameReportsARefusalTheCLIHides(t *testing.T) {
+	path := fixtureDB(t)
+	script := filepath.Join(t.TempDir(), "opencode2")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	t.Setenv("OPENCODE2_COMMAND", script)
+	err := opencode2.New().RenameSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}, "new title")
+	if err == nil {
+		t.Fatal("a rename that never landed was reported as success")
+	}
+	// The message has to name what the title still is, or the person cannot
+	// tell a refusal from a stale list.
+	if !strings.Contains(err.Error(), "OpenCode 2 title") {
+		t.Fatalf("error does not show the surviving title: %v", err)
 	}
 }
 
@@ -161,11 +200,41 @@ func TestDeleteUsesOfficialAPI(t *testing.T) {
 	t.Setenv("OPENCODE2_DB_PATH", path)
 	t.Setenv("OPENCODE2_COMMAND", script)
 	t.Setenv("CAPTURE", capture)
+	// The stub cannot write the database, so the applied deletion is staged
+	// the way a server would leave it: the row is gone.
+	dropFixtureSession(t, path)
 	if err := opencode2.New().DeleteSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(capture)
 	if strings.TrimSpace(string(got)) != "api DELETE /api/session/ses_fixture" {
 		t.Fatalf("delete command = %q", got)
+	}
+}
+
+func dropFixtureSession(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DELETE FROM session_v2 WHERE id = 'ses_fixture'`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A deletion the server refused must not be reported as a cleaned-up session,
+// for the same reason as rename: the CLI exits 0 on an HTTP 500.
+func TestDeleteReportsARefusalTheCLIHides(t *testing.T) {
+	path := fixtureDB(t)
+	script := filepath.Join(t.TempDir(), "opencode2")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	t.Setenv("OPENCODE2_COMMAND", script)
+	if err := opencode2.New().DeleteSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}); err == nil {
+		t.Fatal("a deletion that never happened was reported as success")
 	}
 }
