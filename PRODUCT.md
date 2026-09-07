@@ -46,6 +46,7 @@ A neighboring tool could copy the browser. It could not truthfully copy "the oth
 - Migration carries real user and assistant text. It does not compress into a summary; reasoning and tool noise are dropped.
 - A migration never mutates the source session.
 - Delete shows provider, title, directory, and full session ID, and defaults to cancel. Sessions identifiable as running are blocked from rename, archive, and delete.
+- Delete is undoable only where the provider owns the session's bytes and the same session comes back — currently Claude Code and Pi, whose session is a single file. The offer lives in memory for the life of the list; there is no trash directory. A server-owned delete such as OpenCode 2's has no undo, because recreating the conversation through the API is a new session, and the confirmation says which of the two the person is about to do.
 - Disabling a provider in setup prunes it from the index and registry but never deletes native sessions.
 - Archived sessions are excluded from the default list. There is no archive-browsing view yet — a deliberate omission so roughly ten thousand archived Codex rollouts do not flood the list.
 - The TUI renders in English or Chinese. The preference lives in `ui.language` (`auto`, `en`, `zh`); `auto` resolves the terminal locale and falls back to English. It is deliberately separate from the title language, whose `auto` follows the session's own content. The CLI's help, flags, and errors stay English.

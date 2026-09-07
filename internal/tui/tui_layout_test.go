@@ -1222,3 +1222,155 @@ func TestPartialRenameReportsTheCaveatAndKeepsTheRename(t *testing.T) {
 		t.Fatalf("the sentinel leaked into the status line: %q", status)
 	}
 }
+
+// The undo is offered only when the provider handed back a way to honour it.
+// An offer another cannot keep is worse than no offer at all.
+func TestDeleteOffersUndoOnlyWhenTheProviderCanHonourIt(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		restore  provider.SessionRestore
+		wantUndo bool
+	}{
+		{name: "provider owns the bytes", restore: func(context.Context) error { return nil }, wantUndo: true},
+		{name: "server owns the deletion", restore: nil, wantUndo: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := layoutTestModel()
+			m.width, m.height = 100, 30
+			m.layout()
+			updated, _ := m.Update(deleteDoneMsg{providerID: "pi", title: "gone", restore: tc.restore})
+			got := updated.(modelState)
+			if tc.wantUndo {
+				if got.lastDeleted == nil || got.restoreDeleted == nil {
+					t.Fatal("a reversible delete did not offer the undo")
+				}
+				if got.help() != txt.helpDeleted || !strings.Contains(got.status, strings.TrimSpace(txt.undoDeleteHint)) {
+					t.Fatalf("the undo is not visible: help=%q status=%q", got.help(), got.status)
+				}
+				return
+			}
+			if got.lastDeleted != nil || got.restoreDeleted != nil {
+				t.Fatal("a delete another cannot take back was offered as undoable")
+			}
+			if got.help() == txt.helpDeleted {
+				t.Fatal("the footer promises an undo the provider cannot honour")
+			}
+		})
+	}
+}
+
+func TestUndoDeleteRestoresAndThenStopsOffering(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+	updated, _ := m.Update(deleteDoneMsg{providerID: "pi", title: "gone",
+		restore: func(context.Context) error { return nil }})
+	got := updated.(modelState)
+	// The delete refreshes the list; the undo becomes pressable once it lands.
+	got.loading = false
+
+	updated, cmd := got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil || !updated.(modelState).loading {
+		t.Fatal("u did not start the restore")
+	}
+
+	updated, _ = updated.(modelState).Update(restoreDoneMsg{title: "gone"})
+	after := updated.(modelState)
+	after.loading = false
+	if after.lastDeleted != nil || after.restoreDeleted != nil {
+		t.Fatal("the undo stayed armed after it was spent")
+	}
+	if !strings.Contains(after.status, strings.TrimSpace(txt.restoredPrefix)) {
+		t.Fatalf("restore was not reported: %q", after.status)
+	}
+	// A second press must do nothing rather than replay the restore.
+	_, cmd = after.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd != nil {
+		t.Fatal("u fired again after the undo was already used")
+	}
+}
+
+// esc is how the person says "I meant it". The captured session is dropped and
+// the delete becomes final, exactly like esc after an archive.
+func TestEscKeepsTheDeleteAndDropsTheUndo(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+	updated, _ := m.Update(deleteDoneMsg{providerID: "pi", title: "gone",
+		restore: func(context.Context) error { return nil }})
+	armed := updated.(modelState)
+	armed.loading = false
+	updated, _ = armed.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	got := updated.(modelState)
+	if got.lastDeleted != nil || got.restoreDeleted != nil {
+		t.Fatal("esc left the undo armed")
+	}
+	if _, cmd := got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}}); cmd != nil {
+		t.Fatal("u restored a delete the person chose to keep")
+	}
+}
+
+// The confirmation must promise what that specific agent can deliver: pi owns
+// its session file, OpenCode 2's server owns the deletion outright.
+func TestDeleteModalPromisesUndoOnlyWhereItIsReal(t *testing.T) {
+	for _, tc := range []struct {
+		providerID string
+		want       string
+		reject     string
+	}{
+		{providerID: "pi", want: txt.deleteConfirmBodyUndo, reject: txt.deleteConfirmBody},
+		{providerID: "opencode2", want: txt.deleteConfirmBody, reject: txt.deleteConfirmBodyUndo},
+	} {
+		t.Run(tc.providerID, func(t *testing.T) {
+			m := layoutTestModel()
+			item := m.sessions.SelectedItem().(sessionItem)
+			item.summary.Provider = tc.providerID
+			m.selected = &item
+			m.overlay = overlayDelete
+			m.width, m.height = 100, 30
+			m.layout()
+			view := m.View()
+			if !strings.Contains(view, firstLine(tc.want)) {
+				t.Fatalf("%s delete modal does not state its real promise", tc.providerID)
+			}
+			if strings.Contains(view, firstLine(tc.reject)) {
+				t.Fatalf("%s delete modal states the wrong promise", tc.providerID)
+			}
+		})
+	}
+}
+
+// The bodies wrap, so compare on the part that differs and survives wrapping.
+func firstLine(body string) string {
+	if i := strings.Index(body, "agent. "); i >= 0 {
+		rest := body[i+len("agent. "):]
+		if j := strings.IndexByte(rest, ' '); j > 0 {
+			return rest[:j]
+		}
+		return rest
+	}
+	return body
+}
+
+// The undo promise is a longer sentence than the final one, in both languages.
+// It has to fit the same terminals the rest of the delete modal fits.
+func TestReversibleDeleteModalFitsTerminal(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		useLanguage(t, lang)
+		for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
+			m := layoutTestModel()
+			item := m.sessions.SelectedItem().(sessionItem)
+			item.summary.Provider = "pi"
+			m.selected = &item
+			m.overlay = overlayDelete
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			view := updated.(modelState).View()
+			if got := lipgloss.Width(view); got > size[0] {
+				t.Errorf("%s %dx%d width = %d", lang, size[0], size[1], got)
+			}
+			if got := lipgloss.Height(view); got > size[1] {
+				t.Errorf("%s %dx%d height = %d", lang, size[0], size[1], got)
+			}
+		}
+	}
+}

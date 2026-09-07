@@ -111,7 +111,8 @@ Tab       accept the AI title suggestion, when one is configured and arrives
 m         fork or move the session into another project directory
 a         archive; press a again for one-step undo
 x / X     mark the row under the cursor / mark or clear the whole page
-Ctrl+D    permanently delete after an explicit confirmation
+Ctrl+D    delete after an explicit confirmation
+u         undo that delete, where the agent's session is a file another can put back
 /         search titles and normalized conversation text
 r         refresh the local index
 Esc       close a picker or dismiss transient state
@@ -163,6 +164,8 @@ The session list marks each agent with a fixed-width color chip. Agent names dif
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | — |
 
 A dash means that agent has no verified native contract for the operation. Rename, archive, relocate, and delete change the corresponding agent's native state rather than an another-only marker; `another` shows only operations the selected agent actually supports and does not keep private state that disappears on refresh.
+
+Whether a delete can be taken back depends on who owns the session, and the confirmation says which case you are in before you commit. For Claude Code and Pi the session is one file, so `another` holds those exact bytes and `u` writes them back: same session ID, same path, same modification time, and the agent resumes it as if it had never gone. For OpenCode 2 the server owns the deletion; pushing the conversation back through its API would create a new session with a new ID, which is a copy rather than an undo, so there is none and the modal says so. The offer lasts only as long as the list — `another` keeps no trash directory of its own, `Esc` gives it up on the spot, and a path the agent has since written to again is never overwritten.
 
 Codex keeps a session's name in three places: the CLI's thread store, the legacy `session_index.jsonl`, and the Electron state Codex Desktop's sidebar actually reads. Rename writes all three. Desktop rewrites its whole state from memory while it runs, so writing underneath it would lose either the rename or whatever Desktop has not flushed; that case is reported instead of forced. The CLI store is already renamed, and the interface says the sidebar catches up when Desktop restarts rather than calling the rename a failure.
 
@@ -257,6 +260,7 @@ OpenCode and OpenCode 2 writes use their official import/API surfaces. Codex Des
 - Every migrated target is reloaded and content-verified before success is reported.
 - Failed verification removes only the artifact created by that migration.
 - `Ctrl+D` defaults to **Cancel** and shows the provider, title, project, and full session ID.
+- The delete confirmation states whether that agent's delete can be undone, and an undo is offered only where the same session comes back — never as a re-rendered copy.
 - Relocation opens on fork every time; move is an explicit choice, and it deletes the original only after the new location verifies.
 - Exactly identified active sessions are protected from rename, archive, relocate, and delete.
 - The configuration directory is mode `0700`; configuration and SQLite index files are mode `0600`.

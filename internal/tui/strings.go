@@ -52,6 +52,8 @@ type uiText struct {
 	unarchivedPrefix     string
 	renamedPrefix        string
 	deletedPrefix        string
+	undoDeleteHint       string
+	restoredPrefix       string
 	copyHint             string
 	migratedPrefix       string
 	alreadyPrefix        string
@@ -99,11 +101,14 @@ type uiText struct {
 	suggestionFailed   string
 	deleteConfirmTitle string
 	deleteConfirmBody  string
-	fieldSource        string
-	fieldTitle         string
-	fieldDirectory     string
-	choiceCancel       string
-	choiceDelete       string
+	// deleteConfirmBodyUndo is shown only for agents whose sessions another can
+	// put back exactly. The two promises must never be swapped.
+	deleteConfirmBodyUndo string
+	fieldSource           string
+	fieldTitle            string
+	fieldDirectory        string
+	choiceCancel          string
+	choiceDelete          string
 
 	// Batch rename.
 	batchNeedsModel      string
@@ -166,6 +171,7 @@ type uiText struct {
 	helpSearch           string
 	helpResume           string
 	helpArchived         string
+	helpDeleted          string
 	helpListBase         string
 	helpListRename       string
 	helpListArchive      string
@@ -275,6 +281,8 @@ var englishText = uiText{
 
 	cwdUnreadable:        "Could not read the current directory, showing every session: ",
 	archivedPrefix:       "Archived ",
+	undoDeleteHint:       "  ·  u undo",
+	restoredPrefix:       "Restored ",
 	undoHint:             "  ·  a undo",
 	unarchivedPrefix:     "Unarchived ",
 	renamedPrefix:        "Renamed to ",
@@ -311,24 +319,25 @@ var englishText = uiText{
 	relocateChoiceMove:      "Move",
 	relocateMoveUnsupported: "%s cannot move a session",
 
-	sourceModalTitle:   "Source",
-	sourceModalHint:    "Which agent is this session from?",
-	targetModalTitle:   "Target",
-	targetModalHint:    "Which agent should carry this session?",
-	renameModalTitle:   "Rename session",
-	renameModalHint:    "Written back as the source agent's own native title",
-	renamePlaceholder:  "New session title",
-	suggestionLoading:  "asking for a title…",
-	suggestionPrefix:   "suggested ",
-	suggestionAccept:   "  · tab accepts",
-	suggestionFailed:   "no suggestion: ",
-	deleteConfirmTitle: "Delete session?",
-	deleteConfirmBody:  "This deletes the original session inside the source agent. It cannot be undone.",
-	fieldSource:        "Source",
-	fieldTitle:         "Title",
-	fieldDirectory:     "Directory",
-	choiceCancel:       "Cancel",
-	choiceDelete:       "Delete",
+	sourceModalTitle:      "Source",
+	sourceModalHint:       "Which agent is this session from?",
+	targetModalTitle:      "Target",
+	targetModalHint:       "Which agent should carry this session?",
+	renameModalTitle:      "Rename session",
+	renameModalHint:       "Written back as the source agent's own native title",
+	renamePlaceholder:     "New session title",
+	suggestionLoading:     "asking for a title…",
+	suggestionPrefix:      "suggested ",
+	suggestionAccept:      "  · tab accepts",
+	suggestionFailed:      "no suggestion: ",
+	deleteConfirmTitle:    "Delete session?",
+	deleteConfirmBody:     "This deletes the original session inside the source agent. It cannot be undone.",
+	deleteConfirmBodyUndo: "This deletes the original session inside the source agent. Press u to undo it, until you leave this list.",
+	fieldSource:           "Source",
+	fieldTitle:            "Title",
+	fieldDirectory:        "Directory",
+	choiceCancel:          "Cancel",
+	choiceDelete:          "Delete",
 
 	batchNeedsModel:      "Configure a title model in setup before renaming in bulk",
 	batchNeedsMarks:      "Mark sessions with x, then press ctrl+t",
@@ -386,6 +395,7 @@ var englishText = uiText{
 	helpSearch:           " enter search · esc cancel",
 	helpResume:           " enter open that agent · c copy command · esc keep browsing · q quit",
 	helpArchived:         " a undo archive · esc keep it · ↑↓ keep browsing",
+	helpDeleted:          " u undo delete · esc keep it deleted · ↑↓ keep browsing",
 	helpListBase:         " ← source · ↑↓ session · enter open · → other agent · space preview · f scope",
 	helpListRename:       " · ctrl+r rename",
 	helpListArchive:      " · a archive",
@@ -487,6 +497,8 @@ var chineseText = uiText{
 
 	cwdUnreadable:        "无法读取当前目录，已显示全部会话：",
 	archivedPrefix:       "已归档 ",
+	undoDeleteHint:       "  ·  u 撤销",
+	restoredPrefix:       "已恢复 ",
 	undoHint:             "  ·  a 撤销",
 	unarchivedPrefix:     "已取消归档 ",
 	renamedPrefix:        "已重命名为 ",
@@ -523,24 +535,25 @@ var chineseText = uiText{
 	relocateChoiceMove:      "移动",
 	relocateMoveUnsupported: "%s 不支持移动",
 
-	sourceModalTitle:   "选择来源",
-	sourceModalHint:    "会话来自哪个 agent？",
-	targetModalTitle:   "选择去向",
-	targetModalHint:    "把这条会话带到哪个 agent？",
-	renameModalTitle:   "重命名会话",
-	renameModalHint:    "写回来源 agent 的原生标题",
-	renamePlaceholder:  "新的会话标题",
-	suggestionLoading:  "AI 建议生成中…",
-	suggestionPrefix:   "建议 ",
-	suggestionAccept:   "  · tab 接受",
-	suggestionFailed:   "建议不可用：",
-	deleteConfirmTitle: "删除会话？",
-	deleteConfirmBody:  "该操作会删除来源 agent 中的原始会话，无法撤销。",
-	fieldSource:        "来源",
-	fieldTitle:         "标题",
-	fieldDirectory:     "目录",
-	choiceCancel:       "取消",
-	choiceDelete:       "删除",
+	sourceModalTitle:      "选择来源",
+	sourceModalHint:       "会话来自哪个 agent？",
+	targetModalTitle:      "选择去向",
+	targetModalHint:       "把这条会话带到哪个 agent？",
+	renameModalTitle:      "重命名会话",
+	renameModalHint:       "写回来源 agent 的原生标题",
+	renamePlaceholder:     "新的会话标题",
+	suggestionLoading:     "AI 建议生成中…",
+	suggestionPrefix:      "建议 ",
+	suggestionAccept:      "  · tab 接受",
+	suggestionFailed:      "建议不可用：",
+	deleteConfirmTitle:    "删除会话？",
+	deleteConfirmBody:     "该操作会删除来源 agent 中的原始会话，无法撤销。",
+	deleteConfirmBodyUndo: "该操作会删除来源 agent 中的原始会话。离开列表之前，按 u 可以撤销。",
+	fieldSource:           "来源",
+	fieldTitle:            "标题",
+	fieldDirectory:        "目录",
+	choiceCancel:          "取消",
+	choiceDelete:          "删除",
 
 	batchNeedsModel:      "先在设置里配置标题模型，才能批量命名",
 	batchNeedsMarks:      "x 标记会话后，再用 ctrl+t 批量命名",
@@ -598,6 +611,7 @@ var chineseText = uiText{
 	helpSearch:           " enter 搜索 · esc 取消",
 	helpResume:           " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出",
 	helpArchived:         " a 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览",
+	helpDeleted:          " u 撤销删除 · esc 保持删除 · ↑↓ 继续浏览",
 	helpListBase:         " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围",
 	helpListRename:       " · ctrl+r 重命名",
 	helpListArchive:      " · a 归档",

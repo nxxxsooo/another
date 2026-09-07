@@ -278,3 +278,54 @@ func TestRecordedCwdReplacesTheLossyFolderNameGuess(t *testing.T) {
 		t.Fatalf("s2 ProjectPath = %q, want the decoded folder fallback", got["s2"])
 	}
 }
+
+// The transcript file is the Claude Code session, custom-title rows included,
+// so a captured delete comes back as the same session under the same project.
+func TestReversibleDeleteRestoresTheSameSession(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	dir := filepath.Join(root, "projects", "-home-user-proj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{
+		`{"type":"user","sessionId":"s-undo","cwd":"/home/user/proj","timestamp":"2025-06-01T10:00:00Z","message":{"role":"user","content":"keep me"}}`,
+		`{"type":"custom-title","customTitle":"named by hand","sessionId":"s-undo"}`,
+	}
+	path := filepath.Join(dir, "s-undo.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := claude.New()
+	restore, err := p.DeleteSessionReversibly(context.Background(), provider.SessionRef{
+		ID: "s-undo", Provider: "claude", StoragePath: path, ProjectPath: "/home/user/proj",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("reversible delete did not remove the transcript: %v", err)
+	}
+	if err := restore(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("restore did not put the transcript back: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("restored transcript does not match the deleted bytes")
+	}
+	summaries, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || summaries[0].ID != "s-undo" || summaries[0].Title != "named by hand" {
+		t.Fatalf("Claude Code does not see the restored session as the original: %+v", summaries)
+	}
+}

@@ -420,6 +420,13 @@ func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) e
 	})
 }
 
+// DeleteSessionReversibly is honest for Claude Code because the transcript file
+// is the session, including the appended custom-title rows: restoring the bytes
+// brings back the same session ID under the same project, title and all.
+func (p *Provider) DeleteSessionReversibly(ctx context.Context, ref provider.SessionRef) (provider.SessionRestore, error) {
+	return provider.DeleteFileSessionReversibly(ctx, p, ref, ref.StoragePath)
+}
+
 func (p *Provider) CleanupWrite(_ context.Context, r provider.WriteResult) error {
 	rel, err := filepath.Rel(p.projectsRoot(), r.StoragePath)
 	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) || !strings.HasSuffix(rel, ".jsonl") {

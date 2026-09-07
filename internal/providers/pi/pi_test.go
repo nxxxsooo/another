@@ -597,3 +597,89 @@ func TestSessionKeepsItsStartingDirectoryAcrossResumeElsewhere(t *testing.T) {
 		t.Fatalf("Load ProjectPath = %q, want /home/user/proj", conv.ProjectPath)
 	}
 }
+
+// A pi session is exactly one file, so a delete another captured first can be
+// put back as the same session rather than as a re-rendered copy: same ID, same
+// path, same bytes, and the same timestamp the list sorts by.
+func TestReversibleDeleteRestoresTheSameSession(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PI_AGENT_DIR", root)
+	lines := []string{
+		`{"type":"session","version":3,"id":"sess-undo","timestamp":"2026-09-03T05:02:48.316Z","cwd":"/home/user/proj"}`,
+		`{"type":"session_info","id":"a1","parentId":null,"name":"regrettable delete"}`,
+		`{"type":"message","id":"b1","parentId":"a1","timestamp":"2026-09-03T05:02:49.000Z","message":{"role":"user","content":[{"type":"text","text":"keep me"}]}}`,
+	}
+	path := writeSession(t, root, "/home/user/proj", "2026-09-03T05-02-48-316Z_sess-undo.jsonl", lines)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Date(2026, 9, 3, 5, 2, 48, 0, time.UTC)
+	if err := os.Chtimes(path, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+
+	p := pi.New()
+	ref := provider.SessionRef{ID: "sess-undo", Provider: "pi", StoragePath: path, ProjectPath: "/home/user/proj"}
+	restore, err := p.DeleteSessionReversibly(context.Background(), ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("reversible delete did not remove the session: %v", err)
+	}
+	if restore == nil {
+		t.Fatal("reversible delete returned no way back")
+	}
+	if err := restore(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("restore did not put the session back: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("restored session does not match the deleted bytes")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(stamp) {
+		t.Fatalf("restored mtime = %s, want %s: a restore must not look like new work", info.ModTime(), stamp)
+	}
+	summaries, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || summaries[0].ID != "sess-undo" || summaries[0].Title != "regrettable delete" {
+		t.Fatalf("pi does not see the restored session as the original: %+v", summaries)
+	}
+}
+
+// If the agent has written something at that path again, the captured bytes are
+// no longer the truth there and the restore must refuse rather than overwrite.
+func TestRestoreRefusesToOverwriteAReusedPath(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PI_AGENT_DIR", root)
+	lines := []string{
+		`{"type":"session","version":3,"id":"sess-clash","timestamp":"2026-09-03T05:02:48.316Z","cwd":"/home/user/proj"}`,
+	}
+	path := writeSession(t, root, "/home/user/proj", "2026-09-03T05-02-48-316Z_sess-clash.jsonl", lines)
+	restore, err := pi.New().DeleteSessionReversibly(context.Background(),
+		provider.SessionRef{ID: "sess-clash", Provider: "pi", StoragePath: path, ProjectPath: "/home/user/proj"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("newer session\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := restore(context.Background()); err == nil {
+		t.Fatal("restore overwrote a path the agent had reused")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "newer session\n" {
+		t.Fatalf("restore clobbered newer content: %q (%v)", got, err)
+	}
+}

@@ -811,6 +811,13 @@ func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) e
 	})
 }
 
+// DeleteSessionReversibly is honest for pi because the session file is the
+// session: putting the bytes back restores the same ID at the same path, and pi
+// resumes it as if it had never gone.
+func (p *Provider) DeleteSessionReversibly(ctx context.Context, ref provider.SessionRef) (provider.SessionRestore, error) {
+	return provider.DeleteFileSessionReversibly(ctx, p, ref, ref.StoragePath)
+}
+
 func (p *Provider) CleanupWrite(_ context.Context, r provider.WriteResult) error {
 	rel, err := filepath.Rel(p.sessionsRoot(), r.StoragePath)
 	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) ||

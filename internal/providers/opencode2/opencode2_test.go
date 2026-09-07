@@ -330,3 +330,13 @@ func TestDeleteLeavesDirectoriesItDidNotCreate(t *testing.T) {
 		t.Fatalf("an existing directory was removed: %v", err)
 	}
 }
+
+// OpenCode 2's server owns the deletion, and replaying a conversation back
+// through the API would create a new session with a new ID. That is a copy, not
+// an undo, so this provider must never claim the reversible contract — the
+// confirmation another shows for it promises the delete is final.
+func TestDeleteIsNotAdvertisedAsReversible(t *testing.T) {
+	if _, ok := any(opencode2.New()).(provider.ReversibleSessionDeleter); ok {
+		t.Fatal("OpenCode 2 offers an undo it cannot honour: a restore there is a new session, not the original")
+	}
+}

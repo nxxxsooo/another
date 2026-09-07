@@ -395,6 +395,15 @@ type deleteDoneMsg struct {
 	title      string
 	counts     map[string]int
 	err        error
+	// restore is non-nil only when the provider owns the session's bytes and
+	// can put back the same session. It is offered for one keypress, then
+	// dropped; another keeps no trash of its own.
+	restore provider.SessionRestore
+}
+type restoreDoneMsg struct {
+	title  string
+	counts map[string]int
+	err    error
 }
 type renameDoneMsg struct {
 	providerID string
@@ -530,9 +539,14 @@ type modelState struct {
 	pageGen         uint64
 	lastResume      string
 	lastArchived    *model.Summary
-	contextMode     migrate.ContextMode
-	err             string
-	status          string
+	// lastDeleted and restoreDeleted are the one-step undo for a delete. They
+	// live only as long as this list does, and only for providers that can put
+	// the very same session back.
+	lastDeleted    *model.Summary
+	restoreDeleted provider.SessionRestore
+	contextMode    migrate.ContextMode
+	err            string
+	status         string
 	// launch is the resume command the caller should exec after the program
 	// exits. Running it from inside bubbletea would fight over the terminal.
 	launch         string
@@ -1069,7 +1083,16 @@ func deleteSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 			return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, err: fmt.Errorf("%s does not support deletion", p.DisplayName())}
 		}
 		ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
-		if err := deleter.DeleteSession(ctx, ref); err != nil {
+		// Prefer the reversible path where the provider owns the session's
+		// bytes. Where it does not, the delete stays exactly as final as the
+		// confirmation said it was.
+		var restore provider.SessionRestore
+		if reversible, ok := p.(provider.ReversibleSessionDeleter); ok {
+			restore, err = reversible.DeleteSessionReversibly(ctx, ref)
+			if err != nil {
+				return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, err: err}
+			}
+		} else if err := deleter.DeleteSession(ctx, ref); err != nil {
 			return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, err: err}
 		}
 		_, err = index.UpdateIncremental(ctx, reg, idx, sm.Provider)
@@ -1077,7 +1100,27 @@ func deleteSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 		if err != nil {
 			err = fmt.Errorf("session deleted, but index refresh failed: %w", err)
 		}
-		return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, counts: counts, err: err}
+		return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, counts: counts, err: err, restore: restore}
+	}
+}
+
+// restoreSessionCmd undoes the delete another just performed. The restore was
+// captured before the deletion, so this writes the agent's own session back
+// rather than re-rendering it through the portable model.
+func restoreSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sm model.Summary, restore provider.SessionRestore) tea.Cmd {
+	return func() tea.Msg {
+		if restore == nil {
+			return restoreDoneMsg{title: sm.Title, err: fmt.Errorf("nothing to restore")}
+		}
+		if err := restore(ctx); err != nil {
+			return restoreDoneMsg{title: sm.Title, err: err}
+		}
+		_, err := index.UpdateIncremental(ctx, reg, idx, sm.Provider)
+		counts, _ := idx.CountByProvider()
+		if err != nil {
+			err = fmt.Errorf("session restored, but index refresh failed: %w", err)
+		}
+		return restoreDoneMsg{title: sm.Title, counts: counts, err: err}
 	}
 }
 
@@ -1297,9 +1340,19 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 			return m, nil
 		}
+		deleted := m.selected
 		m.selected = nil
 		m.lastResume = ""
 		m.status = okStyle.Render(txt.deletedPrefix + truncateDisplay(msg.title, 48))
+		if msg.restore != nil && deleted != nil {
+			summary := deleted.summary
+			m.lastDeleted = &summary
+			m.restoreDeleted = msg.restore
+			m.status += mutedStyle.Render(txt.undoDeleteHint)
+		} else {
+			m.lastDeleted = nil
+			m.restoreDeleted = nil
+		}
 		m.sources = sourceChips(m.reg, msg.counts)
 		if m.sourceIdx >= len(m.sources) {
 			m.sourceIdx = 0
@@ -1309,6 +1362,28 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m, cmd = dispatchPageLoad(m)
 		return m, cmd
+	case restoreDoneMsg:
+		m.loading = false
+		// The offer is spent either way: a restore that failed will not start
+		// working on a second press, and the reason belongs on screen.
+		m.lastDeleted = nil
+		m.restoreDeleted = nil
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.status = okStyle.Render(txt.restoredPrefix + truncateDisplay(msg.title, 48))
+		if msg.counts != nil {
+			m.sources = sourceChips(m.reg, msg.counts)
+			if m.sourceIdx >= len(m.sources) {
+				m.sourceIdx = 0
+			}
+			m.sourceList.SetItems(sourceItems(m.sources))
+			m.sourceList.Select(m.sourceIdx)
+		}
+		var restoreCmd tea.Cmd
+		m, restoreCmd = dispatchPageLoad(m)
+		return m, restoreCmd
 	case relocateDoneMsg:
 		m.loading = false
 		m.overlay = overlayNone
@@ -1758,8 +1833,21 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return dispatchPageLoadModel(m)
 		}
 		m.lastArchived = nil
+		m.lastDeleted = nil
+		m.restoreDeleted = nil
 		m.status = ""
 		return m, nil
+	case "u":
+		// Undo the delete another just did. Unlike archive, this is not bound
+		// to the key that caused it: ctrl+d again on a fresh row would arm a
+		// second deletion instead of taking one back.
+		if m.lastDeleted == nil || m.restoreDeleted == nil {
+			return m, nil
+		}
+		summary, restore := *m.lastDeleted, m.restoreDeleted
+		m.loading = true
+		m.err = ""
+		return m, tea.Batch(m.spinner.Tick, restoreSessionCmd(m.ctx, m.reg, m.idx, summary, restore))
 	case "f":
 		if m.cwd == "" {
 			m.err = txt.projectUnknown
@@ -2273,8 +2361,14 @@ func (m modelState) deleteView() string {
 		return errStyle.Render(txt.deleteConfirmTitle) + "\n" +
 			title + "\n" + mutedStyle.Render(sm.ID) + "\n" + cancel + "   " + remove
 	}
+	// The two agents differ in what they promise, so the modal says which one
+	// the person is standing in front of.
+	body := txt.deleteConfirmBody
+	if m.selectedDeleteIsReversible() {
+		body = txt.deleteConfirmBodyUndo
+	}
 	return errStyle.Render(txt.deleteConfirmTitle) + "\n" +
-		mutedStyle.Render(txt.deleteConfirmBody) + "\n\n" +
+		mutedStyle.Render(body) + "\n\n" +
 		mutedStyle.Render(field(txt.fieldSource)) + registry.DisplayName(m.reg, sm.Provider) + "\n" +
 		mutedStyle.Render(field(txt.fieldTitle)) + title + "\n" +
 		mutedStyle.Render(field(txt.fieldDirectory)) + project + "\n" +
@@ -2473,6 +2567,9 @@ func (m modelState) help() string {
 	if m.lastArchived != nil {
 		return txt.helpArchived
 	}
+	if m.lastDeleted != nil {
+		return txt.helpDeleted
+	}
 	help := txt.helpListBase
 	caps := m.selectedSessionCapabilities()
 	if caps.rename {
@@ -2488,6 +2585,21 @@ func (m modelState) help() string {
 		help += txt.helpListDelete
 	}
 	return help + txt.helpListTail
+}
+
+// selectedDeleteIsReversible reports whether deleting the session in the open
+// confirmation can be taken back. It asks the provider rather than assuming,
+// so a provider that loses the capability stops promising an undo.
+func (m modelState) selectedDeleteIsReversible() bool {
+	if m.selected == nil || m.reg == nil {
+		return false
+	}
+	p, err := m.reg.Get(m.selected.summary.Provider)
+	if err != nil {
+		return false
+	}
+	_, ok := p.(provider.ReversibleSessionDeleter)
+	return ok
 }
 
 // sessionCapabilities is what the selected provider can actually do. The footer
