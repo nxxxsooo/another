@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -325,6 +326,9 @@ type renameDoneMsg struct {
 	providerID string
 	title      string
 	err        error
+	// caveat carries a rename that landed but could not reach one of the
+	// agent's surfaces, so the row still updates and the reason is still said.
+	caveat error
 }
 
 // titleSuggestionMsg carries an AI-proposed title back to the rename overlay.
@@ -940,14 +944,21 @@ func renameSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 			return renameDoneMsg{providerID: sm.Provider, title: title, err: fmt.Errorf("%s does not support rename", p.DisplayName())}
 		}
 		ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+		// A caveat is not a failure: the agent's own store has the new title,
+		// and some surface it also reads does not. Saying "rename failed" would
+		// send the person to redo a rename that already happened.
+		var caveat error
 		if err := renamer.RenameSession(ctx, ref, title); err != nil {
-			return renameDoneMsg{providerID: sm.Provider, title: title, err: err}
+			if !errors.Is(err, provider.ErrPartial) {
+				return renameDoneMsg{providerID: sm.Provider, title: title, err: err}
+			}
+			caveat = err
 		}
-		_, err = index.UpdateIncremental(ctx, reg, idx, sm.Provider)
-		if err != nil {
-			err = fmt.Errorf("session renamed, but index refresh failed: %w", err)
+		if _, err := index.UpdateIncremental(ctx, reg, idx, sm.Provider); err != nil {
+			return renameDoneMsg{providerID: sm.Provider, title: title,
+				err: fmt.Errorf("session renamed, but index refresh failed: %w", err)}
 		}
-		return renameDoneMsg{providerID: sm.Provider, title: title, err: err}
+		return renameDoneMsg{providerID: sm.Provider, title: title, caveat: caveat}
 	}
 }
 
@@ -1062,6 +1073,10 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.status = okStyle.Render("已重命名为 " + truncateDisplay(msg.title, 56))
+		if msg.caveat != nil {
+			m.status = okStyle.Render("已重命名为 "+truncateDisplay(msg.title, 56)) +
+				mutedStyle.Render("  ·  "+caveatText(msg.caveat))
+		}
 		var cmd tea.Cmd
 		m, cmd = dispatchPageLoad(m)
 		return m, cmd
@@ -2184,4 +2199,14 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// caveatText strips the sentinel from a partial result so the status line reads
+// as the one sentence that matters rather than as a wrapped error chain.
+func caveatText(err error) string {
+	text := err.Error()
+	if _, rest, found := strings.Cut(text, provider.ErrPartial.Error()+": "); found {
+		return rest
+	}
+	return text
 }

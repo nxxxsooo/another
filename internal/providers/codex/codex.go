@@ -529,7 +529,13 @@ func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, tit
 	if title == "" {
 		return fmt.Errorf("codex: title must not be empty")
 	}
-	return errors.Join(p.renameThread(ref.ID, title), p.appendGUITitle(ref.ID, title))
+	// The CLI's own thread store first: that is the rename. The two Desktop
+	// stores follow, and only the Electron one can refuse — see
+	// writeDesktopTitle for why a running Desktop is told about, not fought.
+	if err := errors.Join(p.renameThread(ref.ID, title), p.appendGUITitle(ref.ID, title)); err != nil {
+		return err
+	}
+	return p.writeDesktopTitle(ref.ID, title)
 }
 
 func (p *Provider) ArchiveSession(ctx context.Context, ref provider.SessionRef, archived bool) error {

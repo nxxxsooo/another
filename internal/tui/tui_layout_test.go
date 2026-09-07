@@ -1089,3 +1089,34 @@ func TestPromptGlyphsCannotWidenARow(t *testing.T) {
 		}
 	}
 }
+
+// A rename that reached the agent's own store but not one of the surfaces that
+// agent reads is not a failed rename. Reporting it as one sends the person to
+// redo something that already happened; hiding it leaves them staring at a
+// sidebar that still shows the old name.
+func TestPartialRenameReportsTheCaveatAndKeepsTheRename(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.layout()
+
+	caveat := fmt.Errorf("%w: Codex Desktop is running, so its sidebar keeps the old name until it restarts",
+		provider.ErrPartial)
+	updated, cmd := m.Update(renameDoneMsg{providerID: "codex", title: "0831｜文档｜月度PBC总结润色", caveat: caveat})
+	got := updated.(modelState)
+	if got.err != "" {
+		t.Fatalf("a caveat was reported as a failure: %q", got.err)
+	}
+	if cmd == nil {
+		t.Fatal("the list did not reload after a rename that landed")
+	}
+	status := ansi.Strip(got.status)
+	if !strings.Contains(status, "已重命名为") {
+		t.Fatalf("the rename is not reported as done: %q", status)
+	}
+	if !strings.Contains(status, "Codex Desktop is running") {
+		t.Fatalf("the caveat is not in the status line: %q", status)
+	}
+	if strings.Contains(status, provider.ErrPartial.Error()) {
+		t.Fatalf("the sentinel leaked into the status line: %q", status)
+	}
+}

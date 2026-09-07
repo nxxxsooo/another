@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"os"
 	"time"
 
@@ -97,6 +98,12 @@ type WriteCleaner interface {
 type SessionDeleter interface {
 	DeleteSession(context.Context, SessionRef) error
 }
+
+// ErrPartial marks a change that landed in the agent's own state but could not
+// reach every surface that agent reads. The change is real and must not be
+// reported as a failure; the caveat must not be swallowed either, because the
+// person is looking at the surface that still shows the old value.
+var ErrPartial = errors.New("applied with a caveat")
 
 // SessionRenamer updates the title in the provider's native source of truth.
 // another never stores private display aliases that disappear on refresh.
