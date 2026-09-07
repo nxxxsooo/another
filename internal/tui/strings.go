@@ -68,6 +68,20 @@ type uiText struct {
 	deleteUnsupportedFmt string
 	terminalTooSmall     string
 
+	// Relocate: fork or move a session into another project directory.
+	cannotRelocateRunning   string
+	relocateUnsupportedFmt  string
+	relocateSameDirectory   string
+	forkedPrefix            string
+	movedPrefix             string
+	relocateModalTitle      string
+	relocateForkHint        string
+	relocateMoveHint        string
+	relocatePlaceholder     string
+	relocateChoiceFork      string
+	relocateChoiceMove      string
+	relocateMoveUnsupported string
+
 	// Modals.
 	sourceModalTitle   string
 	sourceModalHint    string
@@ -152,8 +166,11 @@ type uiText struct {
 	helpListBase         string
 	helpListRename       string
 	helpListArchive      string
+	helpListRelocate     string
 	helpListDelete       string
 	helpListTail         string
+	helpRelocate         string
+	helpRelocateForkOnly string
 
 	// Setup, page one.
 	setupAgentsTitle  string
@@ -277,6 +294,19 @@ var englishText = uiText{
 	deleteUnsupportedFmt: "%s does not support deleting",
 	terminalTooSmall:     "Terminal too small — resize to at least 48x20",
 
+	cannotRelocateRunning:   "The session running right now cannot be relocated",
+	relocateUnsupportedFmt:  "%s does not support relocating sessions",
+	relocateSameDirectory:   "The session is already in that directory",
+	forkedPrefix:            "Forked into ",
+	movedPrefix:             "Moved to ",
+	relocateModalTitle:      "Relocate session",
+	relocateForkHint:        "Copy this session into another directory. The original stays where it is.",
+	relocateMoveHint:        "Carry this session into another directory. The old directory no longer has it.",
+	relocatePlaceholder:     "Target project directory",
+	relocateChoiceFork:      "Fork",
+	relocateChoiceMove:      "Move",
+	relocateMoveUnsupported: "%s cannot move a session",
+
 	sourceModalTitle:   "Source",
 	sourceModalHint:    "Which agent is this session from?",
 	targetModalTitle:   "Target",
@@ -355,8 +385,11 @@ var englishText = uiText{
 	helpListBase:         " ← source · ↑↓ session · enter open · → other agent · space preview · f scope",
 	helpListRename:       " · ctrl+r rename",
 	helpListArchive:      " · a archive",
+	helpListRelocate:     " · m relocate",
 	helpListDelete:       " · ctrl+d delete",
 	helpListTail:         " · x mark · X all · ctrl+t batch · / search · r refresh",
+	helpRelocate:         " type a directory · tab fork/move · enter confirm · esc cancel",
+	helpRelocateForkOnly: " type a directory · enter fork · esc cancel",
 
 	setupAgentsTitle:     "Choose your agents",
 	setupAgentsHint:      "Space toggles an agent; Shift+↑↓ reorders them.",
@@ -472,6 +505,19 @@ var chineseText = uiText{
 	deleteUnsupportedFmt: "%s 不支持删除",
 	terminalTooSmall:     "终端太小 — 请调整到至少 48x20",
 
+	cannotRelocateRunning:   "不能移动当前正在运行的会话",
+	relocateUnsupportedFmt:  "%s 不支持换目录",
+	relocateSameDirectory:   "会话已经在这个目录里",
+	forkedPrefix:            "已复制到 ",
+	movedPrefix:             "已移动到 ",
+	relocateModalTitle:      "会话换目录",
+	relocateForkHint:        "把这条会话复制到另一个目录，原会话保持不动。",
+	relocateMoveHint:        "把这条会话本身搬到另一个目录，原目录不再有它。",
+	relocatePlaceholder:     "目标项目目录",
+	relocateChoiceFork:      "复制",
+	relocateChoiceMove:      "移动",
+	relocateMoveUnsupported: "%s 不支持移动",
+
 	sourceModalTitle:   "选择来源",
 	sourceModalHint:    "会话来自哪个 agent？",
 	targetModalTitle:   "选择去向",
@@ -550,8 +596,11 @@ var chineseText = uiText{
 	helpListBase:         " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围",
 	helpListRename:       " · ctrl+r 重命名",
 	helpListArchive:      " · a 归档",
+	helpListRelocate:     " · m 换目录",
 	helpListDelete:       " · ctrl+d 删除",
 	helpListTail:         " · x 标记 · X 全选 · ctrl+t 批量 · / 搜索 · r 刷新",
+	helpRelocate:         " 输入目录 · tab 复制/移动 · enter 确认 · esc 取消",
+	helpRelocateForkOnly: " 输入目录 · enter 复制 · esc 取消",
 
 	setupAgentsTitle:     "选择你使用的 agent",
 	setupAgentsHint:      "Space 开关 agent；Shift+↑↓ 调整显示顺序。",

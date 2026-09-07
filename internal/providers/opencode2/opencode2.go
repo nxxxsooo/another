@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -457,6 +458,172 @@ func (p *Provider) delete(ctx context.Context, sessionID string) error {
 	// deletion another believes in but the server refused would be reported as
 	// a cleaned-up session that is still there.
 	return p.awaitGone(ctx, sessionID)
+}
+
+// SupportsRelocate reports both modes: OpenCode 2 owns a native fork and a
+// native move, so another never has to re-render the conversation.
+func (p *Provider) SupportsRelocate(mode provider.RelocateMode) bool {
+	return mode == provider.RelocateFork || mode == provider.RelocateMove
+}
+
+// RelocateSession changes the directory a session belongs to. Move is one
+// native call. Fork is a native copy followed by that same move, because
+// OpenCode 2's fork endpoint deliberately keeps the parent's directory.
+func (p *Provider) RelocateSession(ctx context.Context, ref provider.SessionRef, opts provider.RelocateOpts) (*provider.RelocateResult, error) {
+	if ref.ID == "" {
+		return nil, fmt.Errorf("opencode2: missing session id")
+	}
+	directory := strings.TrimSpace(opts.Directory)
+	if directory == "" {
+		return nil, fmt.Errorf("opencode2 relocate: target directory must not be empty")
+	}
+	switch opts.Mode {
+	case provider.RelocateMove:
+		if opts.DryRun {
+			return &provider.RelocateResult{
+				SessionID: ref.ID, StoragePath: p.dbPath + "#" + ref.ID,
+				ProjectPath: directory, Moved: true,
+			}, nil
+		}
+		if err := p.moveTo(ctx, ref.ID, directory); err != nil {
+			return nil, err
+		}
+		return &provider.RelocateResult{
+			SessionID: ref.ID, StoragePath: p.dbPath + "#" + ref.ID,
+			ProjectPath: directory, Moved: true,
+		}, nil
+	case provider.RelocateFork:
+		if opts.DryRun {
+			// The fork's identifier is the server's to assign, so a dry run
+			// reports the destination without inventing one.
+			return &provider.RelocateResult{ProjectPath: directory}, nil
+		}
+		forkID, err := p.fork(ctx, ref.ID)
+		if err != nil {
+			return nil, err
+		}
+		if err := p.moveTo(ctx, forkID, directory); err != nil {
+			// A fork left in the source directory is not what was asked for
+			// and would look like an accidental duplicate. Take it back.
+			if cleanupErr := p.delete(ctx, forkID); cleanupErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("clean up fork %s: %w", forkID, cleanupErr))
+			}
+			return nil, err
+		}
+		if err := p.verifyForkCarried(ctx, forkID); err != nil {
+			return nil, err
+		}
+		return &provider.RelocateResult{
+			SessionID: forkID, StoragePath: p.dbPath + "#" + forkID,
+			ProjectPath: directory,
+		}, nil
+	default:
+		return nil, provider.ErrRelocateUnsupported
+	}
+}
+
+// fork asks the server to copy the whole history into a new session. The
+// "through" boundary means through the last message, so nothing is dropped.
+func (p *Provider) fork(ctx context.Context, sessionID string) (string, error) {
+	body, _ := json.Marshal(map[string]any{"boundary": map[string]any{"type": "through"}})
+	cmd := exec.CommandContext(ctx, p.command, "api", "POST", "/api/session/"+sessionID+"/fork", "--data", string(body))
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("opencode2 fork: %w: %s", err, strings.TrimSpace(stderr.String()+stdout.String()))
+	}
+	var payload struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	raw := strings.TrimSpace(stdout.String())
+	if json.Unmarshal([]byte(raw), &payload) != nil || payload.Data.ID == "" {
+		// `opencode2 api` exits 0 on an HTTP 500, so a refusal arrives here
+		// looking like success with an error document instead of a session.
+		return "", fmt.Errorf("opencode2 fork: OpenCode 2 did not return a forked session: %s", truncateForError(raw))
+	}
+	return payload.Data.ID, nil
+}
+
+func (p *Provider) moveTo(ctx context.Context, sessionID, directory string) error {
+	body, _ := json.Marshal(map[string]string{"directory": directory})
+	cmd := exec.CommandContext(ctx, p.command, "api", "POST", "/api/session/"+sessionID+"/move", "--data", string(body))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("opencode2 relocate: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	// The same silent refusal as rename and delete: exit 0 does not mean the
+	// server accepted it. The session's own row decides.
+	return p.awaitDirectory(ctx, sessionID, directory)
+}
+
+// awaitDirectory waits for the server to persist the new directory, because the
+// API call returns before the write is visible in the database.
+func (p *Provider) awaitDirectory(ctx context.Context, sessionID, want string) error {
+	deadline := time.Now().Add(2 * time.Second)
+	var stored string
+	for {
+		var err error
+		stored, err = p.storedDirectory(sessionID)
+		if err != nil {
+			return fmt.Errorf("opencode2 relocate: %w", err)
+		}
+		if stored == want {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("opencode2 relocate: OpenCode 2 refused the move, the directory is still %q; check that %s exists and is a project OpenCode 2 can open", stored, want)
+}
+
+func (p *Provider) storedDirectory(sessionID string) (string, error) {
+	db, err := p.openRO()
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	var directory sql.NullString
+	err = db.QueryRow(`SELECT directory FROM session_v2 WHERE id = ?`, sessionID).Scan(&directory)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("session %s is gone", sessionID)
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(directory.String), nil
+}
+
+// verifyForkCarried refuses to report a relocate that produced an empty
+// session, which would look like a successful move of a lost conversation.
+func (p *Provider) verifyForkCarried(ctx context.Context, sessionID string) error {
+	db, err := p.openRO()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM session_message WHERE session_id = ? AND type IN ('user','assistant')`, sessionID).Scan(&count); err != nil {
+		return fmt.Errorf("opencode2 relocate: verify fork: %w", err)
+	}
+	if count == 0 {
+		return fmt.Errorf("opencode2 relocate: fork %s carried no messages", sessionID)
+	}
+	return nil
+}
+
+func truncateForError(s string) string {
+	const limit = 200
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "…"
 }
 
 // awaitGone waits for a deleted session to leave the database.

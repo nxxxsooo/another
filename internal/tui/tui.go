@@ -44,6 +44,7 @@ const (
 	overlayPreview
 	overlayDelete
 	overlayRename
+	overlayRelocate
 	overlayBatchTitle
 )
 
@@ -347,6 +348,13 @@ type archiveDoneMsg struct {
 	archived bool
 	err      error
 }
+type relocateDoneMsg struct {
+	providerID string
+	directory  string
+	resume     string
+	moved      bool
+	err        error
+}
 type indexRefreshedMsg struct {
 	counts     map[string]int
 	project    *util.ProjectScope
@@ -371,18 +379,27 @@ type modelState struct {
 	idx    *index.Store
 	engine *migrate.Engine
 
-	sessions    list.Model
-	sourceList  list.Model
-	targets     list.Model
-	preview     viewport.Model
-	searchInput textinput.Model
-	renameInput textinput.Model
-	spinner     spinner.Model
+	sessions      list.Model
+	sourceList    list.Model
+	targets       list.Model
+	preview       viewport.Model
+	searchInput   textinput.Model
+	renameInput   textinput.Model
+	relocateInput textinput.Model
+	spinner       spinner.Model
 
 	sources      []sourceChip
 	sourceIdx    int
 	overlay      int
 	deleteChoice int // 0 cancel, 1 delete
+
+	// relocateMove selects move over the default fork. It resets every time
+	// the overlay opens: carrying a session out of its directory is the
+	// destructive reading of this action and never becomes the sticky one.
+	relocateMove bool
+	// relocateCanMove records whether the selected provider owns a native
+	// move, so the toggle is not offered where it cannot be honoured.
+	relocateCanMove bool
 
 	// titleCfg is empty unless setup picked an agent to write suggestions.
 	titleCfg   titler.Config
@@ -500,6 +517,10 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	rename.Prompt = ""
 	rename.Placeholder = txt.renamePlaceholder
 	rename.CharLimit = 200
+	relocate := textinput.New()
+	relocate.Prompt = ""
+	relocate.Placeholder = txt.relocatePlaceholder
+	relocate.CharLimit = 1024
 	sp := spinner.New()
 	// OpenCode 2's compact braille spinner stays one cell wide, so the
 	// progress counter and modal never shift between animation frames.
@@ -525,7 +546,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		titleCfg: titleCfg,
 		marked:   marked,
 		sessions: sessList, sourceList: sourceList, targets: targetList,
-		preview: vp, searchInput: search, renameInput: rename, spinner: sp,
+		preview: vp, searchInput: search, renameInput: rename, relocateInput: relocate, spinner: sp,
 		sources: sources, cwd: cwd, projectScope: projectScope, projectOnly: cwd != "",
 		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
@@ -988,6 +1009,39 @@ func deleteSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 	}
 }
 
+func relocateSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sm model.Summary, directory string, mode provider.RelocateMode) tea.Cmd {
+	return func() tea.Msg {
+		done := relocateDoneMsg{providerID: sm.Provider, directory: directory, moved: mode == provider.RelocateMove}
+		p, err := reg.Get(sm.Provider)
+		if err != nil {
+			done.err = err
+			return done
+		}
+		relocator, ok := p.(provider.SessionRelocator)
+		if !ok || !relocator.SupportsRelocate(mode) {
+			done.err = fmt.Errorf(txt.relocateUnsupportedFmt, p.DisplayName())
+			return done
+		}
+		res, err := relocator.RelocateSession(ctx, provider.SessionRef{
+			ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath,
+		}, provider.RelocateOpts{Directory: directory, Mode: mode})
+		if err != nil {
+			done.err = err
+			return done
+		}
+		done.resume = p.ResumeCommand(provider.WriteResult{
+			SessionID: res.SessionID, StoragePath: res.StoragePath, ProjectPath: res.ProjectPath,
+		})
+		if _, err := index.UpdateIncremental(ctx, reg, idx, sm.Provider); err != nil {
+			// The session really did move. Saying so and naming the stale
+			// index is more useful than reporting a failure that did not
+			// happen.
+			done.err = fmt.Errorf("relocated, but index refresh failed: %w", err)
+		}
+		return done
+	}
+}
+
 func migrateCmd(ctx context.Context, engine *migrate.Engine, sm model.Summary, to string, contextMode migrate.ContextMode) tea.Cmd {
 	return func() tea.Msg {
 		res, err := engine.Run(ctx, migrate.Options{
@@ -1183,6 +1237,30 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m, cmd = dispatchPageLoad(m)
 		return m, cmd
+	case relocateDoneMsg:
+		m.loading = false
+		m.overlay = overlayNone
+		m.relocateInput.Blur()
+		if msg.err != nil && msg.resume == "" {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		verb := txt.forkedPrefix
+		if msg.moved {
+			verb = txt.movedPrefix
+		}
+		m.status = okStyle.Render(verb + truncateLeft(util.TildePath(msg.directory), 48))
+		if msg.err != nil {
+			m.status += mutedStyle.Render("  ·  " + msg.err.Error())
+		}
+		// The resume line points at the relocated session, which is the whole
+		// point of the action: the next thing the user does is run it there.
+		m.lastResume = msg.resume
+		m.launchTarget = msg.providerID
+		m.launchProject = msg.directory
+		var cmd tea.Cmd
+		m, cmd = dispatchPageLoad(m)
+		return m, cmd
 	case migrateDoneMsg:
 		m.loading = false
 		m.overlay = overlayNone
@@ -1296,6 +1374,8 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.preview, cmd = m.preview.Update(msg)
 	case overlayRename:
 		m.renameInput, cmd = m.renameInput.Update(msg)
+	case overlayRelocate:
+		m.relocateInput, cmd = m.relocateInput.Update(msg)
 	case overlayBatchTitle:
 		// The batch overlay owns its keys; ticks and cursor blinks die here
 		// instead of leaking into the session list underneath. The model
@@ -1384,6 +1464,55 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		m.renameInput, cmd = m.renameInput.Update(msg)
+		return m, cmd
+	}
+	if m.overlay == overlayRelocate {
+		switch msg.String() {
+		case "ctrl+c":
+			if m.cancel != nil {
+				m.cancel()
+			}
+			return m, tea.Quit
+		case "esc":
+			m.overlay = overlayNone
+			m.relocateInput.Blur()
+			return m, tea.HideCursor
+		case "tab":
+			// Fork and move differ only in whether the source survives, so
+			// they share one box and one keystroke rather than two keys a
+			// Shift apart.
+			if m.relocateCanMove {
+				m.relocateMove = !m.relocateMove
+			}
+			return m, nil
+		case "enter":
+			if m.selected == nil {
+				m.err = txt.noSessionSelected
+				return m, nil
+			}
+			directory, err := util.ResolveExistingDir(m.relocateInput.Value())
+			if err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			// Both sides are normalized: a stored path and a typed one can
+			// name the same directory through different symlinks.
+			if directory == util.NormalizeProjectPath(m.selected.summary.ProjectPath) {
+				m.err = txt.relocateSameDirectory
+				return m, nil
+			}
+			mode := provider.RelocateFork
+			if m.relocateMove {
+				mode = provider.RelocateMove
+			}
+			m.relocateInput.Blur()
+			m.loading = true
+			m.err = ""
+			return m, tea.Batch(m.spinner.Tick,
+				relocateSessionCmd(m.ctx, m.reg, m.idx, m.selected.summary, directory, mode))
+		}
+		var cmd tea.Cmd
+		m.relocateInput, cmd = m.relocateInput.Update(msg)
 		return m, cmd
 	}
 	switch msg.String() {
@@ -1699,6 +1828,42 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		}
 		return m, nil
+	case "m":
+		// Relocate is deliberately its own action rather than a migration to
+		// the same agent: the provider moves or copies its own session, so
+		// nothing is re-rendered and nothing is lost.
+		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
+			if isCurrentSession(it.summary) {
+				m.err = txt.cannotRelocateRunning
+				return m, nil
+			}
+			p, err := m.reg.Get(it.summary.Provider)
+			if err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			relocator, ok := p.(provider.SessionRelocator)
+			if !ok || !relocator.SupportsRelocate(provider.RelocateFork) {
+				m.err = fmt.Sprintf(txt.relocateUnsupportedFmt, p.DisplayName())
+				return m, nil
+			}
+			sel := it
+			m.selected = &sel
+			m.relocateMove = false
+			m.relocateCanMove = relocator.SupportsRelocate(provider.RelocateMove)
+			start := m.cwd
+			if start == "" {
+				start = it.summary.ProjectPath
+			}
+			m.relocateInput.SetValue(start)
+			m.relocateInput.CursorEnd()
+			m.relocateInput.Focus()
+			m.overlay = overlayRelocate
+			m.err = ""
+			m.layout()
+			return m, textinput.Blink
+		}
+		return m, nil
 	case "ctrl+t":
 		// The batch flow previews first and renames only on confirmation, so
 		// opening it never spends a model call by itself.
@@ -1768,6 +1933,13 @@ func (m *modelState) layout() {
 	}
 	m.searchInput.Width = max(8, m.width-4)
 	m.renameInput.Width = max(18, min(60, m.width-20))
+	// A path is longer than the box that holds it, so the field scrolls
+	// rather than widening the modal past the terminal. bubbles recomputes
+	// that scrolling window only when the cursor moves, so a width set after
+	// the value was filled in would render the whole path and tear the modal
+	// open until the next keystroke.
+	m.relocateInput.Width = max(18, min(60, m.width-20))
+	m.relocateInput.SetCursor(m.relocateInput.Position())
 	m.batchModelInput.Width = max(12, min(40, m.width-24))
 	frameW, frameH := paneStyle.GetHorizontalFrameSize(), paneStyle.GetVerticalFrameSize()
 	headerH := lipgloss.Height(m.headerView())
@@ -1869,6 +2041,9 @@ func (m modelState) View() string {
 		box := modalStyle.Width(textModalWidth(m.width)).Render(titleStyle.Render(txt.renameModalTitle) +
 			m.modalSubtitle(txt.renameModalHint) + "\n\n" + m.renameInput.View() +
 			m.suggestionLine())
+		pane = overlay(pane, box, m.width)
+	case overlayRelocate:
+		box := modalStyle.Width(textModalWidth(m.width)).Render(m.relocateView())
 		pane = overlay(pane, box, m.width)
 	case overlayBatchTitle:
 		box := modalStyle.Render(m.batchView())
@@ -2011,6 +2186,38 @@ func (m modelState) deleteView() string {
 		cancel + "   " + remove
 }
 
+func (m modelState) relocateView() string {
+	if m.selected == nil {
+		return errStyle.Render(txt.noSessionSelected)
+	}
+	sm := m.selected.summary
+	fork := chipActive.Render(txt.relocateChoiceFork)
+	move := chipMuted.Render(txt.relocateChoiceMove)
+	if m.relocateMove {
+		fork = chipMuted.Render(txt.relocateChoiceFork)
+		move = dangerChoice.Render(txt.relocateChoiceMove)
+	}
+	modes := fork + "   " + move
+	if !m.relocateCanMove {
+		// A provider that cannot move must not be shown a move it would only
+		// refuse; the fork chip alone states what will happen.
+		modes = fork + mutedStyle.Render("   "+fmt.Sprintf(txt.relocateMoveUnsupported, registry.DisplayName(m.reg, sm.Provider)))
+	}
+	hint := txt.relocateForkHint
+	if m.relocateMove {
+		hint = txt.relocateMoveHint
+	}
+	if m.height < 18 {
+		return titleStyle.Render(txt.relocateModalTitle) + "\n" +
+			m.relocateInput.View() + "\n" + modes
+	}
+	return titleStyle.Render(txt.relocateModalTitle) + "\n" +
+		mutedStyle.Render(hint) + "\n\n" +
+		mutedStyle.Render(field(txt.fieldTitle)) + truncateDisplay(sm.Title, 64) + "\n" +
+		mutedStyle.Render(field(txt.fieldDirectory)) + truncateLeft(util.TildePath(sm.ProjectPath), 64) + "\n\n" +
+		m.relocateInput.View() + "\n\n" + modes
+}
+
 func (m modelState) headerView() string {
 	brand := accentStyle.Render(" another ")
 	source := m.currentSource()
@@ -2120,6 +2327,11 @@ func (m modelState) help() string {
 			return txt.helpRenameSuggestion
 		}
 		return txt.helpRename
+	case overlayRelocate:
+		if m.relocateCanMove {
+			return txt.helpRelocate
+		}
+		return txt.helpRelocateForkOnly
 	case overlayBatchTitle:
 		if m.batchModelPicking {
 			return txt.helpBatchModelList
@@ -2142,32 +2354,48 @@ func (m modelState) help() string {
 		return txt.helpArchived
 	}
 	help := txt.helpListBase
-	rename, archive, delete := m.selectedSessionCapabilities()
-	if rename {
+	caps := m.selectedSessionCapabilities()
+	if caps.rename {
 		help += txt.helpListRename
 	}
-	if archive {
+	if caps.archive {
 		help += txt.helpListArchive
 	}
-	if delete {
+	if caps.relocate {
+		help += txt.helpListRelocate
+	}
+	if caps.delete {
 		help += txt.helpListDelete
 	}
 	return help + txt.helpListTail
 }
 
-func (m modelState) selectedSessionCapabilities() (rename, archive, delete bool) {
+// sessionCapabilities is what the selected provider can actually do. The footer
+// is assembled from it so an unsupported action is never advertised.
+type sessionCapabilities struct {
+	rename   bool
+	archive  bool
+	relocate bool
+	delete   bool
+}
+
+func (m modelState) selectedSessionCapabilities() sessionCapabilities {
 	it, ok := m.sessions.SelectedItem().(sessionItem)
 	if !ok || m.reg == nil {
-		return false, false, false
+		return sessionCapabilities{}
 	}
 	p, err := m.reg.Get(it.summary.Provider)
 	if err != nil {
-		return false, false, false
+		return sessionCapabilities{}
 	}
-	_, rename = p.(provider.SessionRenamer)
-	_, archive = p.(provider.SessionArchiver)
-	_, delete = p.(provider.SessionDeleter)
-	return rename, archive, delete
+	var caps sessionCapabilities
+	_, caps.rename = p.(provider.SessionRenamer)
+	_, caps.archive = p.(provider.SessionArchiver)
+	_, caps.delete = p.(provider.SessionDeleter)
+	if relocator, ok := p.(provider.SessionRelocator); ok {
+		caps.relocate = relocator.SupportsRelocate(provider.RelocateFork)
+	}
+	return caps
 }
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across

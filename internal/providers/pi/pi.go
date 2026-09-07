@@ -9,6 +9,7 @@ package pi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -643,6 +644,167 @@ func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, tit
 		return err
 	}
 	return f.Sync()
+}
+
+// SupportsRelocate reports both modes. Pi keys a session's project off the
+// encoded directory name and the header cwd, so both are file operations.
+func (p *Provider) SupportsRelocate(mode provider.RelocateMode) bool {
+	return mode == provider.RelocateFork || mode == provider.RelocateMove
+}
+
+// RelocateSession rewrites a session into another project directory by copying
+// its own JSONL verbatim and correcting only the session header. Nothing is
+// re-rendered, so tool calls, reasoning, and custom rows survive intact —
+// which is exactly why this is not built on Write.
+func (p *Provider) RelocateSession(ctx context.Context, ref provider.SessionRef, opts provider.RelocateOpts) (*provider.RelocateResult, error) {
+	directory := strings.TrimSpace(opts.Directory)
+	if directory == "" {
+		return nil, fmt.Errorf("pi relocate: target directory must not be empty")
+	}
+	if opts.Mode != provider.RelocateFork && opts.Mode != provider.RelocateMove {
+		return nil, provider.ErrRelocateUnsupported
+	}
+	source := ref.StoragePath
+	if source == "" {
+		var err error
+		source, err = p.findSessionFile(ref)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := p.insideSessionsRoot(source); err != nil {
+		return nil, err
+	}
+
+	sessionID, base := ref.ID, filepath.Base(source)
+	if opts.Mode == provider.RelocateFork {
+		// A fork is a second session and needs its own identity, or pi would
+		// find two files claiming the same id.
+		sessionID = uuid.New().String()
+		base = fmt.Sprintf("%s_%s.jsonl", sessionStamp(time.Now()), sessionID)
+	} else if sessionID == "" {
+		sessionID = sessionIDFromFilename(base)
+	}
+	destDir := filepath.Join(p.sessionsRoot(), encodeProjectDir(directory))
+	dest := filepath.Join(destDir, base)
+	if dest == source {
+		return nil, fmt.Errorf("pi relocate: session is already in %s", directory)
+	}
+	result := &provider.RelocateResult{
+		SessionID: sessionID, StoragePath: dest, ProjectPath: directory,
+		Moved: opts.Mode == provider.RelocateMove,
+	}
+	if opts.DryRun {
+		return result, nil
+	}
+	if _, err := os.Stat(dest); err == nil {
+		return nil, fmt.Errorf("pi relocate: %s already exists", dest)
+	}
+
+	rewritten, err := relocatedLines(source, sessionID, directory)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := util.WriteFileAtomic(dest, rewritten, 0o644); err != nil {
+		return nil, err
+	}
+	// Verify before anything irreversible happens. On a move this is the only
+	// thing standing between a bad write and a deleted original.
+	if err := p.verifyRelocated(ctx, source, dest, directory); err != nil {
+		if rmErr := os.Remove(dest); rmErr != nil && !os.IsNotExist(rmErr) {
+			return nil, errors.Join(err, fmt.Errorf("clean up %s: %w", dest, rmErr))
+		}
+		return nil, err
+	}
+	if opts.Mode == provider.RelocateMove {
+		if err := os.Remove(source); err != nil {
+			return nil, fmt.Errorf("pi relocate: copied to %s but could not remove %s: %w", dest, source, err)
+		}
+	}
+	return result, nil
+}
+
+// relocatedLines returns the session file with only its header corrected. Every
+// other line is preserved byte for byte.
+func relocatedLines(source, sessionID, directory string) ([]byte, error) {
+	var out []byte
+	headers := 0
+	err := util.ReadJSONLLines(source, 0, func(line []byte) error {
+		var probe struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(line, &probe) == nil && probe.Type == "session" {
+			var header map[string]any
+			if json.Unmarshal(line, &header) == nil {
+				header["id"] = sessionID
+				header["cwd"] = directory
+				encoded, err := json.Marshal(header)
+				if err != nil {
+					return err
+				}
+				out = append(out, encoded...)
+				out = append(out, '\n')
+				headers++
+				return nil
+			}
+		}
+		out = append(out, line...)
+		out = append(out, '\n')
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, provider.ErrEmptySession
+	}
+	if headers == 0 {
+		// Without a header pi falls back to the encoded directory name, which
+		// the copy already satisfies, but the id would then come from the file
+		// name alone. Write one so the relocated session is self-describing.
+		header, err := json.Marshal(map[string]any{
+			"type": "session", "version": sessionFormatVersion, "id": sessionID,
+			"timestamp": nowISO(), "cwd": directory,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(append(header, '\n'), out...)
+	}
+	return out, nil
+}
+
+// verifyRelocated reloads the written file and compares its conversation with
+// the source, so a truncated or malformed copy is never reported as success.
+func (p *Provider) verifyRelocated(ctx context.Context, source, dest, directory string) error {
+	before, err := p.Load(ctx, provider.SessionRef{Provider: ProviderID, StoragePath: source})
+	if err != nil {
+		return fmt.Errorf("pi relocate: reload source: %w", err)
+	}
+	after, err := p.Load(ctx, provider.SessionRef{Provider: ProviderID, StoragePath: dest})
+	if err != nil {
+		return fmt.Errorf("pi relocate: reload destination: %w", err)
+	}
+	if want, got := model.ContentDigest(before), model.ContentDigest(after); want != got {
+		return fmt.Errorf("pi relocate: content digest mismatch (want %s, got %s)", want, got)
+	}
+	if after.ProjectPath != directory {
+		return fmt.Errorf("pi relocate: destination reports directory %q, want %q", after.ProjectPath, directory)
+	}
+	return nil
+}
+
+// insideSessionsRoot refuses to touch anything that is not a pi session file.
+func (p *Provider) insideSessionsRoot(path string) error {
+	rel, err := filepath.Rel(p.sessionsRoot(), path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) ||
+		filepath.IsAbs(rel) || !strings.HasSuffix(rel, ".jsonl") {
+		return fmt.Errorf("pi: refusing to relocate outside sessions root: %s", path)
+	}
+	return nil
 }
 
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {

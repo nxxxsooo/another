@@ -28,6 +28,35 @@ func NormalizeProjectPath(path string) string {
 	return abs
 }
 
+// ResolveExistingDir expands ~, resolves the path against the current
+// directory, and requires it to be an existing directory. Relocation targets a
+// place the user will actually run an agent in, so a typo must fail here rather
+// than produce a session pointing at nothing.
+func ResolveExistingDir(path string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", fmt.Errorf("directory must not be empty")
+	}
+	if trimmed == "~" || strings.HasPrefix(trimmed, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return "", fmt.Errorf("cannot expand ~: home directory is unknown")
+		}
+		trimmed = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(trimmed, "~"), "/"))
+	}
+	info, err := os.Stat(trimmed)
+	if os.IsNotExist(err) {
+		return "", fmt.Errorf("directory %s does not exist", trimmed)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s is not a directory", trimmed)
+	}
+	return NormalizeProjectPath(trimmed), nil
+}
+
 // TildePath replaces the user home directory prefix with ~.
 func TildePath(p string) string {
 	home, err := os.UserHomeDir()

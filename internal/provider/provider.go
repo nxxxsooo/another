@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nxxxsooo/another/internal/model"
@@ -116,3 +118,59 @@ type SessionRenamer interface {
 type SessionArchiver interface {
 	ArchiveSession(context.Context, SessionRef, bool) error
 }
+
+// RelocateMode selects whether the source session survives a relocate.
+type RelocateMode string
+
+const (
+	// RelocateFork copies the session into the target directory and leaves the
+	// source exactly where it was.
+	RelocateFork RelocateMode = "fork"
+	// RelocateMove carries the session itself into the target directory. The
+	// old directory no longer has it.
+	RelocateMove RelocateMode = "move"
+)
+
+func ParseRelocateMode(value string) (RelocateMode, error) {
+	mode := RelocateMode(strings.ToLower(strings.TrimSpace(value)))
+	if mode == "" {
+		mode = RelocateFork
+	}
+	switch mode {
+	case RelocateFork, RelocateMove:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid relocate mode %q (use fork or move)", value)
+	}
+}
+
+type RelocateOpts struct {
+	// Directory is an existing absolute path the session should belong to.
+	Directory string
+	Mode      RelocateMode
+	DryRun    bool
+}
+
+type RelocateResult struct {
+	SessionID   string
+	StoragePath string
+	ProjectPath string
+	// Moved reports whether the source session was carried rather than copied.
+	Moved bool
+}
+
+// SessionRelocator changes the project directory a session belongs to, in the
+// provider's own state. Fork leaves the source untouched; move does not. A
+// provider implements this only where it owns a native, verifiable contract —
+// re-rendering the conversation through the portable model is migration, not
+// relocation, and would silently drop tool calls and reasoning.
+type SessionRelocator interface {
+	RelocateSession(context.Context, SessionRef, RelocateOpts) (*RelocateResult, error)
+	// SupportsRelocate reports per-mode support, because a provider may own a
+	// native copy without owning a native move.
+	SupportsRelocate(RelocateMode) bool
+}
+
+// ErrRelocateUnsupported is returned when a provider cannot relocate at all, or
+// cannot perform the requested mode.
+var ErrRelocateUnsupported = errors.New("relocate is not supported")

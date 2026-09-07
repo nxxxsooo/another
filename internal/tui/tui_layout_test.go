@@ -48,7 +48,8 @@ func layoutTestModel() modelState {
 			sourceChip{id: "codex", name: "Codex", count: 2},
 			sourceChip{id: "pi", name: "pi", count: 1},
 		}),
-		preview: viewport.New(1, 1), searchInput: textinput.New(), renameInput: textinput.New(), selected: &item,
+		preview: viewport.New(1, 1), searchInput: textinput.New(), renameInput: textinput.New(),
+		relocateInput: textinput.New(), selected: &item,
 		previewContent: strings.Repeat("full preview content ", 100), status: "ready",
 	}
 }
@@ -61,9 +62,15 @@ func TestViewsFitTerminal(t *testing.T) {
 	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
 		useLanguage(t, lang)
 		for _, size := range [][2]int{{40, 12}, {60, 16}, {80, 24}, {100, 30}, {120, 40}} {
-			for _, ov := range []int{overlayNone, overlaySource, overlayTarget, overlayPreview, overlayDelete, overlayRename, overlayBatchTitle} {
+			for _, ov := range []int{overlayNone, overlaySource, overlayTarget, overlayPreview, overlayDelete, overlayRename, overlayRelocate, overlayBatchTitle} {
 				m := layoutTestModel()
 				m.overlay = ov
+				if ov == overlayRelocate {
+					// The relocate box carries a path, which is the longest
+					// single token any modal has to hold.
+					m.relocateInput.SetValue("/Users/someone/Documents/sync/GitHub/another/.worktrees/relocate")
+					m.relocateCanMove = true
+				}
 				updated, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 				view := updated.(modelState).View()
 				if got := lipgloss.Width(view); got > size[0] {

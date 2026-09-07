@@ -119,9 +119,11 @@ func (a *App) Root() *cobra.Command {
 	root.AddCommand(a.indexCmd())
 	root.AddCommand(a.providersCmd())
 	root.AddCommand(a.setupCmd())
+	root.AddCommand(a.integrationsCmd())
 	root.AddCommand(a.exportCmd())
 	root.AddCommand(a.importCmd())
 	root.AddCommand(a.resumeCmd())
+	root.AddCommand(a.relocateCmd())
 	root.AddCommand(a.searchCmd())
 	root.AddCommand(a.tuiCmd())
 	return root

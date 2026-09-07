@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/registry"
 )
 
@@ -80,5 +81,27 @@ func TestRegistryProviders(t *testing.T) {
 	}
 	if ids := registry.NewEnabled([]string{"antigravity-cli"}).IDs(); len(ids) != 1 || ids[0] != "agy" {
 		t.Fatalf("enabled agy ids = %v", ids)
+	}
+}
+
+// Relocation is deliberately unequal. Only providers that own a native,
+// verifiable contract may claim it; everywhere else another reports the action
+// as unsupported rather than re-rendering the conversation into a new
+// directory and calling that a move.
+func TestOnlyNativeProvidersClaimRelocate(t *testing.T) {
+	want := map[string]bool{"pi": true, "opencode2": true}
+	for _, p := range registry.New().All() {
+		relocator, ok := p.(provider.SessionRelocator)
+		if ok != want[p.ID()] {
+			t.Errorf("%s relocate support = %v, want %v", p.ID(), ok, want[p.ID()])
+		}
+		if !ok {
+			continue
+		}
+		for _, mode := range []provider.RelocateMode{provider.RelocateFork, provider.RelocateMove} {
+			if !relocator.SupportsRelocate(mode) {
+				t.Errorf("%s claims relocate but refuses %s", p.ID(), mode)
+			}
+		}
 	}
 }
