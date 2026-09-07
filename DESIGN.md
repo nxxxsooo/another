@@ -6,6 +6,8 @@
 
 The approved master is `docs/assets/another-mark-master.png`. Preserve its geometry, offset, cyan-white intersection bloom, halftone grain, and screen-print texture. Do not redraw it as a clean vector, two unrelated letters, arrows, nodes, portals, mascots, or anime imagery.
 
+For surfaces that cannot sit on the master's dark plate — a hero over an arbitrary background, a favicon, anything that must work on both light and dark — use `docs/assets/another-mark-transparent.png`, generated from the master by `scripts/render-mark-transparent.py`. It is a derived asset, so regenerate it from the master rather than editing it, and never treat it as a second master: the bloom is light thrown onto the plate, so cutting the plate away necessarily dims it.
+
 ## Visual World
 
 The world is dark terminal punk with controlled analog imperfection:

@@ -280,6 +280,7 @@ go vet ./...
 python3 ./scripts/render-motion-banner.py                          # 品牌横幅，需要 Pillow 和 ffmpeg
 python3 ./scripts/render-goodbye-gif.py                            # 退出动效，需要 Pillow
 python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # 字标，需要 Pillow 和 JetBrains Mono ExtraBold
+python3 ./scripts/render-mark-transparent.py                       # 标志透明版，从母版派生，需要 Pillow
 ```
 
 ## 名字

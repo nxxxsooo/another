@@ -281,6 +281,7 @@ never needs a font installed:
 python3 ./scripts/render-motion-banner.py                          # identity banner; Pillow and ffmpeg
 python3 ./scripts/render-goodbye-gif.py                            # goodbye GIF; Pillow
 python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # wordmark; Pillow and JetBrains Mono ExtraBold
+python3 ./scripts/render-mark-transparent.py                       # transparent mark, derived from the master; Pillow
 ```
 
 ## The name
