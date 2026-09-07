@@ -408,7 +408,7 @@ func rebuildProviderSessions(tx *sql.Tx, providerID string) error {
 	if _, err := tx.Exec(`DELETE FROM sessions WHERE provider = ?`, providerID); err != nil {
 		return err
 	}
-	_, err := tx.Exec(`
+	if _, err := tx.Exec(`
 INSERT INTO sessions
   (id, provider, project_path, title, created_at, updated_at, message_count, storage_path,
    source_mtime, kind, parent_id, source_size)
@@ -423,7 +423,33 @@ FROM (
     ) AS source_rank
   FROM session_sources ss WHERE provider = ?
 )
-WHERE source_rank = 1`, providerID)
+WHERE source_rank = 1`, providerID); err != nil {
+		return err
+	}
+	return promoteOrphanedChildren(tx, providerID)
+}
+
+// promoteOrphanedChildren shows a child session whose parent is not indexed.
+// Hiding a child is only meaningful while its parent can be reached, because
+// the parent is the way back to it. A child naming a parent that is no longer
+// on disk — Codex Desktop leaves whole trees of them behind — is otherwise
+// reachable only by already knowing its ID, which is indistinguishable from
+// being lost.
+//
+// A child that names no parent at all keeps its classification: Codex marks
+// its guardian threads that way, and those are machine-written assessments of
+// a requested action rather than sessions anyone had.
+//
+// Sessions are derived from session_sources on every scan, so a promoted child
+// becomes a child again as soon as its parent is indexed.
+func promoteOrphanedChildren(tx *sql.Tx, providerID string) error {
+	_, err := tx.Exec(`
+UPDATE sessions SET kind = ?
+WHERE provider = ? AND kind = ? AND COALESCE(parent_id, '') <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM sessions parent
+    WHERE parent.provider = sessions.provider AND parent.id = sessions.parent_id
+  )`, model.SessionKindRoot, providerID, model.SessionKindSubagent)
 	return err
 }
 
