@@ -7,12 +7,14 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
 	"github.com/charmbracelet/x/term"
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/integrations"
 	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
@@ -449,13 +451,30 @@ func (a *App) runSetup(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("load config: %w", err)
 	}
 	all := registry.NewOrdered(initial.EnabledProviders)
-	settings, done, err := tui.RunSetup(all, counts, initial)
+	// Finding the adapter means asking OpenCode 2 where its configuration is,
+	// which can start a stopped service. Setup must not wait for that before
+	// it draws, so the lookup runs once, in the background, and is reused
+	// afterwards by whatever setup decides to do with it.
+	var once sync.Once
+	var found integrations.Status
+	resolve := func() integrations.Status {
+		once.Do(func() { found = integrations.OpenCode2Status(integrations.OpenCode2ConfigDir(ctx)) })
+		return found
+	}
+	// Whether the row exists at all is cheap to answer and does not wait.
+	supported := registry.CLIAvailable("opencode2")
+	probe := func() tui.SetupPlugin {
+		status := resolve()
+		return tui.SetupPlugin{Supported: supported || status.State.Installed(), Dir: status.Dir, State: status.State}
+	}
+	settings, done, err := tui.RunSetup(all, counts, initial, tui.SetupPlugin{Supported: supported}, probe)
 	if err != nil || !done {
 		return false, err
 	}
 	if err := config.SaveSettings(settings); err != nil {
 		return false, fmt.Errorf("save config: %w", err)
 	}
+	applyIntegrations(settings, resolve())
 	enabled := settings.EnabledProviders
 	if err := a.Index.KeepProviders(enabled); err != nil {
 		return false, fmt.Errorf("prune index: %w", err)
@@ -480,6 +499,16 @@ func (a *App) providersCmd() *cobra.Command {
 					p.ID(), availability(p.Installed()), providerCLIStatus(p.ID()), p.DisplayName())
 				for _, ps := range p.DefaultPaths() {
 					fmt.Printf("    %s: %s\n", ps.Label, util.TildePath(ps.Path))
+				}
+				if p.ID() == "opencode2" {
+					// The plugin is part of whether OpenCode 2 is set up
+					// correctly, and it lives outside every path above.
+					found := integrations.OpenCode2Status(integrations.OpenCode2ConfigDir(cmd.Context()))
+					fmt.Printf("    title plugin: %s\n", integrationStateText(found))
+					if found.RedundantEntry != "" {
+						fmt.Printf("    note: %s still lists this plugin; OpenCode 2 finds it without that entry\n",
+							util.TildePath(found.RedundantEntry))
+					}
 				}
 			}
 			return nil

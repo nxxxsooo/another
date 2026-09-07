@@ -38,8 +38,30 @@ npm test
 npm run typecheck
 ```
 
-## Install locally
+## Install
 
-Add the absolute path to `src/index.ts` to the global OpenCode 2 `plugins`
-array, then restart the OpenCode 2 service. The plugin reads the title language
-at startup; restart after changing it with `another setup`.
+another ships this plugin inside its own binary and installs it on request:
+
+```bash
+another integrations install   # or turn the row on in `another setup`
+another integrations status
+```
+
+The files land in `<opencode2 config dir>/plugins/another-title-policy/`, which
+OpenCode 2 discovers on its own — no `plugins` entry in `opencode.json(c)`, and
+another never edits that file. An entry left over from a hand installation is
+harmless, and `another integrations status` points it out so it can be removed.
+
+another resolves the configuration directory by asking the OpenCode 2 CLI where
+its own configuration document is, because a machine that runs V1 and V2 side by
+side keeps them apart with `OPENCODE_CONFIG_DIR`. Override it with
+`--config-dir`, or with `ANOTHER_OPENCODE2_CONFIG_DIR` for every command.
+
+A manifest at `.another-install.json` records the release and the file hashes
+another wrote, so `another integrations status` can tell a pending upgrade from
+a local edit. another refuses to overwrite files it did not write; `--force`
+says otherwise. `another integrations remove` takes back only those files.
+
+The plugin reads the title language when OpenCode 2 loads it. Changing that
+language in `another setup` rewrites these files, which is what makes OpenCode 2
+reload the plugin — no service restart.

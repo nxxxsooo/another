@@ -85,7 +85,7 @@ With `~/.local/bin` or your Go bin directory on `PATH`, run:
 another
 ```
 
-The first run opens a Charmtone setup screen. The top of the first page picks the interface language with `←→`: **Auto** (the default, which follows the terminal's locale), **English**, or **中文**. The page redraws as you press, so a wrong choice is visible immediately instead of after saving. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page lists the six continuously tested agents; the four compatibility adapters sit behind one folded row that `Space` opens. The fold starts open when the saved configuration already enables one of them, because a setting you cannot see is a setting you cannot turn off. The second page picks an optional agent for AI title suggestions; it defaults to off. Run `another setup` any time to change either choice.
+The first run opens a Charmtone setup screen. The top of the first page picks the interface language with `←→`: **Auto** (the default, which follows the terminal's locale), **English**, or **中文**. The page redraws as you press, so a wrong choice is visible immediately instead of after saving. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page lists the six continuously tested agents; the four compatibility adapters sit behind one folded row that `Space` opens. The fold starts open when the saved configuration already enables one of them, because a setting you cannot see is a setting you cannot turn off. The second page picks an optional agent for AI title suggestions; it defaults to off. When OpenCode 2 is one of your agents, that page also carries an `OpenCode 2 title plugin` row: `t` turns it on, and only then does another write the plugin into OpenCode 2's configuration directory. The row names that directory and what is in it already. Run `another setup` any time to change any of these choices.
 
 ### Update
 
@@ -181,7 +181,7 @@ The batch header names the agent, model, and language this run uses, and `m` ope
 
 Generating titles leaves a trace of its own: Codex, Claude Code, Antigravity, and OpenCode record a session for every headless run with no way to opt out. another recognizes those leftovers and keeps them out of the index — the prompt's fixed first line, or the `another-titler-*` throwaway directory the run happened in, identifies them. Antigravity evades both, because it names the run after the answer, which leaves the leftover wearing a title that satisfies another's own naming contract, and it records no working directory at all; sessions short enough to be a leftover are therefore opened and matched against the prompt itself, while longer ones are never read. Leftovers an older build already indexed are evicted too. Only another's index is touched; the agent's own session files stay where that agent put them. Once generation finishes or is cancelled, `m` swaps the model for this batch only — empty means that CLI's default — and `Enter` re-runs the same sessions on it. The override is never written back to config: a cheap model for forty old sessions should not become the default for the next single rename.
 
-OpenCode 2 can enforce the same contract during its native first-title request without a second model call; see [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/). The Pi session-title patch is under [`integrations/pi-session-title-policy/`](integrations/pi-session-title-policy/). Codex has no stable native title-policy surface yet and remains managed through another.
+OpenCode 2 can enforce the same contract during its native first-title request without a second model call. That adapter ships inside the another binary: turn on the `OpenCode 2 title plugin` row on the second setup page, or run `another integrations install`, and another writes the plugin into OpenCode 2's `plugins/another-title-policy/` and records what it wrote. It writes that one directory and never edits your `opencode.json(c)`, because OpenCode 2 discovers the directory on its own. After upgrading another, `another integrations status` reports whether the installed plugin is behind and another setup brings it back in line; files you have edited are never overwritten. Source and details are under [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/). The Pi session-title patch is still applied by hand, under [`integrations/pi-session-title-policy/`](integrations/pi-session-title-policy/). Codex has no stable native title-policy surface yet and remains managed through another.
 
 ## CLI
 
@@ -202,6 +202,9 @@ another import session.another.json --to <provider> [--context MODE] [--dry-run]
 
 # Configuration and index
 another setup
+another integrations                      # adapter status
+another integrations install [--force]    # install or update the OpenCode 2 title plugin
+another integrations remove
 another index update
 another index rebuild
 ```

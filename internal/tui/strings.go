@@ -187,6 +187,20 @@ type uiText struct {
 	setupTitleHelpModel string
 	setupTitleHelpSave  string
 
+	// The OpenCode 2 plugin row. another writes a file into another agent's
+	// configuration directory only when this row says so, so the row names
+	// the directory it would write to and what is there now.
+	setupPluginLabel     string
+	setupPluginToggle    string
+	setupPluginChecking  string
+	setupPluginMissing   string
+	setupPluginCurrent   string
+	setupPluginOutdated  string
+	setupPluginModified  string
+	setupPluginAdoptable string
+	setupPluginForeign   string
+	setupPluginKeep      string
+
 	// Setup, page three, shared with the batch model picker.
 	setupModelTitle       string
 	setupModelHintFmt     string
@@ -372,6 +386,17 @@ var englishText = uiText{
 	setupTitleHelpModel: "↑↓ agent  ·  ←→ language  ·  enter model  ·  esc back",
 	setupTitleHelpSave:  "↑↓ agent  ·  ←→ language  ·  enter save  ·  esc back",
 
+	setupPluginLabel:     "OpenCode 2 title plugin",
+	setupPluginToggle:    "t toggles",
+	setupPluginChecking:  "checking",
+	setupPluginMissing:   "not installed",
+	setupPluginCurrent:   "installed",
+	setupPluginOutdated:  "update available",
+	setupPluginModified:  "edited on disk; leaving it alone",
+	setupPluginAdoptable: "installed by hand; another can keep it current",
+	setupPluginForeign:   "another plugin is already there",
+	setupPluginKeep:      "installed; remove it with 'another integrations remove'",
+
 	setupModelTitle:       "Which model writes the titles",
 	setupModelHintFmt:     "The models %s reports; the default leaves the choice to that CLI.",
 	setupModelLoadingFmt:  "asking %s for its models…",
@@ -555,6 +580,17 @@ var chineseText = uiText{
 	setupTitlePolicy:    "建议模型关闭；语言仍供 O2／Pi 原生命名共用。",
 	setupTitleHelpModel: "↑↓ 选 agent  ·  ←→ 选语言  ·  enter 选模型  ·  esc 返回",
 	setupTitleHelpSave:  "↑↓ 选 agent  ·  ←→ 选语言  ·  enter 保存  ·  esc 返回",
+
+	setupPluginLabel:     "OpenCode 2 标题插件",
+	setupPluginToggle:    "t 切换",
+	setupPluginChecking:  "检测中",
+	setupPluginMissing:   "未安装",
+	setupPluginCurrent:   "已安装",
+	setupPluginOutdated:  "有更新",
+	setupPluginModified:  "文件已被改动，保持原样",
+	setupPluginAdoptable: "此前手工安装，可交给 another 维护",
+	setupPluginForeign:   "该目录已有别的插件",
+	setupPluginKeep:      "仍在，可用 another integrations remove 移除",
 
 	setupModelTitle:       "用哪个模型写标题",
 	setupModelHintFmt:     "%s 报告的可用模型，留在默认即由该 CLI 自己决定。",

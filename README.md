@@ -79,7 +79,7 @@ install -m 755 another ~/.local/bin/another
 another
 ```
 
-首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。页面默认只列持续实测的六个 agent，四个兼容适配折在末尾一行里，光标移到那行按 `Space` 展开；如果配置里已经启用了其中某个，这行开局就是展开的——看不见的设置没法关掉。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。之后可随时运行 `another setup` 修改配置。
+首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。页面默认只列持续实测的六个 agent，四个兼容适配折在末尾一行里，光标移到那行按 `Space` 展开；如果配置里已经启用了其中某个，这行开局就是展开的——看不见的设置没法关掉。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。启用了 OpenCode 2 时，这一页还有一行 `OpenCode 2 标题插件`：按 `t` 打开，another 才会把插件写进 OpenCode 2 的配置目录，那行同时写明将写到哪个目录、目录里现在是什么。之后可随时运行 `another setup` 修改配置。
 
 ### 更新
 
@@ -181,7 +181,7 @@ setup 第二页用 `←→` 选标题语言（与第一页的界面语言互不�
 
 <img src="docs/assets/tui-batch.svg" width="100%" alt="another 批量命名确认页：原名到新名的对照表与折叠计数">
 
-OpenCode 2 可以在首次自动命名时直接执行同一规则，而不额外调用一次模型；适配器与安装说明见 [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/)。Pi 的 session-title 扩展补丁见 [`integrations/pi-session-title-policy/`](integrations/pi-session-title-policy/)。Codex 暂无稳定的原生标题策略接口，仍由 another 整理。
+OpenCode 2 可以在首次自动命名时直接执行同一规则，而不额外调用一次模型。这个适配器随 another 二进制分发：在 `another setup` 第二页把 `OpenCode 2 标题插件` 那行打开，或运行 `another integrations install`，another 会把插件写进 OpenCode 2 的 `plugins/another-title-policy/` 并记下自己写了什么。它只写这一个目录，从不改你的 `opencode.json(c)`——OpenCode 2 自己就会发现该目录。升级 another 之后 `another integrations status` 会说明插件是否落后，`another setup` 再跑一次即可对齐；被你手工改过的文件不会被覆盖。源码与细节见 [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/)。Pi 的 session-title 扩展补丁仍需手工打，见 [`integrations/pi-session-title-policy/`](integrations/pi-session-title-policy/)。Codex 暂无稳定的原生标题策略接口，仍由 another 整理。
 
 ## CLI
 
@@ -202,6 +202,9 @@ another import session.another.json --to <provider> [--context MODE] [--dry-run]
 
 # 配置和索引
 another setup
+another integrations                      # 适配器状态
+another integrations install [--force]    # 安装或更新 OpenCode 2 标题插件
+another integrations remove
 another index update
 another index rebuild
 ```

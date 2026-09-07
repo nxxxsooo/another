@@ -24,6 +24,19 @@ type Settings struct {
 	// different question from what language it writes titles in. A config
 	// written before this existed has no ui at all, and that means auto.
 	UI UI `json:"ui,omitempty"`
+	// Integrations records which adapters another may install into another
+	// agent's own configuration. Writing into someone else's config
+	// directory needs consent that outlives the run that gave it, so the
+	// answer is stored rather than asked again on every upgrade. Absent
+	// means no, which is what a person who has never been asked expects.
+	Integrations Integrations `json:"integrations,omitempty"`
+}
+
+// Integrations is one flag per adapter another can install. The flag is
+// permission and intent, not state: whether the files are actually in place,
+// current, or edited is read from the agent's configuration directory.
+type Integrations struct {
+	OpenCode2TitlePolicy bool `json:"opencode2_title_policy,omitempty"`
 }
 
 type TitlePolicy struct {

@@ -14,8 +14,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/i18n"
+	"github.com/nxxxsooo/another/internal/integrations"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/titler"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 // Setup runs as three pages: which agents another manages, which of those
@@ -50,6 +52,34 @@ type titleOption struct {
 	id, name, command string
 }
 
+// SetupPlugin describes the adapter another can install into OpenCode 2, as it
+// exists before setup runs. Setup asks about it rather than acting on
+// detection: the files land in an agent's own configuration directory, which
+// another may write to only because a person said so on this page.
+type SetupPlugin struct {
+	// Supported is false when there is no OpenCode 2 to install into, which
+	// hides the row entirely.
+	Supported bool
+	Dir       string
+	State     integrations.State
+}
+
+// Known reports whether the adapter has been looked up yet. Finding it means
+// asking OpenCode 2 where its configuration lives, which is a subprocess and
+// occasionally a service start, so setup draws before the answer arrives and
+// the row says so until it does.
+func (p SetupPlugin) Known() bool { return p.State != "" }
+
+// pluginStatusMsg carries one finished lookup.
+type pluginStatusMsg struct{ plugin SetupPlugin }
+
+func pluginStatusCmd(probe func() SetupPlugin) tea.Cmd {
+	if probe == nil {
+		return nil
+	}
+	return func() tea.Msg { return pluginStatusMsg{plugin: probe()} }
+}
+
 type setupModel struct {
 	items     []setupItem
 	selected  map[string]bool
@@ -71,6 +101,16 @@ type setupModel struct {
 	titleCursor int
 	modelInput  textinput.Model
 	langCursor  int
+	// plugin is the OpenCode 2 adapter row and whether it is switched on.
+	// pluginTouched keeps a lookup that lands late from overriding an answer
+	// the person has already given on the row.
+	plugin        SetupPlugin
+	pluginWanted  bool
+	pluginTouched bool
+	pluginProbe   func() SetupPlugin
+	// pluginConsented is the saved answer from an earlier run, which decides
+	// the row's default once the lookup arrives.
+	pluginConsented bool
 	// uiLangCursor is the interface language, which page one both sets and
 	// immediately demonstrates: the page redraws in the language under the
 	// cursor, so the choice is verified by making it.
@@ -118,7 +158,7 @@ var uiLanguages = []i18n.Lang{i18n.LangAuto, i18n.LangEnglish, i18n.LangChinese}
 // plus the two language settings. It takes and returns whole settings so a
 // preference this page does not touch survives being edited here. The caller
 // persists the result only after the program exits cleanly.
-func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Settings) (config.Settings, bool, error) {
+func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Settings, plugin SetupPlugin, probe func() SetupPlugin) (config.Settings, bool, error) {
 	initialTitle := initial.TitleModel
 	initialPolicy := initial.TitlePolicy
 	chosen := initialSetupSelection(initial.EnabledProviders)
@@ -143,7 +183,10 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 	modelInput.Prompt = ""
 	modelInput.Placeholder = txt.modelPlaceholder
 	modelInput.CharLimit = 120
-	start := setupModel{items: items, selected: chosen, spinner: sp, modelInput: modelInput}
+	start := setupModel{items: items, selected: chosen, spinner: sp, modelInput: modelInput, plugin: plugin}
+	start.pluginProbe = probe
+	start.pluginConsented = initial.Integrations.OpenCode2TitlePolicy
+	start.pluginWanted = pluginDefault(plugin, start.pluginConsented)
 	start.showAdapters = anyAdapterSelected(items, chosen)
 	start.langCursor = languageCursor(titler.Language(initialPolicy.Language))
 	start.uiLangCursor = uiLanguageCursor(i18n.Lang(initial.UI.Language))
@@ -186,6 +229,7 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 	saved.TitleModel = model.titleModel()
 	saved.TitlePolicy = config.TitlePolicy{Language: string(model.language())}
 	saved.UI = config.UI{Language: string(model.uiLanguage())}
+	saved.Integrations.OpenCode2TitlePolicy = model.wantsPlugin()
 	return saved, model.done, nil
 }
 
@@ -276,6 +320,81 @@ func (m setupModel) titleModel() *config.TitleModel {
 	}
 }
 
+// setupOpenCode2 is the one agent whose native naming another can adapt today.
+const setupOpenCode2 = "opencode2"
+
+// pluginDefault decides where the row starts. A plugin another already
+// maintains is already consented to, so it opens on; everything else starts
+// off, including a hand-copied installation this run would only be adopting.
+func pluginDefault(plugin SetupPlugin, consented bool) bool {
+	if !plugin.Supported {
+		return false
+	}
+	return consented || plugin.State == integrations.StateCurrent || plugin.State == integrations.StateOutdated
+}
+
+// pluginVisible reports whether the row belongs on the page. It is tied to the
+// agent it writes into: someone who does not let another manage OpenCode 2 is
+// not being asked about OpenCode 2's plugins.
+func (m setupModel) pluginVisible() bool {
+	return m.plugin.Supported && m.selected[setupOpenCode2]
+}
+
+// pluginToggleable reports whether the row is a choice rather than a report.
+// Files another did not write are shown but never claimed from this page; the
+// command line can force that, where the person has said what they mean.
+func (m setupModel) pluginToggleable() bool {
+	return m.pluginVisible() && m.plugin.Known() && !m.plugin.State.Blocked()
+}
+
+// wantsPlugin is the answer setup saves and acts on. A row the page could not
+// offer keeps the answer the last run gave: saving quickly, before the lookup
+// lands, or while files another did not write sit in the way, is not a way to
+// withdraw a choice that was made deliberately.
+func (m setupModel) wantsPlugin() bool {
+	if !m.pluginVisible() {
+		return false
+	}
+	if !m.pluginToggleable() {
+		return m.pluginConsented
+	}
+	return m.pluginWanted
+}
+
+// pluginRow draws the adapter as one line: the switch, what it does, what is
+// on disk now, and where that is. The path is on the row because this is the
+// moment another asks to write outside its own configuration.
+func (m setupModel) pluginRow(width int) string {
+	mark := mutedStyle.Render("○")
+	if m.wantsPlugin() {
+		mark = okStyle.Render("●")
+	}
+	state := txt.setupPluginMissing
+	switch m.plugin.State {
+	case "":
+		state = txt.setupPluginChecking
+	case integrations.StateCurrent:
+		state = txt.setupPluginCurrent
+	case integrations.StateOutdated:
+		state = txt.setupPluginOutdated
+	case integrations.StateModified:
+		state = txt.setupPluginModified
+	case integrations.StateAdoptable:
+		state = txt.setupPluginAdoptable
+	case integrations.StateForeign:
+		state = txt.setupPluginForeign
+	}
+	line := mark + " " + mutedStyle.Render(txt.setupPluginLabel+"  ·  "+state)
+	if m.pluginToggleable() {
+		line += mutedStyle.Render("  ·  " + txt.setupPluginToggle)
+	}
+	row := ansi.Truncate(line, width, "…")
+	if m.plugin.Dir == "" {
+		return row
+	}
+	return row + "\n" + ansi.Truncate(mutedStyle.Render("   "+util.TildePath(m.plugin.Dir)), width, "…")
+}
+
 // language reads the chosen title language back out.
 func (m setupModel) language() titler.Language {
 	if m.langCursor < 0 || m.langCursor >= len(languages) {
@@ -343,7 +462,9 @@ func restoreTitleCursor(opts []titleOption, previous []titleOption) int {
 }
 
 func (m setupModel) Init() tea.Cmd {
-	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle))
+	// The lookup starts with page one, which is where the time it takes is
+	// free: the row it fills in belongs to page two.
+	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle), pluginStatusCmd(m.pluginProbe))
 }
 
 func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -353,6 +474,12 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Setup is centred in the window, so a resize moves the whole panel and
 		// leaves the old one behind unless the screen is cleared with it.
 		return m, tea.ClearScreen
+	case pluginStatusMsg:
+		m.plugin = msg.plugin
+		if !m.pluginTouched {
+			m.pluginWanted = pluginDefault(m.plugin, m.pluginConsented)
+		}
+		return m, nil
 	case modelsLoadedMsg:
 		if msg.provider != m.modelFor {
 			return m, nil
@@ -468,6 +595,14 @@ func (m setupModel) updateTitlePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "right":
 		m.langCursor = (m.langCursor + 1) % len(languages)
+		return m, nil
+	case "t":
+		// The model name is typed on its own page, so a letter is free here
+		// and the switch does not need a row of its own in the list.
+		if m.pluginToggleable() {
+			m.pluginWanted = !m.pluginWanted
+			m.pluginTouched = true
+		}
 		return m, nil
 	case "enter":
 		if m.titleCursor <= 0 {
@@ -624,13 +759,25 @@ func (m setupModel) titlePageBody(panelW, width int) string {
 		mutedStyle.Render(txt.setupTitleHint) + "\n\n"
 
 	if len(m.titleOpts) <= 1 {
-		return head + mutedStyle.Render(txt.setupTitleNone) + "\n\n" +
-			mutedStyle.Render(txt.setupTitleNoneHelp)
+		body := head + mutedStyle.Render(txt.setupTitleNone) + "\n"
+		if m.pluginVisible() {
+			// The plugin is the one part of this page that still works when
+			// no agent can suggest a title: OpenCode 2 writes its own.
+			body += "\n" + m.pluginRow(width) + "\n"
+		}
+		return body + "\n" + mutedStyle.Render(txt.setupTitleNoneHelp)
 	}
 
 	foot := "\n" + mutedStyle.Render(txt.setupTitleLanguage) + "  " + m.titleLanguageRow() + "\n"
-	if m.titleCursor <= 0 {
+	// The policy line says the language is shared with OpenCode 2 and Pi. When
+	// the OpenCode 2 row is on the page it says the same thing about a real
+	// directory, so the abstract sentence gives up its lines to the concrete
+	// one rather than both competing for a short terminal.
+	if m.titleCursor <= 0 && !m.pluginVisible() {
 		foot += mutedStyle.Render(txt.setupTitlePolicy) + "\n"
+	}
+	if m.pluginVisible() {
+		foot += m.pluginRow(width) + "\n"
 	}
 	foot += "\n"
 	if m.err != "" {
