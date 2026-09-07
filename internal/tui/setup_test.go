@@ -570,3 +570,23 @@ func TestSetupRowsStayOnOneLine(t *testing.T) {
 		}
 	}
 }
+
+// The row budget is measured on rendered text, and the two interface languages
+// wrap in different places: an English help line that fits on one line can take
+// two in Chinese, and that line comes out of the list's budget.
+func TestSetupFitsInBothLanguages(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("en") })
+	for _, lang := range []string{"en", "zh"} {
+		SetLanguage(lang)
+		for h := 20; h <= 40; h++ {
+			for _, w := range []int{48, 60, 80, 120, 200} {
+				m := setupWithEveryAgent()
+				m.showAdapters = true
+				m.width, m.height = w, h
+				if got := lipgloss.Height(m.View()); got > h {
+					t.Fatalf("%s at %dx%d: setup renders %d lines", lang, w, h, got)
+				}
+			}
+		}
+	}
+}
