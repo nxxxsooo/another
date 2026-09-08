@@ -129,7 +129,7 @@ Migration shows the exact resume command first. Press `Enter` to hand the termin
 
 The TUI starts scoped to the current project. A Git repository's main worktree, every registered linked worktree, and their subdirectories form one project; outside Git, the scope is an exact current-directory match. The header always shows the active scope, and search keeps that scope. An empty project view stays empty rather than silently switching global; press `f` to view all projects.
 
-One project is not one directory. When the listed sessions really do span several — worktrees, a monorepo's subtrees — a directory column appears, showing each session's path relative to the project root (`.worktrees/delete-undo`, `packages/api`, and `·` for the root itself) so the shared prefix never costs the title its width. With every session in one directory the column stays away.
+One project is not one directory. When the listed sessions really do span several — worktrees, a monorepo's subtrees — a directory column appears: a chip in the path's own color, like the agent's, carrying the part of the path below the project root (`.worktrees/delete-undo`, `packages/api`, and the root's own name for a session that started there) so the shared prefix never costs the title its width. The column is only as wide as the longest path it has to show; the rest goes to the title. A directory that no longer exists keeps its path and loses its color. With every session in one directory the column stays away.
 
 ## Relocate
 

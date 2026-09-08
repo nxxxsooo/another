@@ -83,6 +83,11 @@ type sessionDelegate struct {
 	// project it is the project root, so a row shows the part of its path
 	// that differs from its neighbours' instead of the prefix they share.
 	projectBase string
+	// projectW is what the loaded rows actually need, chip included. The
+	// column is capped by the pane, but it is never wider than the longest
+	// thing it has to say: cells the paths do not use belong to the title.
+	// Zero means "unmeasured", which leaves the cap alone.
+	projectW int
 }
 
 func (sessionDelegate) Height() int { return 1 }
@@ -129,6 +134,9 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	projW := 0
 	if d.showProject && width >= 92 {
 		projW = min(28, width/4)
+		if d.projectW > 0 {
+			projW = min(projW, d.projectW)
+		}
 	}
 	fixed := 3 + timeW + provW + msgW + 3
 	if projW > 0 {
@@ -154,22 +162,19 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
 }
 
-// projectBar is the project column's leading mark. It must stay one cell wide;
-// the column's width math assumes it. The quarter block is deliberate: the
-// column identifies a project, it does not rank one, so the mark should be
-// found when looked for and ignored otherwise.
-const projectBar = "▎"
+// projectChipPad is what a chip costs beyond the text it holds: one cell of
+// quiet on each side, the same shape the agent chip is cut to.
+const projectChipPad = 2
 
-// projectRootMark stands for a session that started at the project root while
-// its neighbours started in a worktree or a subtree below it. Spelling the
-// root out would repeat on every such row the prefix the column exists to
-// leave out, and an empty cell would read as "no directory recorded".
-const projectRootMark = "·"
-
-// renderProjectCell draws the project column in exactly width cells: a colored
-// bar keyed to the path, then the path with its last segment lifted out of the
-// dim. The bar is one cell of foreground, not a filled chip, so it survives the
-// nested ANSI resets that make background-painted columns tear in Ghostty.
+// renderProjectCell draws the project column in exactly width cells, as one
+// chip in the project's own color — the same object the agent column is made
+// of, so a row reads as two tags and a title rather than as a title with two
+// unrelated ornaments.
+//
+// The chip is a single flat style. Nested styles inside a painted background
+// emit ANSI resets that also clear the background, which is what leaves black
+// rectangles in Ghostty, so the path is written in one color rather than split
+// into a dim parent and a lit leaf.
 //
 // A directory that no longer exists keeps its path — it is still the best
 // name for where the work happened — and loses its color instead. Color in
@@ -177,8 +182,8 @@ const projectRootMark = "·"
 // deleted directory reads as gone without a symbol having to say it.
 //
 // With a base the path is read against it, which is what makes the column
-// usable inside one project: 28 cells spent on the prefix every row shares
-// say nothing, and left-truncating that prefix cuts off the tail that does.
+// usable inside one project: cells spent on the prefix every row shares say
+// nothing, and left-truncating that prefix cuts off the tail that does.
 func renderProjectCell(path string, width int) string {
 	return renderProjectCellState(path, "", width, false)
 }
@@ -187,44 +192,49 @@ func renderProjectCellState(path, base string, width int, missing bool) string {
 	if width <= 0 {
 		return ""
 	}
-	if path == "" {
+	// A row with no directory recorded is the only blank cell in the column,
+	// which is what lets every other row be read as a chip on sight. A column
+	// too narrow to hold one is blank for the same reason: half a chip reads
+	// as damage.
+	if path == "" || width < projectChipPad+1 {
 		return strings.Repeat(" ", width)
 	}
-	// The bar hashes the absolute path, not the shown text, so a directory
+	// The chip hashes the absolute path, not the shown text, so a directory
 	// keeps one hue whether the column is scoped to a project or not.
-	barStyle := lipgloss.NewStyle().Foreground(projectColor(path))
-	leafStyle := projectLeafStyle
+	ink, tint := chipColors(projectColor(path))
 	if missing {
-		barStyle, leafStyle = missingProjectStyle, projectParentStyle
+		ink, tint = twinTheme.textSubtle, twinTheme.border
 	}
-	if width < 3 {
-		return barStyle.Render(projectBar) + strings.Repeat(" ", width-1)
-	}
+	shown := truncateLeft(util.SanitizeDisplay(projectCellText(path, base)), width-projectChipPad)
+	return padRight(projectChip(shown, ink, tint), width)
+}
 
-	shown := util.SanitizeDisplay(projectCellText(path, base))
-	textW := width - 2
-	// The root mark names a place by not naming it, so it stays in the dim the
-	// parent segments use; the rows that do carry a subtree keep the contrast.
-	if shown == projectRootMark {
-		return padRight(barStyle.Render(projectBar)+" "+projectParentStyle.Render(shown), width)
-	}
-	leaf := shown
-	parent := ""
-	if idx := strings.LastIndex(shown, "/"); idx >= 0 {
-		leaf, parent = shown[idx+1:], shown[:idx+1]
-	}
+// projectChip is the chip body. It is not bold: the agent code is three
+// letters and has to survive being small, while a path is long enough to read
+// on its own, and a column of bold paths would take the row from the title.
+func projectChip(text string, ink, tint lipgloss.Color) string {
+	return lipgloss.NewStyle().Foreground(ink).Background(tint).Render(" " + text + " ")
+}
 
-	var text string
-	// The last segment is what the eye is actually looking for, so it keeps the
-	// column whenever the whole path cannot; the parent gives way first.
-	if parentW := textW - ansi.StringWidth(leaf); parentW > 0 && parent != "" {
-		text = projectParentStyle.Render(truncateLeft(parent, parentW)) +
-			leafStyle.Render(leaf)
-	} else {
-		text = leafStyle.Render(truncateLeft(leaf, textW))
+// projectColumnWidth is what the column needs to say everything it has to say:
+// the widest chip among the rows that are loaded. Without it a list whose rows
+// all sit at the project root still spent a quarter of the pane on one repeated
+// name, and the title — the only thing that identifies a session — paid for it.
+//
+// It reads Items(), not VisibleItems(), for the same reason the column's own
+// visibility does: a width that changed as a filter narrowed the list would
+// move the title's right edge under the person reading it.
+func projectColumnWidth(items []list.Item, base string) int {
+	widest := 0
+	for _, item := range items {
+		row, ok := item.(sessionItem)
+		if !ok || row.summary.ProjectPath == "" {
+			continue
+		}
+		shown := util.SanitizeDisplay(projectCellText(row.summary.ProjectPath, base))
+		widest = max(widest, ansi.StringWidth(shown)+projectChipPad)
 	}
-
-	return padRight(barStyle.Render(projectBar)+" "+text, width)
+	return widest
 }
 
 // projectCellText is what the column says about a directory. Without a base
@@ -241,7 +251,14 @@ func projectCellText(path, base string) string {
 	}
 	clean, cleanBase := filepath.Clean(path), filepath.Clean(base)
 	if clean == cleanBase {
-		return projectRootMark
+		// The root has nothing below itself to name, so it names itself. A
+		// mark standing in for it left a column of identical dots beside the
+		// rows that did carry a subtree, and told nobody which project this
+		// was; its own last segment is short, true, and readable.
+		if leaf := filepath.Base(cleanBase); leaf != "." && leaf != string(filepath.Separator) {
+			return leaf
+		}
+		return util.TildePath(path)
 	}
 	rel, err := filepath.Rel(cleanBase, clean)
 	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -443,5 +460,6 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 		spacing:     m.sessionSpacing,
 		showProject: !m.projectOnly || spread,
 		projectBase: base,
+		projectW:    projectColumnWidth(m.sessions.Items(), base),
 	}
 }

@@ -1124,8 +1124,42 @@ func TestProjectColumnShowsWorktreesApart(t *testing.T) {
 	if strings.Contains(inWorktree, "another-scope-fixture") {
 		t.Fatalf("the row repeats the shared project root: %q", inWorktree)
 	}
-	if !strings.Contains(atRoot, projectRootMark) {
+	if !strings.Contains(atRoot, filepath.Base(root)) {
 		t.Fatalf("the root row has nothing in the column: %q", atRoot)
+	}
+}
+
+// A column sized to its cap spent a quarter of the pane on one repeated name
+// while the title — the only thing that identifies a session — was cut. It is
+// sized to the longest path it actually has to show instead.
+func TestProjectColumnTakesOnlyTheWidthItsPathsNeed(t *testing.T) {
+	root := "/tmp/another-scope-fixture"
+	marked := map[string]bool{}
+	// A title long enough to be cut at either column width, so how much of it
+	// survives is the measure of what the column gave back.
+	title := strings.Repeat("x", 120)
+	items := []list.Item{
+		sessionItem{summary: model.Summary{ID: "a", Provider: "codex", Title: title, ProjectPath: root}},
+		sessionItem{summary: model.Summary{ID: "b", Provider: "codex", Title: title, ProjectPath: root + "/pkg"}},
+	}
+	want := ansi.StringWidth("another-scope-fixture") + projectChipPad
+	if got := projectColumnWidth(items, root); got != want {
+		t.Fatalf("projectColumnWidth = %d, want %d", got, want)
+	}
+
+	render := func(projectW int) string {
+		d := sessionDelegate{marked: marked, showProject: true, projectBase: root, projectW: projectW}
+		l := newBareList(items, d, 120, 4)
+		var buf strings.Builder
+		d.Render(&buf, l, 0, items[0])
+		return ansi.Strip(buf.String())
+	}
+	fitted, capped := render(want), render(0)
+	if strings.Count(fitted, "x") <= strings.Count(capped, "x") {
+		t.Fatalf("a fitted column did not give the title back any width:\n%q\n%q", fitted, capped)
+	}
+	if !strings.Contains(fitted, "another-scope-fixture") {
+		t.Fatalf("the fitted column lost the path it was sized for: %q", fitted)
 	}
 }
 
