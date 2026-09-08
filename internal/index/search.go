@@ -67,7 +67,7 @@ func (s *Store) IndexConversation(summary model.Summary, conv *model.Conversatio
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec(`DELETE FROM session_fts WHERE provider = ? AND session_id = ?`, summary.Provider, summary.ID); err != nil {
 		return err
 	}
@@ -126,13 +126,13 @@ WHERE c.session_id IS NULL OR c.session_updated<>s.updated_at OR c.message_count
 	for rows.Next() {
 		sm, scanErr := s.scanSummaryRow(rows)
 		if scanErr != nil {
-			rows.Close()
+			_ = rows.Close()
 			return indexed, failed, scanErr
 		}
 		pending = append(pending, *sm)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		_ = rows.Close()
 		return indexed, failed, err
 	}
 	if err := rows.Close(); err != nil {
@@ -235,7 +235,7 @@ LIMIT ? OFFSET ?`
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []SearchHit
 	for rows.Next() {
 		var hit SearchHit

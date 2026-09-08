@@ -21,7 +21,7 @@ func TestDiscoverSeesWALOnlyDatabaseChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`
 PRAGMA journal_mode=WAL;
 PRAGMA wal_autocheckpoint=0;
@@ -164,7 +164,7 @@ func TestArchiveTogglesNativeTimestamp(t *testing.T) {
 		t.Fatal(err)
 	}
 	db, _ = sql.Open("sqlite", path)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if err := db.QueryRow(`SELECT time_archived FROM session WHERE id='s1'`).Scan(&archived); err != nil || archived.Valid {
 		t.Fatalf("unarchive timestamp=%v err=%v", archived, err)
 	}
@@ -185,7 +185,7 @@ func TestRenameUpdatesNativeSessionTitle(t *testing.T) {
 		t.Fatal(err)
 	}
 	db, _ = sql.Open("sqlite", path)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var title string
 	if err := db.QueryRow(`SELECT title FROM session WHERE id='s1'`).Scan(&title); err != nil || title != "new title" {
 		t.Fatalf("title=%q err=%v", title, err)

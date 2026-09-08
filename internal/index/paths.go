@@ -48,7 +48,7 @@ FROM sessions WHERE project_path <> '' GROUP BY project_path, provider`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	type agg struct {
 		sessions  int
 		providers map[string]struct{}
@@ -152,7 +152,7 @@ FROM session_sources WHERE project_path <> '' AND storage_path <> ''`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	byFolder := map[string]map[string]struct{}{}
 	for rows.Next() {
 		var project, storage string
@@ -355,12 +355,12 @@ func (s *Store) ReprojectSessions() error {
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		providers = append(providers, id)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
@@ -368,7 +368,7 @@ func (s *Store) ReprojectSessions() error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	for _, providerID := range providers {
 		if err := rebuildProviderSessions(tx, providerID); err != nil {
 			return err

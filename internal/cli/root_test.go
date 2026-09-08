@@ -134,7 +134,7 @@ func TestNewAppResolvesTheInterfaceLanguage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { app.Index.Close() })
+			t.Cleanup(func() { _ = app.Index.Close() })
 			if got := i18n.Current(); got != tc.want {
 				t.Fatalf("interface language = %q, want %q", got, tc.want)
 			}

@@ -17,7 +17,7 @@ func TestFullTextSearchAndSubagentDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	now := time.Now()
 	root := model.Summary{ID: "root", Provider: "codex", Title: "boring", Kind: model.SessionKindRoot,
 		UpdatedAt: now, StoragePath: "/root.jsonl", SourceMtime: 1}
@@ -66,7 +66,7 @@ func TestOpenPreservesExistingCustomParentPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if err := store.SetMeta("permission-test", "1"); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestOpenSecuresOwnedAndCreatedDirectories(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 		assertMode(t, dir, 0o700)
 	})
 
@@ -110,7 +110,7 @@ func TestOpenSecuresOwnedAndCreatedDirectories(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 		assertMode(t, dir, 0o700)
 	})
 }
@@ -131,7 +131,7 @@ func TestSearchRejectsConcurrentStaleCanonicalContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	old := model.Summary{
 		ID: "same", Provider: "cursor", Title: "plain", StoragePath: "/old.jsonl",
 		UpdatedAt: time.Unix(100, 0), MessageCount: 1, SourceMtime: 10, SourceSize: 20,
@@ -164,7 +164,7 @@ func TestSearchFiltersBeforePagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	indexBody := func(sm model.Summary) {
 		t.Helper()
 		if err := store.Upsert(sm); err != nil {
@@ -211,7 +211,7 @@ func TestSearchFiltersAcrossProjectWorktrees(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	now := time.Now()
 	for _, row := range []struct{ id, path string }{
 		{"main", "/repo/src"}, {"linked", "/tmp/repo-feature/pkg"}, {"similar", "/repo-old"},

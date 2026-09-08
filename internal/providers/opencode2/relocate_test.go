@@ -51,7 +51,7 @@ func stageFork(t *testing.T, path, forkID, directory string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`INSERT INTO session_v2
 		(id,project_id,parent_id,slug,directory,title,version,metadata,agent,model,time_created,time_updated)
 		VALUES (?,'project','ses_fixture','fork',?,'OpenCode 2 title','2.0',NULL,'build','{}',1000,2000)`,
@@ -70,7 +70,7 @@ func storeDirectory(t *testing.T, path, sessionID, directory string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`UPDATE session_v2 SET directory = ? WHERE id = ?`, directory, sessionID); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func readDirectory(t *testing.T, path, sessionID string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var directory string
 	if err := db.QueryRow(`SELECT directory FROM session_v2 WHERE id = ?`, sessionID).Scan(&directory); err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestRelocateRefusesAForkThatCarriedNothing(t *testing.T) {
 		VALUES ('ses_empty','project','ses_fixture','fork','/tmp/worktree','t','2.0',NULL,'build','{}',1,2)`); err != nil {
 		t.Fatal(err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	_, err = opencode2.New().RelocateSession(context.Background(),
 		provider.SessionRef{ID: "ses_fixture", ProjectPath: "/tmp/project"},

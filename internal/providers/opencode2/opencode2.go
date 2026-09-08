@@ -63,7 +63,7 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	st, err := os.Stat(p.dbPath)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []model.Summary
 	for rows.Next() {
 		var row sessionRow
@@ -146,7 +146,7 @@ func (p *Provider) firstUserTitle(db *sql.DB, sessionID string) string {
 	if err != nil {
 		return ""
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	picker := util.NewTitlePicker(80)
 	for rows.Next() {
 		var data string
@@ -176,7 +176,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var row sessionRow
 	row.id = ref.ID
 	err = db.QueryRowContext(ctx, `SELECT directory, COALESCE(title,''), COALESCE(parent_id,''), time_created, time_updated FROM session_v2 WHERE id = ?`, ref.ID).
@@ -193,14 +193,14 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var typ, data string
 		var created int64
 		if err := rows.Scan(&typ, &created, &data); err != nil {
 			return nil, err
 		}
-		role := model.RoleUser
+		var role model.Role
 		switch typ {
 		case "user":
 			role = model.RoleUser
@@ -284,13 +284,13 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 		return nil, err
 	}
 	path := tmp.Name()
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return nil, err
 	}
 	if _, err := tmp.Write(payload); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return nil, err
 	}
 	if err := tmp.Close(); err != nil {
@@ -427,7 +427,7 @@ func (p *Provider) storedTitle(sessionID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var title sql.NullString
 	err = db.QueryRow(`SELECT title FROM session_v2 WHERE id = ?`, sessionID).Scan(&title)
 	if err == sql.ErrNoRows {
@@ -591,7 +591,7 @@ func (p *Provider) storedDirectory(sessionID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var directory sql.NullString
 	err = db.QueryRow(`SELECT directory FROM session_v2 WHERE id = ?`, sessionID).Scan(&directory)
 	if err == sql.ErrNoRows {
@@ -610,7 +610,7 @@ func (p *Provider) verifyForkCarried(ctx context.Context, sessionID string) erro
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var count int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM session_message WHERE session_id = ? AND type IN ('user','assistant')`, sessionID).Scan(&count); err != nil {
 		return fmt.Errorf("opencode2 relocate: verify fork: %w", err)

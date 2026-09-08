@@ -219,7 +219,7 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()

@@ -308,7 +308,7 @@ func (p *Provider) summarizeStore(path, workspaceProject string) (model.Summary,
 	if err != nil {
 		return model.Summary{}, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	title := "(cursor session)"
 	created := st.ModTime()
 	updated, _, _ := provider.SQLiteSourceStamp(path, st)
@@ -316,7 +316,7 @@ func (p *Provider) summarizeStore(path, workspaceProject string) (model.Summary,
 	var migration *model.MigrationMeta
 	rows, err := db.Query(`SELECT key, value FROM meta`)
 	if err == nil {
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var k string
 			var v []byte
@@ -553,7 +553,7 @@ func (p *Provider) LoadPreview(ctx context.Context, ref provider.SessionRef, lim
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	conv := &model.Conversation{
 		ID: ref.ID, Provider: ProviderID, StoragePath: ref.StoragePath, ProjectPath: ref.ProjectPath,
 	}
@@ -765,7 +765,7 @@ func (p *Provider) loadStore(path, id string) (*model.Conversation, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	conv := &model.Conversation{ID: id, Provider: ProviderID, StoragePath: path}
 	rootID := ""
 	if metaRows, metaErr := db.Query(`SELECT key, value FROM meta`); metaErr == nil {
@@ -1322,7 +1322,7 @@ func writeCursorStore(path, sessionID, project string, conv *model.Conversation)
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 	db, err := sql.Open("sqlite", tmpPath+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return err

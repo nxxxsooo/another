@@ -41,7 +41,7 @@ func TestEngineVerifiesAndSnapshotsChangedSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if err := store.Upsert(model.Summary{
 		ID: written.SessionID, Provider: claude.ProviderID, ProjectPath: written.ProjectPath,
 		StoragePath: written.StoragePath, Kind: model.SessionKindRoot,

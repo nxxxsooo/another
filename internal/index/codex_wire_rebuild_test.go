@@ -35,7 +35,7 @@ func TestCodexWireRebuildRepairsRowsAnIncrementalScanWouldSkip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	reg := registry.New()
 	ctx := context.Background()
 	if _, err := Rebuild(ctx, reg, store, "codex"); err != nil {

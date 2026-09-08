@@ -27,7 +27,7 @@ func TestImportIntoAgyUsesVerifiedNativePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 	reg := registry.NewEnabled([]string{"agy"})
 	engine := &migrate.Engine{Registry: reg, Index: idx}
 	start := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)

@@ -354,7 +354,7 @@ func (s *Store) Upsert(summary model.Summary) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := upsertSource(tx, summary); err != nil {
 		return err
 	}
@@ -571,7 +571,7 @@ func (s *Store) List(opts ListOpts) ([]model.Summary, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []model.Summary
 	for rows.Next() {
 		var sm model.Summary
@@ -649,7 +649,7 @@ FROM sessions WHERE `+predicate+` ORDER BY updated_at DESC`, value)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var matches []model.Summary
 	for rows.Next() {
 		sm, err := s.scanSummaryRow(rows)
@@ -723,7 +723,7 @@ func (s *Store) ProjectPathsUnder(root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var paths []string
 	for rows.Next() {
 		var p string
@@ -747,7 +747,7 @@ func (s *Store) CountByProviderFiltered(opts ListOpts) (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make(map[string]int)
 	for rows.Next() {
 		var p string
@@ -775,7 +775,7 @@ func (s *Store) KeepProviders(enabled []string) error {
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		if !keep[id] {
@@ -789,7 +789,7 @@ func (s *Store) KeepProviders(enabled []string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	for _, id := range remove {
 		for _, query := range []string{
 			`DELETE FROM session_fts WHERE provider = ?`,
@@ -1210,7 +1210,7 @@ FROM sessions WHERE provider = ? AND message_count > 0 AND message_count <= ?`,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []model.Summary
 	for rows.Next() {
 		sm := model.Summary{Provider: providerID}
@@ -1249,7 +1249,7 @@ func (s *Store) PruneTitlerSessions() (int, error) {
 	for rows.Next() {
 		var providerID, path string
 		if err := rows.Scan(&providerID, &path); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, err
 		}
 		byProvider[providerID] = append(byProvider[providerID], path)
@@ -1273,7 +1273,7 @@ func (s *Store) dropProviderSources(providerID string, paths []string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := dropSources(tx, providerID, paths); err != nil {
 		return err
 	}
@@ -1304,7 +1304,7 @@ func (s *Store) reconcileProvider(providerID string, changed []model.Summary, se
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	for _, sm := range changed {
 		if err := upsertSource(tx, sm); err != nil {
 			return err
@@ -1321,7 +1321,7 @@ func (s *Store) reconcileProvider(providerID string, changed []model.Summary, se
 	for rows.Next() {
 		var path string
 		if err := rows.Scan(&path); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		if _, ok := seen[path]; !ok {

@@ -19,7 +19,7 @@ func main() {
 		fmt.Println("index open:", err)
 		os.Exit(1)
 	}
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 
 	indexCounts, _ := idx.CountByProvider()
 	fmt.Printf("%-14s %-10s %-10s %-8s %s\n", "provider", "discover", "indexed", "dup_ids", "status")

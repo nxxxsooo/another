@@ -1,0 +1,27 @@
+# golangci-lint v2 configuration. `make lint` runs it locally; CI runs the same
+# set. The standard group is errcheck, govet, ineffassign, staticcheck, and
+# unused. misspell runs without a locale on purpose: the codebase spells in
+# British English, and only genuine misspellings should fail the build.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - misspell
+  settings:
+    errcheck:
+      # Terminal and buffer writes. A failed Fprint to a TTY has no useful
+      # recovery, and every other unchecked error is handled at its site.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  # Show every finding; a capped list hides work behind a green-looking run.
+  max-issues-per-linter: 0
+  max-same-issues: 0

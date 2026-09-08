@@ -766,7 +766,7 @@ func TestDeleteRemovesPiSourceAndIndexRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 	if _, err := index.UpdateIncremental(context.Background(), reg, idx, "pi"); err != nil {
 		t.Fatal(err)
 	}
