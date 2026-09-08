@@ -583,6 +583,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		cwd = util.NormalizeProjectPath(cwd)
 	}
 	projectScope := util.DiscoverProjectScope(context.Background(), cwd)
+	resolveNestedRepos(idx, &projectScope)
 	initialOpts := index.ListOpts{IncludeSubagents: false}
 	applyProjectScope(&initialOpts, projectScope)
 	counts, _ := idx.CountByProviderFiltered(initialOpts)
@@ -844,6 +845,22 @@ func listOptsFor(m modelState) index.ListOpts {
 	return opts
 }
 
+// resolveNestedRepos fills in the repositories a non-Git scope must not absorb.
+// A Git scope already names its trees exactly, and a failed lookup leaves the
+// scope as it was: showing a folder's whole subtree is the previous behaviour,
+// not a reason to refuse to draw a list.
+func resolveNestedRepos(idx *index.Store, scope *util.ProjectScope) {
+	scope.Excluded = nil
+	if scope == nil || scope.Git || scope.CWD == "" || idx == nil {
+		return
+	}
+	paths, err := idx.ProjectPathsUnder(scope.CWD)
+	if err != nil {
+		return
+	}
+	scope.Excluded = util.NestedRepoRoots(scope.CWD, paths)
+}
+
 func applyProjectScope(opts *index.ListOpts, scope util.ProjectScope) {
 	if scope.Git && len(scope.Worktrees) > 0 {
 		opts.ProjectRoots = append([]string(nil), scope.Worktrees...)
@@ -853,8 +870,14 @@ func applyProjectScope(opts *index.ListOpts, scope util.ProjectScope) {
 	// exact match hid entire trees: opening another in ~/Documents/sync/Work/
 	// huatu showed nothing at all while 79 sessions sat in its subfolders,
 	// because agents record the directory they ran in, not its parent.
+	//
+	// Descendants that are their own repository are subtracted. Without that,
+	// a folder holding several checkouts reports all of them as one project:
+	// opening another in ~/Documents/sync claimed 476 sessions spanning a
+	// dozen unrelated repos.
 	if scope.CWD != "" {
 		opts.ProjectRoots = []string{scope.CWD}
+		opts.ExcludeRoots = append([]string(nil), scope.Excluded...)
 	}
 }
 
@@ -950,6 +973,9 @@ func refreshIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Sto
 		var project *util.ProjectScope
 		if scopeCWD != "" {
 			discovered := util.DiscoverProjectScope(ctx, scopeCWD)
+			// A refresh is where a checkout created since startup appears, so
+			// the nested set is recomputed rather than carried over.
+			resolveNestedRepos(idx, &discovered)
 			project = &discovered
 		}
 		return indexRefreshedMsg{counts: counts, project: project, err: err, updated: n, reloadPage: reloadPage}
