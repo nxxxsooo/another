@@ -45,6 +45,22 @@ func NewOrdered(preferred []string) *Registry {
 	return reg
 }
 
+// NewWith builds a registry from the given providers in the given order. It
+// exists for tests and audit tools that need the CLI, index, and migration
+// engine to run against providers they control instead of the ten real ones.
+func NewWith(providers ...provider.Provider) *Registry {
+	byID := make(map[string]provider.Provider, len(providers))
+	all := make([]provider.Provider, 0, len(providers))
+	for _, p := range providers {
+		if _, dup := byID[p.ID()]; dup {
+			continue
+		}
+		byID[p.ID()] = p
+		all = append(all, p)
+	}
+	return &Registry{byID: byID, all: all}
+}
+
 func newRegistry(allowed map[string]bool) *Registry {
 	available := []provider.Provider{
 		claude.New(),
