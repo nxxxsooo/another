@@ -682,3 +682,153 @@ func TestLoadPreview(t *testing.T) {
 		t.Fatalf("unexpected preview messages: %+v", preview.Messages)
 	}
 }
+
+// writeConversation lays down the transcript Antigravity writes for a
+// conversation, which is all a current build leaves behind: since the title
+// moved to annotations, no summary row is created for it at all.
+func writeConversation(t *testing.T, root, id, text string) string {
+	t.Helper()
+	logDir := filepath.Join(root, "brain", id, ".system_generated", "logs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line := `{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-09-08T09:00:00Z","content":"<USER_REQUEST>` + text + `</USER_REQUEST>"}` + "\n"
+	path := filepath.Join(logDir, "transcript_full.jsonl")
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func annotationTitle(t *testing.T, root, id string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, "annotations", id+".pbtxt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// TestRenameWithoutSummaryRow is the shape every conversation a current
+// Antigravity build creates has: a transcript, an annotation, and no row in
+// conversation_summaries. Renaming through the table alone reported the
+// conversation as missing.
+func TestRenameWithoutSummaryRow(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	const id = "00000000-0000-4000-8000-0000000000a1"
+	writeConversation(t, root, id, "hello there")
+	if err := os.MkdirAll(filepath.Join(root, "annotations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "annotations", id+".pbtxt"), []byte(`title:"native name"`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := agy.New()
+	if err := p.RenameSession(context.Background(), provider.SessionRef{ID: id}, "0908｜修复｜标题存储迁移"); err != nil {
+		t.Fatalf("RenameSession error = %v", err)
+	}
+	if got := annotationTitle(t, root, id); got != `title:"0908｜修复｜标题存储迁移"` {
+		t.Fatalf("annotation = %q, want the renamed title", got)
+	}
+
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sums) != 1 || sums[0].Title != "0908｜修复｜标题存储迁移" {
+		t.Fatalf("Discover = %+v, want the annotated title", sums)
+	}
+}
+
+// TestDiscoverPrefersAnnotationOverSummaryRow covers the conversations that
+// have both: the row was written by an older build and stops being updated,
+// so the annotation is the current name.
+func TestDiscoverPrefersAnnotationOverSummaryRow(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	const id = "00000000-0000-4000-8000-0000000000a2"
+	createSummariesDB(t, root, id, "stale row title", 3, "2026-09-06 15:10:32.000000+00:00")
+	writeConversation(t, root, id, "hello there")
+	if err := os.MkdirAll(filepath.Join(root, "annotations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "annotations", id+".pbtxt"), []byte(`title:"current name"`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sums, err := agy.New().Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sums) != 1 || sums[0].Title != "current name" {
+		t.Fatalf("Discover = %+v, want the annotated title", sums)
+	}
+}
+
+// TestRenameUpdatesBothTitleStores keeps a conversation an older build created
+// readable by that build: the row it reads is renamed alongside the annotation.
+func TestRenameUpdatesBothTitleStores(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	const id = "00000000-0000-4000-8000-0000000000a3"
+	createSummariesDB(t, root, id, "old", 3, "2026-09-06 15:10:32.000000+00:00")
+	writeConversation(t, root, id, "hello there")
+	if err := agy.New().RenameSession(context.Background(), provider.SessionRef{ID: id}, "new"); err != nil {
+		t.Fatalf("RenameSession error = %v", err)
+	}
+	if got := pTitle(t, root, id); got != "new" {
+		t.Fatalf("summary row title = %q, want %q", got, "new")
+	}
+	if got := annotationTitle(t, root, id); got != `title:"new"` {
+		t.Fatalf("annotation = %q, want the renamed title", got)
+	}
+}
+
+// TestRenameKeepsUnknownAnnotationFields protects fields another has never
+// seen: the annotation belongs to Antigravity, and a rename edits one value.
+func TestRenameKeepsUnknownAnnotationFields(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	const id = "00000000-0000-4000-8000-0000000000a4"
+	writeConversation(t, root, id, "hello there")
+	if err := os.MkdirAll(filepath.Join(root, "annotations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "pinned:true\ntitle:\"old\"\nlabels:{name:\"title\" value:\"not this one\"}"
+	if err := os.WriteFile(filepath.Join(root, "annotations", id+".pbtxt"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := agy.New().RenameSession(context.Background(), provider.SessionRef{ID: id}, `say "hi"\now`); err != nil {
+		t.Fatalf("RenameSession error = %v", err)
+	}
+	want := "pinned:true\ntitle:\"say \\\"hi\\\"\\\\now\"\nlabels:{name:\"title\" value:\"not this one\"}"
+	if got := annotationTitle(t, root, id); got != want {
+		t.Fatalf("annotation =\n%q\nwant\n%q", got, want)
+	}
+}
+
+// TestWriteAnnotatesMigratedConversation covers migration into Antigravity: a
+// current build takes the name from the annotation, so a conversation written
+// with only a summary row arrives unnamed.
+func TestWriteAnnotatesMigratedConversation(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	p := agy.New()
+	written, err := p.Write(context.Background(), &model.Conversation{
+		Provider: "pi", ProjectPath: root, Title: "0908｜研究｜迁移标题",
+		Messages: []model.Message{{Role: model.RoleUser, Content: "keep"}},
+	}, provider.WriteOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := annotationTitle(t, root, written.SessionID); got != `title:"0908｜研究｜迁移标题"` {
+		t.Fatalf("annotation = %q, want the migrated title", got)
+	}
+	if err := p.CleanupWrite(context.Background(), *written); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "annotations", written.SessionID+".pbtxt")); !os.IsNotExist(err) {
+		t.Fatalf("cleanup left its own annotation behind: %v", err)
+	}
+}
