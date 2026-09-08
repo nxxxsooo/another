@@ -15,6 +15,11 @@ type ProjectScope struct {
 	Root      string
 	Worktrees []string
 	Git       bool
+	// Excluded holds repository roots strictly below a non-Git CWD. They are
+	// their own projects, so the folder rule covers everything under CWD except
+	// these. It is empty for a Git scope, where Worktrees already say precisely
+	// which trees belong.
+	Excluded []string
 }
 
 // DiscoverProjectScope reads Git's registered worktree set without changing it.
