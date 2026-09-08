@@ -90,7 +90,7 @@ func (m modelState) startBatch() (tea.Model, tea.Cmd) {
 	m.batchGen++
 	m.err = ""
 	m.layout()
-	return m, batchPrepareCmd(m.ctx, m.batchGen, m.reg, summaries, missing)
+	return m, batchPrepareCmd(m.ctx, m.batchGen, m.reg, m.batchConfig(), summaries, missing)
 }
 
 // newBatchModelInput builds the per-batch model override field. It is created
@@ -136,7 +136,7 @@ func (m modelState) rerunBatch() (tea.Model, tea.Cmd) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return m, batchPrepareCmd(ctx, m.batchGen, m.reg, m.batchItems, m.batchMissing)
+	return m, batchPrepareCmd(ctx, m.batchGen, m.reg, m.batchConfig(), m.batchItems, m.batchMissing)
 }
 
 // markedSummaries resolves the batch selection in visible order. Marks are
@@ -178,7 +178,7 @@ func (m modelState) findSummary(id string) (*model.Summary, error) {
 // batchPrepareCmd loads the recent messages for every row and freezes the
 // rows that must never reach a model. Preview loads are local reads, so they
 // run up front; the slow model calls stream later through SuggestBatch.
-func batchPrepareCmd(ctx context.Context, gen uint64, reg *registry.Registry, summaries []model.Summary, seed []titler.BatchResult) tea.Cmd {
+func batchPrepareCmd(ctx context.Context, gen uint64, reg *registry.Registry, cfg titler.Config, summaries []model.Summary, seed []titler.BatchResult) tea.Cmd {
 	return func() tea.Msg {
 		frozen := append([]titler.BatchResult{}, seed...)
 		var items []titler.BatchItem
@@ -187,6 +187,16 @@ func batchPrepareCmd(ctx context.Context, gen uint64, reg *registry.Registry, su
 		}
 		fail := func(sm model.Summary, err error) {
 			frozen = append(frozen, titler.BatchResult{SessionID: sm.ID, Current: sm.Title, Err: err})
+		}
+		// Whether a title can be suggested at all is a property of the agent
+		// doing the suggesting, not of the agent each session came from. Asked
+		// once, a misconfigured agent says so on every row for the right
+		// reason, instead of every row failing separately inside the engine.
+		if !titler.Supports(cfg.Provider) {
+			for _, sm := range summaries {
+				freeze(sm, titler.FreezeSuggestUnsupported)
+			}
+			return batchReadyMsg{gen: gen, frozen: frozen}
 		}
 		for _, sm := range summaries {
 			switch {
@@ -209,10 +219,6 @@ func batchPrepareCmd(ctx context.Context, gen uint64, reg *registry.Registry, su
 				}
 				if _, ok := p.(provider.SessionRenamer); !ok {
 					freeze(sm, titler.FreezeRenameUnsupported)
-					continue
-				}
-				if !titler.Supports(sm.Provider) {
-					freeze(sm, titler.FreezeSuggestUnsupported)
 					continue
 				}
 				ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
@@ -437,7 +443,7 @@ func (m modelState) retryBatch(retry map[string]bool) (tea.Model, tea.Cmd) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return m, batchPrepareCmd(ctx, m.batchGen, m.reg, again, nil)
+	return m, batchPrepareCmd(ctx, m.batchGen, m.reg, m.batchConfig(), again, nil)
 }
 
 // updateBatchModelInput owns the keyboard while the per-batch model override

@@ -2656,8 +2656,6 @@ func (m modelState) selectedSessionCapabilities() sessionCapabilities {
 	return caps
 }
 
-// truncateLeft keeps the tail of a path. The leading directories repeat across
-// projects; the last segments are what identify one.
 func isCurrentSession(sm model.Summary) bool { return provider.IsCurrentSession(sm) }
 
 func truncateDisplay(s string, n int) string {
@@ -2668,6 +2666,8 @@ func truncateDisplay(s string, n int) string {
 	return ansi.Truncate(s, n, "…")
 }
 
+// truncateLeft keeps the tail of a path. The leading directories repeat across
+// projects; the last segments are what identify one.
 func truncateLeft(s string, n int) string {
 	if ansi.StringWidth(s) <= n {
 		return s
