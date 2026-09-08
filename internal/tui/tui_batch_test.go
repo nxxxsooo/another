@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nxxxsooo/another/internal/model"
@@ -28,7 +27,6 @@ func batchTestModel() modelState {
 	m.width, m.height = 100, 30
 	m.titleCfg = titler.Config{Provider: "pi"}
 	m.ctx = context.Background()
-	m.spinner = spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	m.layout()
 	return m
 }

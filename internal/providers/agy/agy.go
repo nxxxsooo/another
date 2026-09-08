@@ -68,6 +68,7 @@ func (p *Provider) DefaultPaths() []provider.PathSpec {
 	return []provider.PathSpec{
 		{Label: "conversations", Path: filepath.Join(p.root, "conversations"), Env: "AGY_HOME"},
 		{Label: "brain", Path: filepath.Join(p.root, "brain"), Env: "AGY_HOME"},
+		{Label: "annotations", Path: filepath.Join(p.root, annotationsDir), Env: "AGY_HOME"},
 		{Label: "summaries", Path: p.summariesDBPath(), Env: "AGY_HOME"},
 	}
 }
@@ -247,7 +248,13 @@ FROM conversation_summaries WHERE killed = 0 ORDER BY last_modified_time DESC`)
 			if err != nil {
 				continue
 			}
-			mtime, size := summaryFingerprint(st, id, title, preview, updatedRaw, urisRaw, parentID, fmt.Sprint(nativeSteps))
+			annotated, err := p.annotationTitle(id)
+			if err != nil {
+				rows.Close()
+				db.Close()
+				return nil, err
+			}
+			mtime, size := summaryFingerprint(st, id, title, annotated, preview, updatedRaw, urisRaw, parentID, fmt.Sprint(nativeSteps))
 			if opts.SkipSource != nil && opts.SkipSource(logPath, mtime, size) {
 				continue
 			}
@@ -263,7 +270,13 @@ FROM conversation_summaries WHERE killed = 0 ORDER BY last_modified_time DESC`)
 			if len(data.messages) == 0 {
 				continue
 			}
+			// The annotation outranks the row: current Antigravity builds keep
+			// the name there and leave a row written by an older build behind
+			// at whatever it last said.
 			title = strings.TrimSpace(title)
+			if annotated != "" {
+				title = annotated
+			}
 			if title == "" {
 				title = data.picker.Title()
 			}
@@ -336,13 +349,21 @@ FROM conversation_summaries WHERE killed = 0 ORDER BY last_modified_time DESC`)
 		if err != nil {
 			continue
 		}
-		if opts.SkipSource != nil && opts.SkipSource(logPath, st.ModTime().UnixNano(), st.Size()) {
+		// The annotation is part of the fingerprint, not just the title: a
+		// rename never touches the transcript, so a conversation named outside
+		// another would otherwise keep its old name until the file changed.
+		annotated, err := p.annotationTitle(entry.Name())
+		if err != nil {
+			return nil, err
+		}
+		mtime, size := summaryFingerprint(st, annotated)
+		if opts.SkipSource != nil && opts.SkipSource(logPath, mtime, size) {
 			continue
 		}
-		if opts.SkipSource == nil && opts.SkipUnchanged != nil && opts.SkipUnchanged(logPath, st.ModTime().Unix()) {
+		if opts.SkipSource == nil && opts.SkipUnchanged != nil && opts.SkipUnchanged(logPath, time.Unix(0, mtime).Unix()) {
 			continue
 		}
-		sm, err := p.summarizeTranscript(ctx, entry.Name(), logPath, st)
+		sm, err := p.summarizeTranscript(ctx, entry.Name(), logPath, st, annotated, mtime, size)
 		if err != nil {
 			return nil, err
 		}
@@ -361,7 +382,7 @@ FROM conversation_summaries WHERE killed = 0 ORDER BY last_modified_time DESC`)
 	return out, nil
 }
 
-func (p *Provider) summarizeTranscript(ctx context.Context, id, logPath string, st os.FileInfo) (model.Summary, error) {
+func (p *Provider) summarizeTranscript(ctx context.Context, id, logPath string, st os.FileInfo, annotated string, mtime, size int64) (model.Summary, error) {
 	data, err := scanTranscript(ctx, logPath, false)
 	if err != nil {
 		return model.Summary{}, err
@@ -373,11 +394,15 @@ func (p *Provider) summarizeTranscript(ctx context.Context, id, logPath string, 
 	if updated.IsZero() {
 		updated = st.ModTime()
 	}
+	title := annotated
+	if title == "" {
+		title = data.picker.TitleOr("(antigravity session)")
+	}
 	return model.Summary{
 		ID: id, Provider: ProviderID, ProjectPath: p.getProjectFromConvDB(id),
-		Title: data.picker.TitleOr("(antigravity session)"), CreatedAt: created, UpdatedAt: updated,
+		Title: title, CreatedAt: created, UpdatedAt: updated,
 		MessageCount: len(data.messages), StoragePath: logPath, Kind: model.SessionKindRoot,
-		SourceMtime: st.ModTime().UnixNano(), SourceSize: st.Size(), Migration: data.migration,
+		SourceMtime: mtime, SourceSize: size, Migration: data.migration,
 	}, nil
 }
 
@@ -633,6 +658,13 @@ INSERT INTO conversation_summaries (
 	if err := os.Chmod(p.summariesDBPath(), 0o600); err != nil {
 		return nil, err
 	}
+	// Current builds take the name from the annotation and never look at the
+	// row above, so a migrated conversation without one arrives unnamed.
+	if title != "" {
+		if err := p.writeAnnotationTitle(sessionID, title); err != nil {
+			return nil, err
+		}
+	}
 	succeeded = true
 	return result, nil
 }
@@ -678,11 +710,21 @@ func (p *Provider) cleanupArtifacts(ctx context.Context, result provider.WriteRe
 	}
 
 	var errs []error
+	// The row's title is read before the row goes, because it is what proves
+	// the annotation next to it is still the one this write left behind.
+	var rowTitle string
+	var haveRowTitle bool
 	if _, err := os.Stat(p.summariesDBPath()); err == nil {
 		db, openErr := p.openSummariesRW()
 		if openErr != nil {
 			errs = append(errs, openErr)
 		} else {
+			switch err := db.QueryRowContext(ctx, `SELECT title FROM conversation_summaries WHERE conversation_id = ?`, id).Scan(&rowTitle); {
+			case err == nil:
+				haveRowTitle = true
+			case !errors.Is(err, sql.ErrNoRows):
+				errs = append(errs, err)
+			}
 			if _, deleteErr := db.ExecContext(ctx, `DELETE FROM conversation_summaries WHERE conversation_id = ?`, id); deleteErr != nil {
 				errs = append(errs, deleteErr)
 			}
@@ -692,6 +734,11 @@ func (p *Provider) cleanupArtifacts(ctx context.Context, result provider.WriteRe
 		}
 	} else if !os.IsNotExist(err) {
 		errs = append(errs, err)
+	}
+	if haveRowTitle {
+		if err := p.removeOwnAnnotation(id, rowTitle); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	for _, target := range []string{
@@ -739,36 +786,97 @@ func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, t
 			retErr = errors.Join(retErr, fmt.Errorf("agy: release conversation lock: %w", err))
 		}
 	}()
-	db, err := p.openSummariesRW()
+	exists, err := p.conversationExists(ctx, ref)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	res, err := tx.ExecContext(ctx, `UPDATE conversation_summaries SET title = ? WHERE conversation_id = ?`, title, ref.ID)
-	if err != nil {
-		return err
-	}
-	if n, err := res.RowsAffected(); err != nil {
-		return err
-	} else if n == 0 {
+	if !exists {
 		return provider.ErrNotFound
 	}
-	var stored string
-	if err := tx.QueryRowContext(ctx, `SELECT title FROM conversation_summaries WHERE conversation_id = ?`, ref.ID).Scan(&stored); err != nil {
+	// The annotation is where current Antigravity builds read the name, so it
+	// decides whether the rename happened. The summary row is a second surface
+	// older builds read, and it only exists for conversations they created.
+	if err := p.writeAnnotationTitle(ref.ID, title); err != nil {
+		return err
+	}
+	stored, err := p.annotationTitle(ref.ID)
+	if err != nil {
 		return err
 	}
 	if stored != title {
 		return fmt.Errorf("agy: title readback mismatch")
 	}
-	return tx.Commit()
+	return p.renameSummaryRow(ctx, ref.ID, title)
+}
+
+// conversationExists reports whether the id names a conversation at all, which
+// is what separates a rename of something gone from a rename of a conversation
+// whose title has simply never been stored anywhere yet.
+func (p *Provider) conversationExists(ctx context.Context, ref provider.SessionRef) (bool, error) {
+	if _, err := p.transcriptPath(ref.ID, ref.StoragePath); err == nil {
+		return true, nil
+	} else if !errors.Is(err, provider.ErrNotFound) {
+		return false, err
+	}
+	if _, err := os.Stat(filepath.Join(p.root, "conversations", ref.ID+".db")); err == nil {
+		return true, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	if _, err := os.Stat(p.annotationPath(ref.ID)); err == nil {
+		return true, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	return p.hasSummaryRow(ctx, ref.ID)
+}
+
+func (p *Provider) hasSummaryRow(ctx context.Context, id string) (bool, error) {
+	if _, err := os.Stat(p.summariesDBPath()); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	db, err := sql.Open("sqlite", p.summariesDBPath()+"?mode=ro&_pragma=busy_timeout(5000)")
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM conversation_summaries WHERE conversation_id = ?`, id).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// renameSummaryRow updates the legacy table when it still holds this
+// conversation. A conversation created by a build that no longer writes the
+// table has no row, which is not a failure; a row that resists the update is
+// reported as a caveat, because the store Antigravity reads was already
+// renamed and redoing the rename would not help.
+func (p *Provider) renameSummaryRow(ctx context.Context, id, title string) error {
+	if _, err := os.Stat(p.summariesDBPath()); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("%w: %s still names the conversation as before: %s", provider.ErrPartial, filepath.Base(p.summariesDBPath()), err)
+	}
+	db, err := p.openSummariesRW()
+	if err != nil {
+		return fmt.Errorf("%w: %s still names the conversation as before: %s", provider.ErrPartial, filepath.Base(p.summariesDBPath()), err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, `UPDATE conversation_summaries SET title = ? WHERE conversation_id = ?`, title, id); err != nil {
+		return fmt.Errorf("%w: %s still names the conversation as before: %s", provider.ErrPartial, filepath.Base(p.summariesDBPath()), err)
+	}
+	return nil
 }
 
 func (p *Provider) getStoredTitle(id string) string {
+	if title, err := p.annotationTitle(id); err == nil && title != "" {
+		return title
+	}
 	db, err := sql.Open("sqlite", p.summariesDBPath()+"?mode=ro&_pragma=busy_timeout(1000)")
 	if err != nil {
 		return ""

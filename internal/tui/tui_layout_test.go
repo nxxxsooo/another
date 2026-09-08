@@ -49,7 +49,7 @@ func layoutTestModel() modelState {
 			sourceChip{id: "pi", name: "pi", count: 1},
 		}),
 		preview: viewport.New(1, 1), searchInput: textinput.New(), renameInput: textinput.New(),
-		relocateInput: textinput.New(), selected: &item,
+		relocateInput: textinput.New(), selected: &item, spinner: newWaitSpinner(),
 		previewContent: strings.Repeat("full preview content ", 100), status: "ready",
 	}
 }
