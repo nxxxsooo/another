@@ -155,11 +155,11 @@ OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令�
 | CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | — | ✓ |
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
 | Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | — | — | — |
-| Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | — |
+| Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | ✓ |
 
-`—` 表示这个 agent 没有经过验证的原生操作契约。重命名、归档、换目录和删除都直接修改对应 agent 的原生状态，不是 Another 私有标记；Another 只展示当前 agent 真正支持的操作，不会维护一份刷新后消失的私有状态。
+`—` 表示这个 agent 没有经过验证的原生操作契约。Antigravity 的归档就是这一格：它的存储里根本没有归档这个状态——标注文件只有标题一个字段，旧摘要表也没有对应的列——补上它只能靠 Another 自己记一份，所以这格留着。重命名、归档、换目录和删除都直接修改对应 agent 的原生状态，不是 Another 私有标记；Another 只展示当前 agent 真正支持的操作，不会维护一份刷新后消失的私有状态。
 
-删除能不能撤销，取决于会话归谁所有，确认框会在你按下之前说清楚是哪一种。Claude Code 和 Pi 的一个会话就是一个文件，Another 会先把这份字节留在手里，按 `u` 原样写回：session ID、路径、修改时间都不变，agent 恢复它就像从没删过。OpenCode 2 的删除由服务端执行，把对话通过 API 推回去只会得到一个新 ID 的新会话——那是复制不是撤销，所以这里没有撤销，弹窗也如实这么写。撤销机会只在当前列表内有效：Another 不留自己的回收站，按 `Esc` 即刻放弃，如果 agent 已经往同一路径写了新内容，也绝不覆盖。
+删除能不能撤销，取决于会话归谁所有，确认框会在你按下之前说清楚是哪一种。Claude Code 和 Pi 的一个会话就是一个文件，Another 会先把这份字节留在手里，按 `u` 原样写回：session ID、路径、修改时间都不变，agent 恢复它就像从没删过。OpenCode 2 的删除由服务端执行，把对话通过 API 推回去只会得到一个新 ID 的新会话——那是复制不是撤销，所以这里没有撤销，弹窗也如实这么写。Antigravity 的一个会话不是一个文件，而是一整个 brain 目录加一份轨迹数据库，动辄几十兆，Another 不会把这么多字节攥在内存里等你反悔，所以这里同样没有撤销。撤销机会只在当前列表内有效：Another 不留自己的回收站，按 `Esc` 即刻放弃，如果 agent 已经往同一路径写了新内容，也绝不覆盖。
 
 Codex 把会话名存了三处：CLI 的线程库、旧版 Desktop 的 `session_index.jsonl`，以及 Codex Desktop 侧边栏实际读的 Electron 状态。重命名三处全写。Desktop 运行时会整份重写自己的状态，写在它下面不是丢改动就是丢它没落盘的东西，所以这种情况不硬写：CLI 侧已经改名，界面会明说侧边栏要等 Desktop 重启才更新，而不是把这次重命名报成失败。
 
