@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
@@ -67,10 +68,9 @@ func FindDuplicateE(idx DedupIndex, dst provider.Provider, conv *model.Conversat
 	if conv.ID == "" || conv.Provider == "" {
 		return nil, false, nil
 	}
-	digest := model.NewMigrationMeta(conv).OriginDigest
+	digests := candidateDigests(conv)
 	if idx != nil {
-		digests := []string{digest}
-		if legacy := model.LegacyOriginDigest(conv); legacy != digest {
+		if legacy := model.LegacyOriginDigest(conv); !slices.Contains(digests, legacy) {
 			digests = append(digests, legacy)
 		}
 		for _, candidate := range digests {
@@ -100,6 +100,11 @@ func FindDuplicateE(idx DedupIndex, dst provider.Provider, conv *model.Conversat
 					StoragePath:   path,
 					AlreadyExists: true,
 				}
+				for _, candidate := range digests {
+					if migrationTargetMatches(dst, *result, conv, candidate, false) {
+						return result, true, nil
+					}
+				}
 				if migrationTargetMatches(dst, *result, conv, "", true) {
 					return result, true, nil
 				}
@@ -107,6 +112,23 @@ func FindDuplicateE(idx DedupIndex, dst provider.Provider, conv *model.Conversat
 		}
 	}
 	return nil, false, nil
+}
+
+// candidateDigests lists the dedup keys a target for conv may be recorded
+// under. A caller that has chosen a context mode set WriteMigration and gets
+// exactly that key. A caller asking whether any migration exists, such as
+// `another resume`, gets the plain snapshot digest plus every context-mode
+// variant, because migrations record the context-mode digest and would
+// otherwise be invisible to a lookup that never chose a mode.
+func candidateDigests(conv *model.Conversation) []string {
+	if conv.WriteMigration != nil {
+		return []string{conv.WriteMigration.OriginDigest}
+	}
+	out := []string{model.SnapshotDigest(conv)}
+	for _, mode := range []ContextMode{ContextAuto, ContextFull, ContextRecent} {
+		out = append(out, model.MigrationContextDigest(conv, string(mode)))
+	}
+	return out
 }
 
 // migrationTargetMatches validates the exact target and its embedded origin
