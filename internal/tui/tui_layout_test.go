@@ -219,10 +219,10 @@ func TestHelpShowsOnlySelectedAgentCapabilities(t *testing.T) {
 
 	it.summary.Provider = "qwen"
 	m.sessions.SetItems([]list.Item{it})
-	if help := m.help(); strings.Contains(help, txt.helpListArchive) || strings.Contains(help, txt.helpListDelete) {
-		t.Fatalf("Qwen Code help advertises unsupported actions: %q", help)
-	} else if !strings.Contains(help, txt.helpListRename) {
-		t.Fatalf("Qwen Code help hides supported rename: %q", help)
+	if help := m.help(); strings.Contains(help, txt.helpListRelocate) {
+		t.Fatalf("Qwen Code help advertises a relocate it has no native move for: %q", help)
+	} else if !strings.Contains(help, txt.helpListRename) || !strings.Contains(help, txt.helpListArchive) || !strings.Contains(help, txt.helpListDelete) {
+		t.Fatalf("Qwen Code help hides supported rename, archive and delete: %q", help)
 	}
 }
 
