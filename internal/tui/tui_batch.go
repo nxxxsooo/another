@@ -302,6 +302,10 @@ func (m *modelState) finalizeBatch() {
 // resetBatch drops the flow but keeps the marks, so a cancelled or finished
 // batch can be retried without re-marking.
 func (m *modelState) resetBatch() {
+	// Closing is also how a run that has not stopped yet is left behind, so the
+	// generation moves with it: results still in flight belong to a batch that
+	// no longer exists and must not repopulate a closed overlay.
+	m.batchGen++
 	m.batchItems = nil
 	m.batchByID = nil
 	m.batchMissing = nil
@@ -338,7 +342,9 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "esc":
-		if m.batchRunning {
+		// The first esc asks the run to stop and stays, so the rows that already
+		// have a suggestion are still on screen when it winds down.
+		if m.batchRunning && !m.batchCancelling {
 			if m.batchCancel != nil {
 				m.batchCancel()
 				m.batchCancel = nil
@@ -346,6 +352,14 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.batchCancelling = true
 			m.status = txt.batchCancelling
 			return m, nil
+		}
+		// A second esc leaves regardless. Waiting for the engine to close its
+		// channel means waiting on an agent CLI, and one that ignores its
+		// cancelled context would otherwise hold the overlay open with no way
+		// out but quitting another entirely.
+		if m.batchCancel != nil {
+			m.batchCancel()
+			m.batchCancel = nil
 		}
 		m.overlay = overlayNone
 		m.resetBatch()
