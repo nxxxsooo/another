@@ -607,11 +607,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	relocate.Prompt = ""
 	relocate.Placeholder = txt.relocatePlaceholder
 	relocate.CharLimit = 1024
-	sp := spinner.New()
-	// OpenCode 2's compact braille spinner stays one cell wide, so the
-	// progress counter and modal never shift between animation frames.
-	sp.Spinner = spinner.MiniDot
-	sp.Style = accentStyle
+	sp := newWaitSpinner()
 
 	// Settings are read here rather than threaded through every caller: the
 	// suggestion agent is a TUI-only concern and an unreadable config simply
@@ -1538,6 +1534,13 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 	}
+	// The rename box animates and blinks at the same time. A tick belongs to
+	// the suggestion spinner; everything else still reaches the text input, so
+	// the cursor keeps blinking while the agent is being asked.
+	if _, ok := msg.(spinner.TickMsg); ok && m.suggesting {
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	}
 	switch m.overlay {
 	case overlaySource:
 		m.sourceList, cmd = m.sourceList.Update(msg)
@@ -2008,7 +2011,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.titleCfg.Enabled() {
 				m.suggesting = true
 				m.suggestFor = it.summary.ID
-				return m, tea.Batch(textinput.Blink,
+				return m, tea.Batch(textinput.Blink, m.spinner.Tick,
 					suggestTitleCmd(m.ctx, m.reg, m.titleCfg, it.summary))
 			}
 			return m, textinput.Blink
@@ -2328,6 +2331,17 @@ func cutRight(line string, from, to int) string {
 	return strings.Repeat(" ", max(0, cells-ansi.StringWidth(s))) + s
 }
 
+// newWaitSpinner builds the one animation another waits with, so every wait
+// looks the same wherever it is drawn. OpenCode 2's compact braille spinner
+// stays one cell wide, so the progress counter and modal never shift between
+// animation frames.
+func newWaitSpinner() spinner.Model {
+	sp := spinner.New()
+	sp.Spinner = spinner.MiniDot
+	sp.Style = accentStyle
+	return sp
+}
+
 // clearSuggestion drops suggestion state so a stale proposal cannot reappear
 // over the next rename.
 func (m *modelState) clearSuggestion() {
@@ -2344,7 +2358,9 @@ func (m modelState) suggestionLine() string {
 	var line string
 	switch {
 	case m.suggesting:
-		line = mutedStyle.Render(txt.suggestionLoading)
+		// The same spinner the batch draws: one session or fifty, waiting on
+		// an agent looks the same, and a still line reads as a hang.
+		line = m.spinner.View() + " " + mutedStyle.Render(txt.suggestionLoading)
 	case m.suggestion != "":
 		line = okStyle.Render(txt.suggestionPrefix) + m.suggestion + mutedStyle.Render(txt.suggestionAccept)
 	case m.suggestErr != "":
