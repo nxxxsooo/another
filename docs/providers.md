@@ -17,6 +17,7 @@ It depends on who owns the session, and the confirmation says which case you are
 - **Claude Code and Pi.** The session is one file, so `another` holds those exact bytes and `u` writes them back: same session ID, same path, same modification time, and the agent resumes it as if it had never gone.
 - **OpenCode 2.** The server owns the deletion. Pushing the conversation back through its API would create a new session with a new ID, which is a copy rather than an undo, so there is none and the modal says so.
 - **Antigravity.** A session is not one file but a whole brain directory beside a trajectory database, often tens of megabytes, and `another` will not hold that many bytes in memory waiting for second thoughts, so there is no undo there either.
+- **Qwen Code.** A session is a transcript plus the sidecars that belong to it and the backups of every file it edited, so the same reasoning applies and the delete is final.
 
 The offer lasts only as long as the list. `another` keeps no trash directory of its own, `Esc` gives it up on the spot, and a path the agent has since written to again is never overwritten.
 
@@ -27,6 +28,14 @@ The offer lasts only as long as the list. `another` keeps no trash directory of 
 **Subagent threads.** The forks Codex Desktop spawns from a parent thread record their answers only as `event_msg`, never as the mirrored `response_item`, and their only user-role record is injected plugin transport. Those sessions open and migrate like any other. Having no prompt of their own, they are named after the subagent identity Codex recorded, such as `api_definitions · Wegener the 9th`.
 
 **Message counts.** Codex writes each turn to a rollout up to twice, and the message count in the list used to count both halves. That number now matches what the session actually opens with, so a Codex session's count can drop after this upgrade. The index re-summarizes Codex once on the first run after the update; nothing has to be rebuilt by hand.
+
+## Qwen Code
+
+**Archive is a move.** Qwen Code has no archived flag in a transcript; it keeps archived sessions in an `archive` directory inside the project's own `chats` directory, and its session list reads the two directories as the two states. `another` archives by making that move, sidecars included, so an archived session leaves both lists together and unarchiving brings back the same file rather than a copy.
+
+**Delete clears the whole session.** The transcript in whichever state holds it, the worktree, pull request and prompt-ledger sidecars, the runtime sidecar `qwen sessions ps` reads, the file backups the session's own edits produced, and its entry in the project's pin-and-group store — the same set Qwen Code's own delete removes.
+
+**A running session is refused.** Qwen Code marks a live session with a runtime sidecar beside the transcript and refuses to archive one; `another` reads the same sidecar and refuses both archive and delete, because moving the file out from under a process that is appending to it loses the turn in flight. A sidecar written on another machine counts as live, since a pid here says nothing about a process there.
 
 ## Child sessions
 

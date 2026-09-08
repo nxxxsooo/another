@@ -4,11 +4,13 @@ package qwen
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +21,27 @@ import (
 )
 
 const ProviderID = "qwen"
+
+const (
+	// archiveDirName is where Qwen Code parks an archived session: a directory
+	// inside the project's own chats directory, not a flag on the transcript.
+	archiveDirName = "archive"
+	// fileHistoryDirName holds the per-session backups Qwen Code takes before
+	// it edits a file, keyed by session id under the global Qwen home.
+	fileHistoryDirName = "file-history"
+	// organizationStoreName is the per-project store that pins a session and
+	// puts it in a group. Qwen Code clears a deleted session's entry from it.
+	organizationStoreName = "session-organization.v1.json"
+	// runtimeSuffix names the sidecar a live Qwen Code process writes beside
+	// the transcript it is appending to.
+	runtimeSuffix = ".runtime.json"
+)
+
+// sessionSidecars travel with the transcript. Qwen Code moves all three when it
+// archives a session and removes all three when it deletes one: the git
+// worktree the session runs in, the pull request it is reviewing, and the
+// append-only ledger of its prompt terminal.
+var sessionSidecars = []string{".worktree.json", ".pr.json", ".ledger.jsonl"}
 
 type Provider struct {
 	root string
@@ -485,12 +508,288 @@ func (p *Provider) CleanupWrite(_ context.Context, result provider.WriteResult) 
 	if path == "" {
 		path = filepath.Join(p.projectsRoot(), sanitizeProject(result.ProjectPath), "chats", result.SessionID+".jsonl")
 	}
-	rel, err := filepath.Rel(p.projectsRoot(), path)
-	if err != nil || rel == "." || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || !isSessionPath(path) || filepath.Base(path) != result.SessionID+".jsonl" {
+	if !p.insideStore(path) || !isSessionPath(path) || filepath.Base(path) != result.SessionID+".jsonl" {
 		return fmt.Errorf("qwen: refusing cleanup outside session store: %s", path)
 	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
+}
+
+// insideStore reports whether a path belongs to this provider's session store.
+// Every lifecycle operation builds its paths from an id, so this is the fence
+// that keeps a crafted ref from steering a move or a removal out of ~/.qwen.
+func (p *Provider) insideStore(path string) bool {
+	rel, err := filepath.Rel(p.projectsRoot(), path)
+	return err == nil && rel != "." && rel != ".." &&
+		!filepath.IsAbs(rel) && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// validSessionID mirrors Qwen Code's own session file pattern. Qwen Code
+// ignores a transcript whose name does not match it, and another refuses to
+// build a path from one: an id is user-supplied, and it becomes a file name.
+func validSessionID(id string) bool {
+	if len(id) < 32 || len(id) > 36 {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// location is one session's place in the store: the project's chats directory
+// and which of Qwen Code's two states currently holds the transcript.
+type location struct {
+	chats    string
+	archived bool
+}
+
+func (l location) dir(archived bool) string {
+	if archived {
+		return filepath.Join(l.chats, archiveDirName)
+	}
+	return l.chats
+}
+
+func (l location) transcript(id string, archived bool) string {
+	return filepath.Join(l.dir(archived), id+".jsonl")
+}
+
+// chatsRoot maps a transcript in either state back to the project's active
+// chats directory, and reports whether the path is shaped like a session at all.
+func chatsRoot(path string) (string, bool) {
+	if path == "" {
+		return "", false
+	}
+	dir := filepath.Dir(path)
+	if filepath.Base(dir) == archiveDirName {
+		dir = filepath.Dir(dir)
+	}
+	if filepath.Base(dir) != "chats" {
+		return "", false
+	}
+	return dir, true
+}
+
+// locate finds a session in either archive state. The ref carries the path the
+// session had when it was indexed, so a session archived since then — by Qwen
+// Code itself or by the archive below — is still found where it now lives.
+func (p *Provider) locate(ref provider.SessionRef) (location, error) {
+	if !validSessionID(ref.ID) {
+		return location{}, fmt.Errorf("qwen: %q is not a session id", ref.ID)
+	}
+	var candidates []string
+	if dir, ok := chatsRoot(ref.StoragePath); ok {
+		candidates = append(candidates, dir)
+	}
+	if ref.ProjectPath != "" {
+		candidates = append(candidates, filepath.Join(p.projectsRoot(), sanitizeProject(ref.ProjectPath), "chats"))
+	}
+	for _, chats := range candidates {
+		if !p.insideStore(chats) {
+			continue
+		}
+		if loc, ok := stateOf(chats, ref.ID); ok {
+			return loc, nil
+		}
+	}
+	var found location
+	ok := false
+	_ = filepath.WalkDir(p.projectsRoot(), func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || filepath.Base(path) != ref.ID+".jsonl" {
+			return nil
+		}
+		chats, valid := chatsRoot(path)
+		if !valid {
+			return nil
+		}
+		found = location{chats: chats, archived: filepath.Base(filepath.Dir(path)) == archiveDirName}
+		ok = true
+		return filepath.SkipAll
+	})
+	if !ok {
+		return location{}, provider.ErrNotFound
+	}
+	return found, nil
+}
+
+func stateOf(chats, id string) (location, bool) {
+	loc := location{chats: chats}
+	for _, archived := range []bool{false, true} {
+		if _, err := os.Stat(loc.transcript(id, archived)); err == nil {
+			loc.archived = archived
+			return loc, true
+		}
+	}
+	return location{}, false
+}
+
+// running reports whether a live Qwen Code process owns the session, read from
+// the same evidence `qwen sessions ps` uses: the runtime sidecar beside the
+// transcript, believed only when it names this session, and checked against the
+// pid when this host wrote it. A sidecar from another machine is taken at its
+// word, because a dead pid here says nothing about a process there.
+func running(chats, id string) bool {
+	data, err := os.ReadFile(filepath.Join(chats, id+runtimeSuffix))
+	if err != nil {
+		return false
+	}
+	var status struct {
+		PID       int    `json:"pid"`
+		SessionID string `json:"session_id"`
+		Hostname  string `json:"hostname"`
+	}
+	if json.Unmarshal(data, &status) != nil || status.SessionID != id || status.PID <= 0 {
+		return false
+	}
+	if host, err := os.Hostname(); err != nil || status.Hostname != host {
+		return true
+	}
+	proc, err := os.FindProcess(status.PID)
+	if err != nil {
+		return false
+	}
+	// Signal 0 asks whether the process exists. Not being allowed to signal it
+	// is an answer too: Qwen Code is running, it just is not ours to touch.
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+func refuseRunning(loc location, id string) error {
+	if running(loc.chats, id) {
+		return fmt.Errorf("qwen: session %s is open in a running Qwen Code", id)
+	}
+	return nil
+}
+
+// ArchiveSession moves the session between Qwen Code's two chat directories.
+// That move is the whole of Qwen Code's archive: there is no archived flag in
+// the transcript, and its own session list reads `chats/` and `chats/archive/`
+// as the two states. So an archived session leaves another's list exactly as it
+// leaves Qwen Code's, and unarchiving brings back the same file, not a copy.
+func (p *Provider) ArchiveSession(_ context.Context, ref provider.SessionRef, archived bool) error {
+	loc, err := p.locate(ref)
+	if err != nil {
+		return err
+	}
+	if loc.archived == archived {
+		return nil
+	}
+	if err := refuseRunning(loc, ref.ID); err != nil {
+		return err
+	}
+	target := loc.dir(archived)
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		return err
+	}
+	if err := os.Rename(loc.transcript(ref.ID, loc.archived), loc.transcript(ref.ID, archived)); err != nil {
+		return err
+	}
+	// The sidecars follow the transcript. Qwen Code warns rather than fails
+	// when one cannot follow, and the same holds here: the archive already
+	// happened, so reporting a failure would send the person to redo a move
+	// that is done.
+	for _, suffix := range sessionSidecars {
+		moveIfAbsent(filepath.Join(loc.dir(loc.archived), ref.ID+suffix), filepath.Join(target, ref.ID+suffix))
+	}
+	return nil
+}
+
+// moveIfAbsent carries a sidecar across states without ever overwriting one.
+// A file already waiting at the destination is the leftover of an interrupted
+// move, and it is the newer state of the two; clobbering it would lose it.
+func moveIfAbsent(source, target string) {
+	if _, err := os.Stat(source); err != nil {
+		return
+	}
+	if _, err := os.Stat(target); err == nil {
+		return
+	}
+	_ = os.Rename(source, target)
+}
+
+// DeleteSession removes everything Qwen Code keys to one session: the
+// transcript in whichever state holds it, the sidecars in both, the file
+// backups the session's own edits produced, and its entry in the project's
+// pin-and-group store. That is the same set Qwen Code's own delete removes, so
+// nothing is left behind pointing at a session that no longer exists.
+//
+// There is no undo. A Qwen Code session is not one file, and another will not
+// hold a session's file-history backups in memory waiting for second thoughts,
+// so the delete is exactly as final as the confirmation says it is.
+func (p *Provider) DeleteSession(_ context.Context, ref provider.SessionRef) error {
+	loc, err := p.locate(ref)
+	if err != nil {
+		return err
+	}
+	if err := refuseRunning(loc, ref.ID); err != nil {
+		return err
+	}
+	// The transcript goes first: while it is there the session is still listed,
+	// and a failure that stopped halfway would otherwise leave a session in the
+	// list whose sidecars had already been taken from under it.
+	errs := []error{remove(loc.transcript(ref.ID, loc.archived))}
+	// The runtime sidecar is stale by definition here — a live one refuses the
+	// delete above — and left behind it would keep naming a session nothing
+	// else can open.
+	suffixes := append(append([]string{}, sessionSidecars...), runtimeSuffix)
+	for _, archived := range []bool{false, true} {
+		for _, suffix := range suffixes {
+			errs = append(errs, remove(filepath.Join(loc.dir(archived), ref.ID+suffix)))
+		}
+	}
+	errs = append(errs, os.RemoveAll(filepath.Join(p.root, fileHistoryDirName, ref.ID)))
+	errs = append(errs, removeOrganizationEntry(filepath.Dir(loc.chats), ref.ID))
+	return errors.Join(errs...)
+}
+
+func remove(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// removeOrganizationEntry drops the session from the project's pin-and-group
+// store, which Qwen Code clears as part of its own delete. Only the one entry
+// is touched: the rest of the file, including keys another does not know, is
+// written back as it was found, and a store another cannot read is left alone
+// rather than rebuilt into something Qwen Code would then have to recover from.
+func removeOrganizationEntry(projectDir, id string) error {
+	path := filepath.Join(projectDir, organizationStoreName)
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var store map[string]json.RawMessage
+	if json.Unmarshal(data, &store) != nil {
+		return nil
+	}
+	var sessions map[string]json.RawMessage
+	if json.Unmarshal(store["sessions"], &sessions) != nil {
+		return nil
+	}
+	if _, ok := sessions[id]; !ok {
+		return nil
+	}
+	delete(sessions, id)
+	encoded, err := json.Marshal(sessions)
+	if err != nil {
+		return err
+	}
+	store["sessions"] = encoded
+	out, err := json.Marshal(store)
+	if err != nil {
+		return err
+	}
+	return util.WriteFileAtomic(path, out, 0o600)
 }
