@@ -55,7 +55,7 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	hasParent := sqliteColumnExists(db, "session", "parent_id")
 	parentExpr := "NULL"
 	if hasParent {
@@ -69,7 +69,7 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	st, statErr := os.Stat(p.dbPath)
 	if statErr != nil {
 		return nil, statErr
@@ -130,7 +130,7 @@ func sqliteColumnExists(db *sql.DB, table, column string) bool {
 	if err != nil {
 		return false
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var cid int
 		var name, typ string
@@ -177,7 +177,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	id := ref.ID
 	var dir, title sql.NullString
 	var created, updated int64
@@ -204,7 +204,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var msgID, data string
 		var ts int64
@@ -246,7 +246,7 @@ func (p *Provider) opencodeUserLines(db *sql.DB, sessionID string) []string {
 	if err != nil {
 		return nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var lines []string
 	for rows.Next() {
 		var msgID, data string
@@ -269,7 +269,7 @@ func (p *Provider) messageText(db *sql.DB, messageID string) string {
 	if err != nil {
 		return ""
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var parts []string
 	for rows.Next() {
 		var data string
@@ -322,13 +322,13 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 		return nil, err
 	}
 	path := tmp.Name()
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return nil, err
 	}
 	if _, err := tmp.Write(payload); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return nil, err
 	}
 	if err := tmp.Close(); err != nil {
@@ -473,7 +473,7 @@ func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, t
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	result, err := db.ExecContext(ctx, `UPDATE session SET title = ?, time_updated = ? WHERE id = ?`, title, time.Now().UnixMilli(), ref.ID)
 	if err != nil {
 		return err
@@ -489,7 +489,7 @@ func (p *Provider) ArchiveSession(ctx context.Context, ref provider.SessionRef, 
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var value any
 	if archived {
 		value = time.Now().UnixMilli()

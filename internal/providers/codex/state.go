@@ -65,7 +65,7 @@ func (p *Provider) codexDefaults() (cliVersion, modelProvider string) {
 	if err != nil {
 		return cliVersion, modelProvider
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var mp string
 	if err := db.QueryRow(`SELECT model_provider FROM threads ORDER BY updated_at DESC LIMIT 1`).Scan(&mp); err == nil && mp != "" {
 		modelProvider = mp
@@ -131,7 +131,7 @@ func rolloutNeedsV2Rewrite(path string) bool {
 	if err != nil {
 		return true
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	const maxSessionMetaLine = 64 * 1024
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 4096), maxSessionMetaLine)
@@ -172,7 +172,7 @@ func (p *Provider) registerThread(sessionID, rolloutPath, project, title, firstU
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	cliVersion, modelProvider := p.codexDefaults()
 	unix := now.Unix()
@@ -217,7 +217,7 @@ func (p *Provider) renameThread(sessionID, title string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	now := time.Now().UTC()
 	_, err = db.Exec(`UPDATE threads SET title = ?, preview = ?, updated_at = ?, updated_at_ms = ?, recency_at = ?, recency_at_ms = ? WHERE id = ?`,
 		title, truncateRunes(title, 120), now.Unix(), now.UnixMilli(), now.Unix(), now.UnixMilli(), sessionID)
@@ -233,7 +233,7 @@ func (p *Provider) deleteThread(sessionID string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	_, err = db.Exec(`DELETE FROM threads WHERE id = ?`, sessionID)
 	return err
 }

@@ -17,7 +17,7 @@ func TestOrphanedChildIsListedAndReturnsToChildWhenParentAppears(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	now := time.Now()
 	base := model.Summary{
 		Provider: "codex", ProjectPath: "/demo", UpdatedAt: now, MessageCount: 3,

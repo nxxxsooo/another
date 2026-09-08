@@ -23,7 +23,7 @@ func fixtureDB(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	for _, q := range []string{
 		`CREATE TABLE session_v2 (
 			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, parent_id TEXT, slug TEXT NOT NULL,
@@ -136,7 +136,7 @@ func storeTitle(t *testing.T, path, title string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`UPDATE session_v2 SET title = ? WHERE id = 'ses_fixture'`, title); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func dropFixtureSession(t *testing.T, path string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`DELETE FROM session_v2 WHERE id = 'ses_fixture'`); err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestDeleteRestoresAMissingDirectoryAndWithdrawsItAgain(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		_, _ = db.Exec(`DELETE FROM session_v2 WHERE id = 'ses_fixture'`)
 	}()
 
@@ -319,7 +319,7 @@ func TestDeleteLeavesDirectoriesItDidNotCreate(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		_, _ = db.Exec(`DELETE FROM session_v2 WHERE id = 'ses_fixture'`)
 	}()
 

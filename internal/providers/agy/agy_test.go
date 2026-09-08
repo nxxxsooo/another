@@ -64,7 +64,7 @@ func TestDiscoverFromSummariesDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	schema := `
 	CREATE TABLE conversation_summaries (
@@ -135,7 +135,7 @@ func createSummariesDB(t *testing.T, root, id, title string, steps int, modified
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`
 	CREATE TABLE conversation_summaries (
 		conversation_id text PRIMARY KEY, title text NOT NULL DEFAULT '', preview text NOT NULL DEFAULT '',
@@ -377,7 +377,7 @@ func TestDiscoverRefreshesWhenNativeSummaryChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`UPDATE conversation_summaries SET title='new title', last_modified_time='2026-09-04 11:00:00.000000+00:00' WHERE conversation_id=?`, convID); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -480,7 +480,7 @@ func pTitle(t *testing.T, root, id string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var title string
 	if err := db.QueryRow(`SELECT title FROM conversation_summaries WHERE conversation_id=?`, id).Scan(&title); err != nil {
 		t.Fatal(err)
@@ -513,7 +513,7 @@ func TestCleanupRejectsSymlinkBeforeChangingSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM conversation_summaries WHERE conversation_id=?`, written.SessionID).Scan(&count); err != nil {
 		t.Fatal(err)
@@ -590,7 +590,7 @@ func TestWriteUsesPortableWindowsFileURI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var raw string
 	if err := db.QueryRow(`SELECT workspace_uris FROM conversation_summaries WHERE conversation_id=?`, written.SessionID).Scan(&raw); err != nil {
 		t.Fatal(err)
@@ -613,7 +613,7 @@ func TestWriteUsesPortableUNCFileURI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var raw string
 	if err := db.QueryRow(`SELECT workspace_uris FROM conversation_summaries WHERE conversation_id=?`, written.SessionID).Scan(&raw); err != nil {
 		t.Fatal(err)
@@ -982,7 +982,7 @@ func summaryRowGone(t *testing.T, root, id string) error {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM conversation_summaries WHERE conversation_id=?`, id).Scan(&count); err != nil {
 		t.Fatal(err)

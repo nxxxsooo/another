@@ -578,7 +578,7 @@ func (a *App) exportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			enc := json.NewEncoder(f)
 			enc.SetIndent("", "  ")
 			return enc.Encode(conv)
@@ -695,6 +695,6 @@ func stdinIsTerminal() bool {
 func confirmAction(prompt string) bool {
 	fmt.Print(prompt)
 	var answer string
-	fmt.Scanln(&answer)
+	_, _ = fmt.Scanln(&answer)
 	return strings.ToLower(strings.TrimSpace(answer)) == "y"
 }

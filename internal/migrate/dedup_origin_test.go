@@ -21,7 +21,7 @@ func TestFindDuplicateByOriginWhenDigestChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	t.Setenv("CODEX_HOME", dir)
 	p := codex.New()
 	origin := &model.Conversation{
@@ -54,7 +54,7 @@ func TestLegacyOriginFallbackRequiresMatchingMessageCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	t.Setenv("CODEX_HOME", dir)
 	p := codex.New()
 	origin := &model.Conversation{ID: "legacy-src", Provider: "hermes", Messages: []model.Message{{Role: model.RoleUser, Content: "old"}}}
@@ -95,7 +95,7 @@ func TestFindDuplicateDistinguishesContextMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	t.Setenv("CODEX_HOME", dir)
 	p := codex.New()
 	origin := &model.Conversation{ID: "mode-source", Provider: "cursor", Messages: []model.Message{{Role: model.RoleUser, Content: "hello"}}}

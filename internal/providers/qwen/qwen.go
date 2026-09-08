@@ -473,7 +473,7 @@ func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, tit
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Write(append(encoded, '\n')); err != nil {
 		return fmt.Errorf("qwen: rename: %w", err)
 	}

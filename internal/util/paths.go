@@ -176,7 +176,7 @@ func ReadJSONLLines(path string, maxLines int, fn func(line []byte) error) error
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	// Provider JSONL can embed images or tool payloads in one record. Keep a
 	// finite ceiling, but make it large enough for real Codex/Claude rollouts.
@@ -209,7 +209,7 @@ func ReadJSONLPrefix(path string, maxBytes int64, maxLines int, fn func(line []b
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if maxBytes <= 0 {
 		return nil
 	}
@@ -241,7 +241,7 @@ func ScanJSONLEdges(path string, headLines int, tailChunk int64, match func(line
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	// ponytail: cap head scan at 512KB — migration metadata lives in the first
 	// few lines or the tail; unbounded head reads made dedup walks scan GBs.
 	sc := bufio.NewScanner(io.LimitReader(f, 512*1024))
@@ -285,7 +285,7 @@ func TailJSONLLines(path string, maxLines int) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	st, err := f.Stat()
 	if err != nil {
 		return nil, err

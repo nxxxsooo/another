@@ -49,7 +49,7 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	parentExpr := "NULL"
 	if hermesColumnExists(db, "sessions", "parent_session_id") {
 		parentExpr = "parent_session_id"
@@ -63,7 +63,7 @@ FROM sessions WHERE archived = 0 ORDER BY ` + updatedExpr + ` DESC`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	st, statErr := os.Stat(p.dbPath)
 	if statErr != nil {
 		return nil, statErr
@@ -124,7 +124,7 @@ func hermesColumnExists(db *sql.DB, table, column string) bool {
 	if err != nil {
 		return false
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var cid int
 		var name, typ string
@@ -142,7 +142,7 @@ func hermesMigration(db *sql.DB, sessionID string) *model.MigrationMeta {
 	if err != nil {
 		return nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var content sql.NullString
 		if rows.Scan(&content) == nil && content.Valid {
@@ -159,7 +159,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var title sql.NullString
 	var started float64
 	var cwd sql.NullString
@@ -189,7 +189,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var role string
 		var content sql.NullString
@@ -258,12 +258,12 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	// sessions.title has a unique index; disambiguate collisions with the id.
 	var titleCount int
 	_ = tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE title = ?`, title).Scan(&titleCount)
@@ -325,7 +325,7 @@ func (p *Provider) ArchiveSession(ctx context.Context, ref provider.SessionRef, 
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	value := 0
 	if archived {
 		value = 1
@@ -351,12 +351,12 @@ func (p *Provider) CleanupWrite(ctx context.Context, r provider.WriteResult) err
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE session_id = ?`, r.SessionID); err != nil {
 		return err
 	}
@@ -371,7 +371,7 @@ func hermesUserLines(db *sql.DB, sessionID string) []string {
 	if err != nil {
 		return nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var lines []string
 	for rows.Next() {
 		var content sql.NullString

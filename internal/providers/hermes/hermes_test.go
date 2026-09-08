@@ -41,7 +41,7 @@ func TestArchiveTogglesNativeFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	db, _ = sql.Open("sqlite", path)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	_ = db.QueryRow(`SELECT archived FROM sessions WHERE id='s1'`).Scan(&archived)
 	if archived != 0 {
 		t.Fatalf("unarchived=%d", archived)
@@ -190,7 +190,7 @@ CREATE TABLE messages (
 		t.Fatal(err)
 	}
 	db, _ = sql.Open("sqlite", dbPath+"?mode=ro")
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var sessions, messages int
 	_ = db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=?`, write.SessionID).Scan(&sessions)
 	_ = db.QueryRow(`SELECT COUNT(*) FROM messages WHERE session_id=?`, write.SessionID).Scan(&messages)
@@ -257,7 +257,7 @@ func TestDiscoverSeesWALOnlyDatabaseChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`
 PRAGMA journal_mode=WAL;
 PRAGMA wal_autocheckpoint=0;

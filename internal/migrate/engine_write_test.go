@@ -193,7 +193,7 @@ func TestImportReturnsBookkeepingWarnings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	engine := &Engine{Registry: registry.New(), Index: store}
 	conv := &model.Conversation{
 		ID: "portable", Provider: "export",

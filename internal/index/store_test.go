@@ -25,7 +25,7 @@ func TestKeepProvidersPrunesDisabledIndexWithoutNativeDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	for _, sm := range []model.Summary{
 		{ID: "pi-1", Provider: "pi", StoragePath: "/native/pi", Title: "pi"},
 		{ID: "codex-1", Provider: "codex", StoragePath: "/native/codex", Title: "codex"},
@@ -55,7 +55,7 @@ func TestStoreUpsertList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	now := time.Now()
 	sm := model.Summary{
@@ -82,7 +82,7 @@ func TestPruneTitlerSessionsEvictsOwnLeftovers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	now := time.Now()
 	rows := []model.Summary{
@@ -160,7 +160,7 @@ func TestPruneIndexedTitlerLeftoversReadsThePrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	now := time.Now()
 	prompt := titler.BuildPrompt(titler.Request{CreatedAt: now}, titler.LangChinese)
@@ -225,7 +225,7 @@ CREATE TABLE sessions (
 );
 INSERT INTO sessions VALUES ('s1', 'codex', '/project', 'title', 1, 2, 1, '/session', 3, 'root', NULL, 4);
 CREATE TABLE session_sources (provider TEXT NOT NULL, id TEXT NOT NULL);`); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -233,7 +233,7 @@ CREATE TABLE session_sources (provider TEXT NOT NULL, id TEXT NOT NULL);`); err 
 	}
 	store, err := index.Open(path)
 	if store != nil {
-		store.Close()
+		_ = store.Close()
 	}
 	if err == nil || !strings.Contains(err.Error(), "storage_path") {
 		t.Fatalf("Open error = %v, want backfill failure", err)
@@ -256,7 +256,7 @@ func TestUpdateIncrementalPreservesFailedScanAndRemovesUninstalledProvider(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	reg := registry.New()
 	if n, err := index.Rebuild(context.Background(), reg, store, "codex"); err != nil || n != 1 {
 		t.Fatalf("initial rebuild: n=%d err=%v", n, err)
@@ -316,7 +316,7 @@ CREATE TABLE part (message_id TEXT, data TEXT, time_created INTEGER);
 INSERT INTO session VALUES
   ('keep', '/project', 'keep', 1000, 1000, NULL),
   ('drop', '/project', 'drop', 2000, 2000, NULL);`); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -326,7 +326,7 @@ INSERT INTO session VALUES
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	reg := registry.New()
 	if n, err := index.Rebuild(context.Background(), reg, store, "opencode"); err != nil || n != 2 {
 		t.Fatalf("initial rebuild: n=%d err=%v", n, err)
@@ -336,7 +336,7 @@ INSERT INTO session VALUES
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`UPDATE session SET time_created='not-a-number' WHERE id='drop'`); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -371,7 +371,7 @@ CREATE TABLE messages (
 INSERT INTO sessions (id, source, started_at, title) VALUES
   ('keep', 'cli', 1000, 'keep'),
   ('drop', 'cli', 2000, 'drop');`); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -381,7 +381,7 @@ INSERT INTO sessions (id, source, started_at, title) VALUES
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	reg := registry.New()
 	if n, err := index.Rebuild(context.Background(), reg, store, "hermes"); err != nil || n != 2 {
 		t.Fatalf("initial rebuild: n=%d err=%v", n, err)
@@ -391,7 +391,7 @@ INSERT INTO sessions (id, source, started_at, title) VALUES
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`UPDATE sessions SET started_at='not-a-number' WHERE id='drop'`); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -411,7 +411,7 @@ func TestNeedsRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	_ = store.Upsert(model.Summary{
 		ID: "x", Provider: "codex", StoragePath: "/a.jsonl", SourceMtime: 100,
 	})
@@ -431,7 +431,7 @@ func TestFindByIDAmbiguousSuffix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	now := time.Now()
 	for _, id := range []string{"aaa-deadbeef", "bbb-deadbeef"} {
 		if err := store.Upsert(model.Summary{
@@ -453,7 +453,7 @@ func TestMigrationDedup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if err := store.RecordMigration("opencode", "digest-abc", "ses_123", "/db#ses_123", "src-1", "claude-code"); err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +468,7 @@ func TestGetAmbiguousSuffix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	now := time.Now()
 	for _, id := range []string{"aaa-deadbeef", "bbb-deadbeef"} {
 		if err := store.Upsert(model.Summary{
@@ -490,7 +490,7 @@ func TestListProjectCWD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	now := time.Now()
 	for _, row := range []struct {
@@ -519,7 +519,7 @@ func TestListProjectRootsIncludeWorktreeDescendantsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	now := time.Now()
 	rows := []struct{ id, provider, path string }{
 		{"main", "codex", "/repo"},
@@ -552,7 +552,7 @@ func TestListProjectRootsEscapeLikeWildcards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	now := time.Now()
 	for _, row := range []struct{ id, path string }{{"wanted", "/repo%_x/sub"}, {"other", "/repoABx/sub"}} {
 		if err := store.Upsert(model.Summary{ID: row.id, Provider: "codex", ProjectPath: row.path,
@@ -572,7 +572,7 @@ func TestFindByIDAmbiguousPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	now := time.Now()
 	if err := store.Upsert(model.Summary{
@@ -602,7 +602,7 @@ func TestListPaginationAndProjectExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	now := time.Now()
 	paths := []string{"/proj/a", "/proj/b", "/other/c"}
@@ -637,7 +637,7 @@ func TestListProjectCWDAtHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	home := config.HomeDir()
 	if home == "" {
@@ -680,7 +680,7 @@ func TestIndexBehindDiscoverAndStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	now := time.Now()
 	_ = store.Upsert(model.Summary{
@@ -709,7 +709,7 @@ func TestOpenCreatesDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.Close()
+	_ = store.Close()
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Fatal(err)
 	}
@@ -730,7 +730,7 @@ func TestOpenRefusesDefaultCacheSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if store, err := index.Open(""); err == nil {
-		store.Close()
+		_ = store.Close()
 		t.Fatal("expected default cache symlink to be refused")
 	}
 	info, err := os.Stat(target)
@@ -759,7 +759,7 @@ func TestOpenRefusesSymlinkDatabaseFilesWithoutTouchingTargets(t *testing.T) {
 				t.Fatal(err)
 			}
 			if store, err := index.Open(dbPath); err == nil {
-				store.Close()
+				_ = store.Close()
 				t.Fatal("expected symlink index file to be refused")
 			}
 			got, err := os.ReadFile(target)
@@ -799,7 +799,7 @@ func TestUpdateIncrementalRereadsRowsIndexedUnderAnOlderAttributionRule(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	reg := registry.New()
 	if _, err := index.Rebuild(context.Background(), reg, store, "claude-code"); err != nil {
 		t.Fatal(err)

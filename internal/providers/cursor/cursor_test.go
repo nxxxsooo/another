@@ -28,7 +28,7 @@ func TestDiscoverSeesWALOnlyStoreChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`
 PRAGMA journal_mode=WAL;
 PRAGMA wal_autocheckpoint=0;

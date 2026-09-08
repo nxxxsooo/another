@@ -219,15 +219,15 @@ SELECT conversation_id, title, preview, step_count, last_modified_time,
        workspace_uris, parent_conversation_id
 FROM conversation_summaries WHERE killed = 0 ORDER BY last_modified_time DESC`)
 		if err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, err
 		}
 		for rows.Next() {
 			var id, title, preview, updatedRaw, urisRaw, parentID string
 			var nativeSteps int
 			if err := rows.Scan(&id, &title, &preview, &nativeSteps, &updatedRaw, &urisRaw, &parentID); err != nil {
-				rows.Close()
-				db.Close()
+				_ = rows.Close()
+				_ = db.Close()
 				return nil, err
 			}
 			if nativeSteps == 0 {
@@ -250,8 +250,8 @@ FROM conversation_summaries WHERE killed = 0 ORDER BY last_modified_time DESC`)
 			}
 			annotated, err := p.annotationTitle(id)
 			if err != nil {
-				rows.Close()
-				db.Close()
+				_ = rows.Close()
+				_ = db.Close()
 				return nil, err
 			}
 			mtime, size := summaryFingerprint(st, id, title, annotated, preview, updatedRaw, urisRaw, parentID, fmt.Sprint(nativeSteps))
@@ -263,8 +263,8 @@ FROM conversation_summaries WHERE killed = 0 ORDER BY last_modified_time DESC`)
 			}
 			data, err := scanTranscript(ctx, logPath, false)
 			if err != nil {
-				rows.Close()
-				db.Close()
+				_ = rows.Close()
+				_ = db.Close()
 				return nil, err
 			}
 			if len(data.messages) == 0 {
@@ -308,12 +308,12 @@ FROM conversation_summaries WHERE killed = 0 ORDER BY last_modified_time DESC`)
 			}
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
-			db.Close()
+			_ = rows.Close()
+			_ = db.Close()
 			return nil, err
 		}
 		if err := rows.Close(); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, err
 		}
 		if err := db.Close(); err != nil {
@@ -454,22 +454,22 @@ func (p *Provider) openSummariesRW() (*sql.DB, error) {
 	}
 	var exists int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='conversation_summaries'`).Scan(&exists); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	if exists == 0 {
 		if _, err := db.Exec(summariesSchema); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, err
 		}
 	}
 	if err := validateSummariesSchema(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_conversation_summaries_last_user_input_time ON conversation_summaries(last_user_input_time);
 CREATE INDEX IF NOT EXISTS idx_conversation_summaries_last_modified_time ON conversation_summaries(last_modified_time);`); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return db, nil
@@ -480,7 +480,7 @@ func validateSummariesSchema(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	columns := make(map[string]bool)
 	for rows.Next() {
 		var cid, notNull, pk int
@@ -540,7 +540,7 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 	if err != nil {
 		return nil, err
 	}
-	defer sdb.Close()
+	defer func() { _ = sdb.Close() }()
 	succeeded := false
 	defer func() {
 		if !succeeded && retErr != nil {
@@ -611,7 +611,7 @@ CREATE TABLE trajectory_metadata_blob (id text DEFAULT 'main', data blob, PRIMAR
 CREATE TABLE battle_mode_infos (idx integer, data blob, PRIMARY KEY (idx));
 INSERT INTO trajectory_meta (trajectory_id, cascade_id, trajectory_type, source) VALUES (?, ?, 4, 17);`
 	if _, err := cdb.ExecContext(ctx, conversationSchema, sessionID, sessionID); err != nil {
-		cdb.Close()
+		_ = cdb.Close()
 		return nil, err
 	}
 	if err := cdb.Close(); err != nil {
@@ -641,7 +641,7 @@ INSERT INTO trajectory_meta (trajectory_id, cascade_id, trajectory_type, source)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO conversation_summaries (
 	conversation_id, title, preview, step_count, last_modified_time, workspace_uris,
@@ -877,7 +877,7 @@ func (p *Provider) deleteSummaryRow(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	_, err = db.ExecContext(ctx, `DELETE FROM conversation_summaries WHERE conversation_id = ?`, id)
 	return err
 }
@@ -955,7 +955,7 @@ func (p *Provider) hasSummaryRow(ctx context.Context, id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var count int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM conversation_summaries WHERE conversation_id = ?`, id).Scan(&count); err != nil {
 		return false, err
@@ -979,7 +979,7 @@ func (p *Provider) renameSummaryRow(ctx context.Context, id, title string) error
 	if err != nil {
 		return fmt.Errorf("%w: %s still names the conversation as before: %s", provider.ErrPartial, filepath.Base(p.summariesDBPath()), err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.ExecContext(ctx, `UPDATE conversation_summaries SET title = ? WHERE conversation_id = ?`, title, id); err != nil {
 		return fmt.Errorf("%w: %s still names the conversation as before: %s", provider.ErrPartial, filepath.Base(p.summariesDBPath()), err)
 	}
@@ -994,7 +994,7 @@ func (p *Provider) getStoredTitle(id string) string {
 	if err != nil {
 		return ""
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var title, preview sql.NullString
 	if err := db.QueryRow(`SELECT title, preview FROM conversation_summaries WHERE conversation_id = ?`, id).Scan(&title, &preview); err != nil {
 		return ""
@@ -1011,7 +1011,7 @@ func (p *Provider) getStoredTitle(id string) string {
 func (p *Provider) getStoredProject(id string) string {
 	db, err := sql.Open("sqlite", p.summariesDBPath()+"?mode=ro&_pragma=busy_timeout(1000)")
 	if err == nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		var raw sql.NullString
 		if db.QueryRow(`SELECT workspace_uris FROM conversation_summaries WHERE conversation_id = ?`, id).Scan(&raw) == nil && raw.Valid {
 			if project := parseWorkspaceURI(raw.String); project != "" {
@@ -1028,7 +1028,7 @@ func (p *Provider) getProjectFromConvDB(id string) string {
 	if err != nil {
 		return ""
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var blob []byte
 	if db.QueryRow(`SELECT data FROM trajectory_metadata_blob WHERE id = 'main'`).Scan(&blob) != nil {
 		return ""

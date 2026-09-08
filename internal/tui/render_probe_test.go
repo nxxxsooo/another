@@ -49,7 +49,7 @@ func TestRenderProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 	cwd, _ := os.Getwd()
 	project := util.DiscoverProjectScope(t.Context(), cwd)
 	opts := index.ListOpts{Limit: 12}

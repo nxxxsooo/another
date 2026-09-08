@@ -62,7 +62,7 @@ func TestFindDuplicateIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	conv := &model.Conversation{
 		ID: "src-3", Provider: "claude-code",
 		Messages: []model.Message{{Role: model.RoleUser, Content: "indexed dedup"}},
@@ -99,7 +99,7 @@ func TestFindDuplicateDoesNotCollideAcrossSourceSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, "claude"))
 	dst := claude.New()
 	first := &model.Conversation{
@@ -131,7 +131,7 @@ func TestFindDuplicateRejectsLoadableTargetWithWrongMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, "claude"))
 	dst := claude.New()
 	wanted := &model.Conversation{
@@ -177,7 +177,7 @@ func TestFindDuplicateValidatesExactDatabaseRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	dbPath := filepath.Join(dir, "target.db")
 	if err := os.WriteFile(dbPath, []byte("database exists but row does not"), 0o600); err != nil {
 		t.Fatal(err)

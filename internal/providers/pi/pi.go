@@ -352,7 +352,7 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 			if e.Message == nil {
 				return nil
 			}
-			role := model.RoleUser
+			var role model.Role
 			switch e.Message.Role {
 			case "user":
 				role = model.RoleUser
@@ -637,7 +637,7 @@ func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, tit
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Write(append(row, '\n')); err != nil {
 		return err
 	}

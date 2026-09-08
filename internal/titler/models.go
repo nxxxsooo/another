@@ -118,7 +118,7 @@ func ListModels(ctx context.Context, providerID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	ctx, cancel := context.WithTimeout(ctx, ListTimeout)
 	defer cancel()

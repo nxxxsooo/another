@@ -13,7 +13,7 @@ func TestReconcilePromotesRemainingSourceAndPrunesDeletedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	now := time.Now()
 	transcript := model.Summary{
 		ID: "same", Provider: "cursor", Title: "transcript", StoragePath: "/cursor/transcript.jsonl",
@@ -64,7 +64,7 @@ func TestReconcileInvalidatesSameTimestampAndCountSourceEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sm := model.Summary{
 		ID: "edited", Provider: "codex", Title: "same", StoragePath: "/codex/session.jsonl",
 		UpdatedAt: time.Unix(100, 0), MessageCount: 2, SourceMtime: 1000, SourceSize: 20,

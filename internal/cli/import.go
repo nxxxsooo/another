@@ -29,7 +29,7 @@ func (a *App) importCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			var conv model.Conversation
 			if err := json.NewDecoder(f).Decode(&conv); err != nil {
 				return fmt.Errorf("decode: %w", err)

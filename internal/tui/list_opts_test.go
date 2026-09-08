@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/util"
 )
 
@@ -23,7 +22,6 @@ func TestListOptsDefaultsToCurrentGitProject(t *testing.T) {
 	if opts.Limit != maxShowAllPage {
 		t.Fatalf("Limit = %d, want the single-fetch cap %d", opts.Limit, maxShowAllPage)
 	}
-	var _ index.ListOpts = opts
 }
 
 // A folder that is not a Git repository still owns the sessions beneath it.
