@@ -36,8 +36,29 @@ func TestProjectCellWithdrawsColorFromAMissingDirectory(t *testing.T) {
 	if present == missing {
 		t.Fatal("a missing directory renders the same as a live one")
 	}
-	if strings.Contains(missing, colorOf(t, projectColor(gone))) {
+	if !strings.Contains(present, projectChipSeq(t, live)) {
+		t.Fatalf("a live directory did not wear its project chip: %q", present)
+	}
+	if strings.Contains(missing, projectChipSeq(t, gone)) {
 		t.Fatalf("a missing directory kept its project color: %q", missing)
+	}
+}
+
+// The chip is one flat style. A nested style would emit an ANSI reset inside
+// the painted cell, which clears the background it was drawn on and leaves a
+// black rectangle in Ghostty — the bug that kept this column a bar for so long.
+func TestProjectChipPaintsOneUnbrokenStyle(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(previous)
+
+	root := "/Users/mingjian/Documents/sync/GitHub/another"
+	cell := renderProjectCellState(root+"/.worktrees/delete-undo", root, 24, false)
+	if got := strings.Count(cell, "\x1b[0m"); got != 1 {
+		t.Fatalf("the chip resets %d times, want one reset at its end: %q", got, cell)
+	}
+	if idx := strings.Index(cell, "\x1b[0m"); idx >= 0 && strings.Contains(cell[idx+len("\x1b[0m"):], "\x1b[") {
+		t.Fatalf("the chip restyles after its reset: %q", cell)
 	}
 }
 
@@ -54,7 +75,9 @@ func TestProjectCellReadsAPathAgainstTheProjectRoot(t *testing.T) {
 	}{
 		{"a linked worktree under the root", root + "/.worktrees/delete-undo", ".worktrees/delete-undo"},
 		{"a package in a monorepo", root + "/packages/api", "packages/api"},
-		{"the project root itself", root, projectRootMark},
+		// The root has nothing below itself to name, so it names itself
+		// rather than standing in a column of identical marks.
+		{"the project root itself", root, "another"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -95,12 +118,12 @@ func TestProjectCellColorSurvivesTheProjectRoot(t *testing.T) {
 
 	root := "/Users/mingjian/Documents/sync/GitHub/another"
 	worktree := root + "/.worktrees/delete-undo"
-	want := colorOf(t, projectColor(worktree))
-	if !strings.Contains(renderProjectCellState(worktree, root, 24, false), want) {
-		t.Fatal("a relative-rendered path lost its project color")
-	}
-	if !strings.Contains(renderProjectCellState(worktree, "", 24, false), want) {
-		t.Fatal("the same directory hashes differently across scopes")
+	want := projectChipSeq(t, worktree)
+	for _, base := range []string{root, ""} {
+		cell := renderProjectCellState(worktree, base, 24, false)
+		if !strings.Contains(cell, want) {
+			t.Fatalf("the same directory hashes differently at base %q: %q", base, cell)
+		}
 	}
 }
 
@@ -134,6 +157,19 @@ func colorOf(t *testing.T, c lipgloss.TerminalColor) string {
 	idx := strings.Index(rendered, "x")
 	if idx <= 0 {
 		t.Fatalf("a foreground color rendered no escape sequence: %q", rendered)
+	}
+	return rendered[:idx]
+}
+
+// projectChipSeq is colorOf for a project chip, which writes its ink and its
+// paint in one sequence: looking for either half on its own finds nothing.
+func projectChipSeq(t *testing.T, path string) string {
+	t.Helper()
+	ink, tint := chipColors(projectColor(path))
+	rendered := lipgloss.NewStyle().Foreground(ink).Background(tint).Render("x")
+	idx := strings.Index(rendered, "x")
+	if idx <= 0 {
+		t.Fatalf("a chip rendered no escape sequence: %q", rendered)
 	}
 	return rendered[:idx]
 }

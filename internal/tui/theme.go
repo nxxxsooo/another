@@ -60,8 +60,9 @@ var providerFallbacks = []lipgloss.Color{
 }
 
 // projectColors identifies a project by hue so repeated paths are recognized
-// before they are read. These are only ever drawn as a one-cell bar, never as a
-// fill, so they may sit closer together than the agent palette does.
+// before they are read. They are drawn through chipColors, which lays the hue
+// over the surface at low strength, so neighbouring hues may sit closer
+// together here than in the agent palette without either one shouting.
 var projectColors = []lipgloss.Color{
 	charm(charmtone.Malibu), charm(charmtone.Guac), charm(charmtone.Tang),
 	charm(charmtone.Cheeky), charm(charmtone.Citron), charm(charmtone.Violet),
@@ -116,15 +117,5 @@ var (
 	chipActive        = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.border).Padding(0, 1)
 	chipMuted         = lipgloss.NewStyle().Foreground(twinTheme.textSubtle).Padding(0, 1)
 	selectedRow       = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.intersection)
-	// The project cell is two readings at once: the bar answers "which project"
-	// at a glance, the leaf answers "which directory" on a second look, and the
-	// parent path stays behind both. A background fill would win the row from
-	// the title and, per the note above, break on nested resets.
-	projectLeafStyle   = lipgloss.NewStyle().Foreground(twinTheme.textSubtle)
-	projectParentStyle = lipgloss.NewStyle().Foreground(twinTheme.textMostSubtle)
-	// A directory that no longer exists loses the bar's color rather than
-	// gaining a symbol: this column's color means "somewhere you can go", so
-	// withdrawing it is the honest way to say the place is gone.
-	missingProjectStyle = lipgloss.NewStyle().Foreground(twinTheme.textMostSubtle)
-	dangerChoice        = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.danger).Padding(0, 1)
+	dangerChoice      = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.danger).Padding(0, 1)
 )
