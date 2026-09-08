@@ -2632,21 +2632,7 @@ func (m modelState) selectedSessionCapabilities() sessionCapabilities {
 
 // truncateLeft keeps the tail of a path. The leading directories repeat across
 // projects; the last segments are what identify one.
-func isCurrentSession(sm model.Summary) bool {
-	ids := []string{
-		os.Getenv("PI_SESSION_ID"),
-		os.Getenv("CLAUDE_SESSION_ID"),
-		os.Getenv("CODEX_THREAD_ID"),
-		os.Getenv("OPENCODE_SESSION_ID"),
-		os.Getenv("ANTIGRAVITY_CONVERSATION_ID"),
-	}
-	for _, id := range ids {
-		if id != "" && sm.ID == id {
-			return true
-		}
-	}
-	return sm.StoragePath != "" && os.Getenv("PI_SESSION_FILE") == sm.StoragePath
-}
+func isCurrentSession(sm model.Summary) bool { return provider.IsCurrentSession(sm) }
 
 func truncateDisplay(s string, n int) string {
 	s = util.SanitizeDisplay(s)
