@@ -14,346 +14,429 @@ import (
 	"github.com/nxxxsooo/another/internal/util"
 )
 
+// Update routes every message to one handler. Async results are matched by
+// type, key presses go through updateKey, and anything else feeds the
+// component that currently owns the screen.
 func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		m.layout()
-		// Bubbletea only erases the tail of a line it believes is shorter than
-		// the terminal, so a frame drawn for the old size can survive under the
-		// new one: an old border column, a count from a row that has moved.
-		// Clearing on resize costs one frame and makes the screen the only
-		// thing on screen.
-		return m, tea.ClearScreen
+		return m.onWindowSize(msg)
 	case sessionsPageMsg:
-		if msg.gen != m.pageGen {
-			return m, nil
-		}
-		m.loading = false
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		m.sessions.SetItems(msg.items)
-		m.totalSessions = msg.total
-		m.updateSourceCounts(msg.counts)
-		m.layout()
-		return m, nil
+		return m.onSessionsPage(msg)
 	case previewLoadedMsg:
-		m.loading = false
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		m.previewContent = msg.content
-		m.overlay = overlayPreview
-		m.preview.GotoTop()
-		m.layout()
-		return m, nil
+		return m.onPreviewLoaded(msg)
 	case archiveDoneMsg:
-		m.loading = false
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		if msg.archived {
-			summary := msg.summary
-			m.lastArchived = &summary
-			m.status = okStyle.Render(txt.archivedPrefix+truncateDisplay(msg.summary.Title, 48)) + mutedStyle.Render(txt.undoHint)
-		} else {
-			m.lastArchived = nil
-			m.status = okStyle.Render(txt.unarchivedPrefix + truncateDisplay(msg.summary.Title, 48))
-		}
-		var cmd tea.Cmd
-		m, cmd = dispatchPageLoad(m)
-		return m, cmd
+		return m.onArchiveDone(msg)
 	case titleSuggestionMsg:
-		// A suggestion is only meaningful for the box that asked for it.
-		if m.overlay != overlayRename || m.suggestFor == "" || m.suggestFor != msg.sessionID {
-			return m, nil
-		}
-		m.suggesting = false
-		switch {
-		case msg.err != nil:
-			m.suggestErr = suggestErrorText(msg.err)
-		case msg.title == "":
-			m.suggestErr = txt.noSuggestion
-		default:
-			m.suggestion = msg.title
-		}
-		return m, nil
+		return m.onTitleSuggestion(msg)
 	case renameDoneMsg:
-		m.loading = false
-		m.overlay = overlayNone
-		m.renameInput.Blur()
-		m.clearSuggestion()
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		m.status = okStyle.Render(txt.renamedPrefix + truncateDisplay(msg.title, 56))
-		if msg.caveat != nil {
-			m.status += mutedStyle.Render("  ·  " + caveatText(msg.caveat))
-		}
-		var cmd tea.Cmd
-		m, cmd = dispatchPageLoad(m)
-		return m, cmd
+		return m.onRenameDone(msg)
 	case batchReadyMsg:
-		if msg.gen != m.batchGen {
-			return m, nil
-		}
-		m.batchResults = append(m.batchResults, msg.frozen...)
-		if len(msg.items) == 0 {
-			m.finalizeBatch()
-			return m, nil
-		}
-		parent := m.ctx
-		if parent == nil {
-			parent = context.Background()
-		}
-		ctx, cancel := context.WithCancel(parent)
-		m.batchCancel = cancel
-		m.batchTotal = len(m.batchResults) + len(msg.items)
-		m.batchCh = titler.SuggestBatch(ctx, m.batchConfig(), msg.items, titler.DefaultConcurrency)
-		m.batchRunning = true
-		return m, tea.Batch(m.spinner.Tick, batchNextCmd(m.batchGen, m.batchCh))
+		return m.onBatchReady(msg)
 	case batchResultMsg:
-		if msg.gen != m.batchGen {
-			return m, nil
-		}
-		m.batchResults = append(m.batchResults, msg.res)
-		if m.batchCh != nil && len(m.batchResults) < m.batchTotal {
-			return m, batchNextCmd(m.batchGen, m.batchCh)
-		}
-		m.finalizeBatch()
-		return m, nil
+		return m.onBatchResult(msg)
 	case batchFinishedMsg:
-		if msg.gen != m.batchGen || !m.batchRunning {
-			return m, nil
-		}
+		return m.onBatchFinished(msg)
+	case batchModelsMsg:
+		return m.onBatchModels(msg)
+	case batchAppliedMsg:
+		return m.onBatchApplied(msg)
+	case deleteDoneMsg:
+		return m.onDeleteDone(msg)
+	case restoreDoneMsg:
+		return m.onRestoreDone(msg)
+	case relocateDoneMsg:
+		return m.onRelocateDone(msg)
+	case migrateDoneMsg:
+		return m.onMigrateDone(msg)
+	case indexRefreshedMsg:
+		return m.onIndexRefreshed(msg)
+	case contentIndexedMsg:
+		return m.onContentIndexed(msg)
+	case searchResultsMsg:
+		return m.onSearchResults(msg)
+	case tea.KeyMsg:
+		return m.updateKey(msg)
+	}
+	return m.updateComponents(msg)
+}
+
+func (m modelState) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width, m.height = msg.Width, msg.Height
+	m.layout()
+	// Bubbletea only erases the tail of a line it believes is shorter than
+	// the terminal, so a frame drawn for the old size can survive under the
+	// new one: an old border column, a count from a row that has moved.
+	// Clearing on resize costs one frame and makes the screen the only
+	// thing on screen.
+	return m, tea.ClearScreen
+}
+
+func (m modelState) onSessionsPage(msg sessionsPageMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != m.pageGen {
+		return m, nil
+	}
+	m.loading = false
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		return m, nil
+	}
+	m.sessions.SetItems(msg.items)
+	m.totalSessions = msg.total
+	m.updateSourceCounts(msg.counts)
+	m.layout()
+	return m, nil
+}
+
+func (m modelState) onPreviewLoaded(msg previewLoadedMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		return m, nil
+	}
+	m.previewContent = msg.content
+	m.overlay = overlayPreview
+	m.preview.GotoTop()
+	m.layout()
+	return m, nil
+}
+
+func (m modelState) onArchiveDone(msg archiveDoneMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		return m, nil
+	}
+	if msg.archived {
+		summary := msg.summary
+		m.lastArchived = &summary
+		m.status = okStyle.Render(txt.archivedPrefix+truncateDisplay(msg.summary.Title, 48)) + mutedStyle.Render(txt.undoHint)
+	} else {
+		m.lastArchived = nil
+		m.status = okStyle.Render(txt.unarchivedPrefix + truncateDisplay(msg.summary.Title, 48))
+	}
+	var cmd tea.Cmd
+	m, cmd = dispatchPageLoad(m)
+	return m, cmd
+}
+
+func (m modelState) onTitleSuggestion(msg titleSuggestionMsg) (tea.Model, tea.Cmd) {
+	// A suggestion is only meaningful for the box that asked for it.
+	if m.overlay != overlayRename || m.suggestFor == "" || m.suggestFor != msg.sessionID {
+		return m, nil
+	}
+	m.suggesting = false
+	switch {
+	case msg.err != nil:
+		m.suggestErr = suggestErrorText(msg.err)
+	case msg.title == "":
+		m.suggestErr = txt.noSuggestion
+	default:
+		m.suggestion = msg.title
+	}
+	return m, nil
+}
+
+func (m modelState) onRenameDone(msg renameDoneMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	m.overlay = overlayNone
+	m.renameInput.Blur()
+	m.clearSuggestion()
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		return m, nil
+	}
+	m.status = okStyle.Render(txt.renamedPrefix + truncateDisplay(msg.title, 56))
+	if msg.caveat != nil {
+		m.status += mutedStyle.Render("  ·  " + caveatText(msg.caveat))
+	}
+	var cmd tea.Cmd
+	m, cmd = dispatchPageLoad(m)
+	return m, cmd
+}
+
+func (m modelState) onBatchReady(msg batchReadyMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != m.batchGen {
+		return m, nil
+	}
+	m.batchResults = append(m.batchResults, msg.frozen...)
+	if len(msg.items) == 0 {
 		m.finalizeBatch()
 		return m, nil
-	case batchModelsMsg:
-		if m.overlay != overlayBatchTitle || msg.provider != m.batchConfig().Provider {
-			return m, nil
-		}
-		m.batchModelLoading = false
-		if msg.err != nil {
-			// A CLI that cannot answer right now is not a dead end: the
-			// overlay says why and falls back to typing a name.
-			m.batchModelErr = listErrorText(msg.err)
-			m.batchModelPicking = false
-			m.batchModelEditing = true
-			m.batchModelInput.Focus()
-			return m, textinput.Blink
-		}
-		m.batchModelOpts = msg.models
-		m.batchModelCursor = modelCursorFor(modelRowsFor(msg.models, ""), m.batchConfig().Model)
+	}
+	parent := m.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	m.batchCancel = cancel
+	m.batchTotal = len(m.batchResults) + len(msg.items)
+	m.batchCh = titler.SuggestBatch(ctx, m.batchConfig(), msg.items, titler.DefaultConcurrency)
+	m.batchRunning = true
+	return m, tea.Batch(m.spinner.Tick, batchNextCmd(m.batchGen, m.batchCh))
+}
+
+func (m modelState) onBatchResult(msg batchResultMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != m.batchGen {
 		return m, nil
-	case batchAppliedMsg:
-		for _, id := range msg.appliedIDs {
-			delete(m.marked, id)
+	}
+	m.batchResults = append(m.batchResults, msg.res)
+	if m.batchCh != nil && len(m.batchResults) < m.batchTotal {
+		return m, batchNextCmd(m.batchGen, m.batchCh)
+	}
+	m.finalizeBatch()
+	return m, nil
+}
+
+func (m modelState) onBatchFinished(msg batchFinishedMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != m.batchGen || !m.batchRunning {
+		return m, nil
+	}
+	m.finalizeBatch()
+	return m, nil
+}
+
+func (m modelState) onBatchModels(msg batchModelsMsg) (tea.Model, tea.Cmd) {
+	if m.overlay != overlayBatchTitle || msg.provider != m.batchConfig().Provider {
+		return m, nil
+	}
+	m.batchModelLoading = false
+	if msg.err != nil {
+		// A CLI that cannot answer right now is not a dead end: the
+		// overlay says why and falls back to typing a name.
+		m.batchModelErr = listErrorText(msg.err)
+		m.batchModelPicking = false
+		m.batchModelEditing = true
+		m.batchModelInput.Focus()
+		return m, textinput.Blink
+	}
+	m.batchModelOpts = msg.models
+	m.batchModelCursor = modelCursorFor(modelRowsFor(msg.models, ""), m.batchConfig().Model)
+	return m, nil
+}
+
+func (m modelState) onBatchApplied(msg batchAppliedMsg) (tea.Model, tea.Cmd) {
+	for _, id := range msg.appliedIDs {
+		delete(m.marked, id)
+	}
+	m.overlay = overlayNone
+	m.resetBatch()
+	switch {
+	case msg.applied > 0 && msg.failed > 0:
+		detail := msg.detail
+		if detail == "" {
+			detail = txt.someRowsFailed
 		}
-		m.overlay = overlayNone
-		m.resetBatch()
-		switch {
-		case msg.applied > 0 && msg.failed > 0:
-			detail := msg.detail
-			if detail == "" {
-				detail = txt.someRowsFailed
-			}
-			// Only the applied rows lose their mark, so ctrl+t reopens the
-			// batch on exactly the rows that failed.
-			m.err = fmt.Sprintf(txt.batchPartialFmt, msg.applied, msg.failed, detail)
-		case msg.applied > 0:
-			m.status = okStyle.Render(fmt.Sprintf(txt.batchRenamedFmt, msg.applied))
-		case msg.failed > 0:
-			detail := msg.detail
-			if detail == "" {
-				detail = txt.allRowsFailed
-			}
-			m.err = fmt.Sprintf(txt.batchAllFailedFmt, msg.failed, detail)
-		default:
-			m.status = txt.batchNoneApplied
+		// Only the applied rows lose their mark, so ctrl+t reopens the
+		// batch on exactly the rows that failed.
+		m.err = fmt.Sprintf(txt.batchPartialFmt, msg.applied, msg.failed, detail)
+	case msg.applied > 0:
+		m.status = okStyle.Render(fmt.Sprintf(txt.batchRenamedFmt, msg.applied))
+	case msg.failed > 0:
+		detail := msg.detail
+		if detail == "" {
+			detail = txt.allRowsFailed
 		}
-		var cmd tea.Cmd
-		m, cmd = dispatchPageLoad(m)
-		return m, cmd
-	case deleteDoneMsg:
-		m.loading = false
-		m.overlay = overlayNone
-		m.deleteChoice = 0
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		deleted := m.selected
-		m.selected = nil
-		m.lastResume = ""
-		m.status = okStyle.Render(txt.deletedPrefix + truncateDisplay(msg.title, 48))
-		if msg.restore != nil && deleted != nil {
-			summary := deleted.summary
-			m.lastDeleted = &summary
-			m.restoreDeleted = msg.restore
-			m.status += mutedStyle.Render(txt.undoDeleteHint)
-		} else {
-			m.lastDeleted = nil
-			m.restoreDeleted = nil
-		}
+		m.err = fmt.Sprintf(txt.batchAllFailedFmt, msg.failed, detail)
+	default:
+		m.status = txt.batchNoneApplied
+	}
+	var cmd tea.Cmd
+	m, cmd = dispatchPageLoad(m)
+	return m, cmd
+}
+
+func (m modelState) onDeleteDone(msg deleteDoneMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	m.overlay = overlayNone
+	m.deleteChoice = 0
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		return m, nil
+	}
+	deleted := m.selected
+	m.selected = nil
+	m.lastResume = ""
+	m.status = okStyle.Render(txt.deletedPrefix + truncateDisplay(msg.title, 48))
+	if msg.restore != nil && deleted != nil {
+		summary := deleted.summary
+		m.lastDeleted = &summary
+		m.restoreDeleted = msg.restore
+		m.status += mutedStyle.Render(txt.undoDeleteHint)
+	} else {
+		m.lastDeleted = nil
+		m.restoreDeleted = nil
+	}
+	m.sources = sourceChips(m.reg, msg.counts)
+	if m.sourceIdx >= len(m.sources) {
+		m.sourceIdx = 0
+	}
+	m.sourceList.SetItems(sourceItems(m.sources))
+	m.sourceList.Select(m.sourceIdx)
+	var cmd tea.Cmd
+	m, cmd = dispatchPageLoad(m)
+	return m, cmd
+}
+
+func (m modelState) onRestoreDone(msg restoreDoneMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	// The offer is spent either way: a restore that failed will not start
+	// working on a second press, and the reason belongs on screen.
+	m.lastDeleted = nil
+	m.restoreDeleted = nil
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		return m, nil
+	}
+	m.status = okStyle.Render(txt.restoredPrefix + truncateDisplay(msg.title, 48))
+	if msg.counts != nil {
 		m.sources = sourceChips(m.reg, msg.counts)
 		if m.sourceIdx >= len(m.sources) {
 			m.sourceIdx = 0
 		}
 		m.sourceList.SetItems(sourceItems(m.sources))
 		m.sourceList.Select(m.sourceIdx)
-		var cmd tea.Cmd
-		m, cmd = dispatchPageLoad(m)
-		return m, cmd
-	case restoreDoneMsg:
-		m.loading = false
-		// The offer is spent either way: a restore that failed will not start
-		// working on a second press, and the reason belongs on screen.
-		m.lastDeleted = nil
-		m.restoreDeleted = nil
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		m.status = okStyle.Render(txt.restoredPrefix + truncateDisplay(msg.title, 48))
-		if msg.counts != nil {
-			m.sources = sourceChips(m.reg, msg.counts)
-			if m.sourceIdx >= len(m.sources) {
-				m.sourceIdx = 0
-			}
-			m.sourceList.SetItems(sourceItems(m.sources))
-			m.sourceList.Select(m.sourceIdx)
-		}
-		var restoreCmd tea.Cmd
-		m, restoreCmd = dispatchPageLoad(m)
-		return m, restoreCmd
-	case relocateDoneMsg:
-		m.loading = false
-		m.overlay = overlayNone
-		m.relocateInput.Blur()
-		if msg.err != nil && msg.resume == "" {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		verb := txt.forkedPrefix
-		if msg.moved {
-			verb = txt.movedPrefix
-		}
-		m.status = okStyle.Render(verb + truncateLeft(util.TildePath(msg.directory), 48))
-		if msg.err != nil {
-			m.status += mutedStyle.Render("  ·  " + msg.err.Error())
-		}
-		// The resume line points at the relocated session, which is the whole
-		// point of the action: the next thing the user does is run it there.
-		m.lastResume = msg.resume
-		m.launchTarget = msg.providerID
-		m.launchProject = msg.directory
-		var cmd tea.Cmd
-		m, cmd = dispatchPageLoad(m)
-		return m, cmd
-	case migrateDoneMsg:
-		m.loading = false
-		m.overlay = overlayNone
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			m.lastResume = ""
-			return m, nil
-		}
-		m.lastResume = msg.res.Resume
-		m.launchTarget = msg.targetID
-		if msg.res.Write != nil {
-			m.launchProject = msg.res.Write.ProjectPath
-		}
-		target := msg.res.TargetName
-		if target == "" {
-			target = "target"
-		}
-		verb := txt.migratedPrefix
-		if msg.res.AlreadyExists {
-			verb = txt.alreadyPrefix
-		}
-		m.status = okStyle.Render(verb+target) + mutedStyle.Render(txt.copyHint)
-		if len(msg.res.Warnings) > 0 {
-			m.status += mutedStyle.Render(fmt.Sprintf(txt.warningsFmt, len(msg.res.Warnings)))
-		}
-		m.layout()
-		return m, nil
-	case indexRefreshedMsg:
-		m.indexing = false
-		m.loading = false
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		if msg.project != nil {
-			m.projectScope = *msg.project
-		}
-		m.updateSourceCounts(msg.counts)
-		if msg.reloadPage {
-			m.contentIndexing = true
-			var cmd tea.Cmd
-			m, cmd = dispatchPageLoad(m)
-			return m, tea.Batch(cmd, contentIndexCmd(m.ctx, m.reg, m.idx))
-		}
-		m.status = fmt.Sprintf("Index updated (%d sessions)", msg.updated)
-		m.layout()
-		return m, nil
-	case contentIndexedMsg:
-		m.contentIndexing = false
-		if msg.err != nil && msg.err != context.Canceled {
-			m.err = "content index: " + msg.err.Error()
-		}
-		// Index health is not news. Surface it only while work is outstanding.
-		if msg.status.Pending > 0 {
-			m.status = mutedStyle.Render(fmt.Sprintf("content indexing… %d pending", msg.status.Pending))
-		}
-		m.layout()
-		if m.searchQuery != "" {
-			return m, searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, m.searchQuery), providerCountOpts(m))
-		}
-		return m, nil
-	case searchResultsMsg:
-		m.loading = false
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		m.sessions.SetItems(msg.items)
-		m.searchQuery = msg.query
-		m.totalSessions = len(msg.items)
-		m.updateSourceCounts(msg.counts)
-		m.status = fmt.Sprintf("%d results for %q", len(msg.items), msg.query)
-		if msg.status.Pending > 0 {
-			m.status += mutedStyle.Render(fmt.Sprintf(" · %d sessions not indexed yet", msg.status.Pending))
-		}
-		m.layout()
+	}
+	var restoreCmd tea.Cmd
+	m, restoreCmd = dispatchPageLoad(m)
+	return m, restoreCmd
+}
+
+func (m modelState) onRelocateDone(msg relocateDoneMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	m.overlay = overlayNone
+	m.relocateInput.Blur()
+	if msg.err != nil && msg.resume == "" {
+		m.err = msg.err.Error()
 		return m, nil
 	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		if m.searching {
-			return m.updateSearching(msg)
-		}
-		if m.loading && !navigationKey(msg) {
-			if msg.String() == "ctrl+c" || msg.String() == "q" {
-				if m.cancel != nil {
-					m.cancel()
-				}
-				return m, tea.Quit
-			}
-			return m, nil
-		}
-		if m.overlay != overlayNone {
-			return m.updateOverlay(msg)
-		}
-		return m.updateList(msg)
+	verb := txt.forkedPrefix
+	if msg.moved {
+		verb = txt.movedPrefix
 	}
+	m.status = okStyle.Render(verb + truncateLeft(util.TildePath(msg.directory), 48))
+	if msg.err != nil {
+		m.status += mutedStyle.Render("  ·  " + msg.err.Error())
+	}
+	// The resume line points at the relocated session, which is the whole
+	// point of the action: the next thing the user does is run it there.
+	m.lastResume = msg.resume
+	m.launchTarget = msg.providerID
+	m.launchProject = msg.directory
+	var cmd tea.Cmd
+	m, cmd = dispatchPageLoad(m)
+	return m, cmd
+}
 
+func (m modelState) onMigrateDone(msg migrateDoneMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	m.overlay = overlayNone
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		m.lastResume = ""
+		return m, nil
+	}
+	m.lastResume = msg.res.Resume
+	m.launchTarget = msg.targetID
+	if msg.res.Write != nil {
+		m.launchProject = msg.res.Write.ProjectPath
+	}
+	target := msg.res.TargetName
+	if target == "" {
+		target = "target"
+	}
+	verb := txt.migratedPrefix
+	if msg.res.AlreadyExists {
+		verb = txt.alreadyPrefix
+	}
+	m.status = okStyle.Render(verb+target) + mutedStyle.Render(txt.copyHint)
+	if len(msg.res.Warnings) > 0 {
+		m.status += mutedStyle.Render(fmt.Sprintf(txt.warningsFmt, len(msg.res.Warnings)))
+	}
+	m.layout()
+	return m, nil
+}
+
+func (m modelState) onIndexRefreshed(msg indexRefreshedMsg) (tea.Model, tea.Cmd) {
+	m.indexing = false
+	m.loading = false
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		return m, nil
+	}
+	if msg.project != nil {
+		m.projectScope = *msg.project
+	}
+	m.updateSourceCounts(msg.counts)
+	if msg.reloadPage {
+		m.contentIndexing = true
+		var cmd tea.Cmd
+		m, cmd = dispatchPageLoad(m)
+		return m, tea.Batch(cmd, contentIndexCmd(m.ctx, m.reg, m.idx))
+	}
+	m.status = fmt.Sprintf("Index updated (%d sessions)", msg.updated)
+	m.layout()
+	return m, nil
+}
+
+func (m modelState) onContentIndexed(msg contentIndexedMsg) (tea.Model, tea.Cmd) {
+	m.contentIndexing = false
+	if msg.err != nil && msg.err != context.Canceled {
+		m.err = "content index: " + msg.err.Error()
+	}
+	// Index health is not news. Surface it only while work is outstanding.
+	if msg.status.Pending > 0 {
+		m.status = mutedStyle.Render(fmt.Sprintf("content indexing… %d pending", msg.status.Pending))
+	}
+	m.layout()
+	if m.searchQuery != "" {
+		return m, searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, m.searchQuery), providerCountOpts(m))
+	}
+	return m, nil
+}
+
+func (m modelState) onSearchResults(msg searchResultsMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		return m, nil
+	}
+	m.sessions.SetItems(msg.items)
+	m.searchQuery = msg.query
+	m.totalSessions = len(msg.items)
+	m.updateSourceCounts(msg.counts)
+	m.status = fmt.Sprintf("%d results for %q", len(msg.items), msg.query)
+	if msg.status.Pending > 0 {
+		m.status += mutedStyle.Render(fmt.Sprintf(" · %d sessions not indexed yet", msg.status.Pending))
+	}
+	m.layout()
+	return m, nil
+}
+
+// updateKey dispatches a key press to the search box, the active overlay, or
+// the session list, in that order of ownership.
+func (m modelState) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.searching {
+		return m.updateSearching(msg)
+	}
+	if m.loading && !navigationKey(msg) {
+		if msg.String() == "ctrl+c" || msg.String() == "q" {
+			if m.cancel != nil {
+				m.cancel()
+			}
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+	if m.overlay != overlayNone {
+		return m.updateOverlay(msg)
+	}
+	return m.updateList(msg)
+}
+
+// updateComponents forwards messages that are neither keys nor results, such
+// as spinner ticks and cursor blinks, to whichever component owns the screen.
+func (m modelState) updateComponents(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	if m.loading || m.batchRunning {
 		m.spinner, cmd = m.spinner.Update(msg)
