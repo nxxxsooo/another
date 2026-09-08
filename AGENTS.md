@@ -14,6 +14,10 @@ For every release, update and verify the full release-surface matrix:
 6. **Project website** — the site is live at `https://mjshao.fun/another` (landing page `mjshao-portfolio/public/another/index.html`, case page `src/app/work/projects/another.mdx`, release post `src/app/blog/posts/another-migrate-coding-agent-sessions.mdx`). Update all three for every release, including the version string, then verify each through the deployed URL.
 7. **WeChat Official Account** — prepare the matching release article and verify it in the draft box for every release. Public broadcast requires Mingjian's explicit confirmation.
 
+Tag at most once per day. A release costs the user an install and costs the maintainer seven surfaces, so same-day follow-up tags mean the first one was published too early; hold the change on `main` and let the next day's tag carry it. The exception is a hotfix for a bug that loses data, corrupts an agent's state, or leaves the released binary unusable — those ship immediately and say so in the notes.
+
+Release notes are written for the person deciding whether to upgrade: features and fixes in their own words, grouped, with docs, chores, CI, tests, and merge commits filtered out. `.goreleaser.yaml` does the grouping and the install header; do not replace it with a raw commit list.
+
 Before publishing, record the target version and all surfaces. Do not mix unexplained working-tree changes into a release. Do not report “released”, “published”, or “fully updated” until every applicable surface has been verified through its consumer-facing entry point; report partial success and blocked or unavailable surfaces explicitly.
 
 ## Provider Support Tiers

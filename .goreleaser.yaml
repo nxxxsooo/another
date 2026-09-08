@@ -80,5 +80,46 @@ homebrew_casks:
 
 checksum:
   name_template: checksums.txt
+
+# A release page is read by someone deciding whether to upgrade, so it opens
+# with how to upgrade and then says what changed in their terms. `use: github`
+# takes the commit subjects GitHub already associates with the tag; the filters
+# drop the housekeeping that means nothing to a user, and the groups put the
+# two questions they actually have — what is new, what is fixed — first.
 changelog:
   sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - '^docs(\([[:word:]]+\))??!?:'
+      - '^chore(\([[:word:]]+\))??!?:'
+      - '^ci(\([[:word:]]+\))??!?:'
+      - '^test(\([[:word:]]+\))??!?:'
+      - '^style(\([[:word:]]+\))??!?:'
+      - '^refactor(\([[:word:]]+\))??!?:'
+      - '^Merge '
+
+release:
+  header: |
+    ## Install
+
+    ```bash
+    brew install nxxxsooo/tap/another
+    ```
+
+    Already installed:
+
+    ```bash
+    brew upgrade another
+    ```
+
+    Or download the archive for your platform below and verify it against `checksums.txt`.
