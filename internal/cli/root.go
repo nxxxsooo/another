@@ -125,6 +125,7 @@ func (a *App) Root() *cobra.Command {
 	root.AddCommand(a.importCmd())
 	root.AddCommand(a.resumeCmd())
 	root.AddCommand(a.relocateCmd())
+	root.AddCommand(a.renameCmd())
 	root.AddCommand(a.searchCmd())
 	root.AddCommand(a.tuiCmd())
 	return root
