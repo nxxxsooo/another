@@ -832,3 +832,163 @@ func TestWriteAnnotatesMigratedConversation(t *testing.T) {
 		t.Fatalf("cleanup left its own annotation behind: %v", err)
 	}
 }
+
+// writeFullConversation lays out every store one conversation occupies, which
+// is what a delete has to clear: transcript, trajectory database, annotation,
+// summary row, and the presence file AGY leaves behind.
+func writeFullConversation(t *testing.T, root, id, title string) string {
+	t.Helper()
+	path := writeConversation(t, root, id, "hello there")
+	createSummariesDB(t, root, id, title, 1, "2026-09-06 15:10:32.000000+00:00")
+	for dir, name := range map[string]string{
+		"annotations":   id + ".pbtxt",
+		"conversations": id + ".db",
+		"presence":      id + ".lock",
+	} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := []byte("")
+		if dir == "annotations" {
+			body = []byte(`title:"` + title + `"`)
+		}
+		if err := os.WriteFile(filepath.Join(root, dir, name), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path
+}
+
+// TestDeleteSessionClearsEveryStore is the whole capability: after a delete no
+// store still names the conversation, so it cannot come back in a later listing
+// through whichever store that listing happens to read.
+func TestDeleteSessionClearsEveryStore(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	const id = "00000000-0000-4000-8000-0000000000b1"
+	path := writeFullConversation(t, root, id, "old name")
+
+	p := agy.New()
+	if err := p.DeleteSession(context.Background(), provider.SessionRef{ID: id, StoragePath: path}); err != nil {
+		t.Fatalf("DeleteSession error = %v", err)
+	}
+	for _, gone := range []string{
+		filepath.Join(root, "brain", id),
+		filepath.Join(root, "conversations", id+".db"),
+		filepath.Join(root, "annotations", id+".pbtxt"),
+		filepath.Join(root, "presence", id+".lock"),
+	} {
+		if _, err := os.Stat(gone); !os.IsNotExist(err) {
+			t.Errorf("%s survived the delete: %v", gone, err)
+		}
+	}
+	if err := summaryRowGone(t, root, id); err != nil {
+		t.Error(err)
+	}
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sums) != 0 {
+		t.Fatalf("Discover = %+v, want the deleted conversation gone", sums)
+	}
+}
+
+// TestDeleteSessionRemovesWholeBrainDirectory separates a delete from the
+// post-write rollback next to it. Rollback keeps anything AGY added, because it
+// owns only what the migration wrote; a delete is the person removing their own
+// session, and the uploads and scratch inside it go too.
+func TestDeleteSessionRemovesWholeBrainDirectory(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	const id = "00000000-0000-4000-8000-0000000000b2"
+	path := writeFullConversation(t, root, id, "old name")
+	upload := filepath.Join(root, "brain", id, ".user_uploaded", "screenshot.png")
+	if err := os.MkdirAll(filepath.Dir(upload), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(upload, []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := agy.New().DeleteSession(context.Background(), provider.SessionRef{ID: id, StoragePath: path}); err != nil {
+		t.Fatalf("DeleteSession error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "brain", id)); !os.IsNotExist(err) {
+		t.Fatalf("brain directory survived the delete: %v", err)
+	}
+}
+
+// TestDeleteSessionWithoutSummaryRow is the shape a current Antigravity build
+// creates: no row in the legacy table. Its absence is not a missing session.
+func TestDeleteSessionWithoutSummaryRow(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	const id = "00000000-0000-4000-8000-0000000000b3"
+	path := writeConversation(t, root, id, "hello there")
+	if err := agy.New().DeleteSession(context.Background(), provider.SessionRef{ID: id, StoragePath: path}); err != nil {
+		t.Fatalf("DeleteSession error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "brain", id)); !os.IsNotExist(err) {
+		t.Fatalf("brain directory survived the delete: %v", err)
+	}
+}
+
+// TestDeleteMissingSession keeps a delete of something already gone
+// distinguishable from a delete that failed.
+func TestDeleteMissingSession(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	const id = "00000000-0000-4000-8000-0000000000b4"
+	err := agy.New().DeleteSession(context.Background(), provider.SessionRef{ID: id})
+	if !errors.Is(err, provider.ErrNotFound) {
+		t.Fatalf("DeleteSession error = %v, want ErrNotFound", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "presence", id+".lock")); !os.IsNotExist(err) {
+		t.Fatalf("a delete that found nothing left a presence file: %v", err)
+	}
+}
+
+// TestDeleteRefusesActiveConversation protects the conversation AGY has open:
+// its files are still being written, so the delete is refused rather than
+// pulled out from under the running CLI.
+func TestDeleteRefusesActiveConversation(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	const id = "00000000-0000-4000-8000-0000000000b5"
+	path := writeFullConversation(t, root, id, "old name")
+	t.Setenv("ANTIGRAVITY_CONVERSATION_ID", id)
+	err := agy.New().DeleteSession(context.Background(), provider.SessionRef{ID: id, StoragePath: path})
+	if err == nil || !strings.Contains(err.Error(), "currently active") {
+		t.Fatalf("DeleteSession error = %v, want the active conversation refused", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("a refused delete removed the transcript: %v", err)
+	}
+}
+
+// TestDeleteRejectsUnparseableID stops a ref from steering a delete outside the
+// per-conversation layout: every path removed is built from this id.
+func TestDeleteRejectsUnparseableID(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AGY_HOME", root)
+	if err := agy.New().DeleteSession(context.Background(), provider.SessionRef{ID: "../.."}); err == nil {
+		t.Fatal("DeleteSession accepted an id that is not a conversation")
+	}
+}
+
+func summaryRowGone(t *testing.T, root, id string) error {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(root, "conversation_summaries.db")+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM conversation_summaries WHERE conversation_id=?`, id).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		return errors.New("the summary row survived the delete")
+	}
+	return nil
+}

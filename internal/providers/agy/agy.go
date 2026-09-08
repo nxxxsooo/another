@@ -676,11 +676,15 @@ func validateSessionID(id string) error {
 	return nil
 }
 
+func (p *Provider) presencePath(id string) string {
+	return filepath.Join(p.root, "presence", id+".lock")
+}
+
 func (p *Provider) acquireLifecycleLock(id string) (func() error, error) {
 	if os.Getenv("ANTIGRAVITY_CONVERSATION_ID") == id {
 		return nil, fmt.Errorf("agy: conversation %s is currently active", id)
 	}
-	release, active, err := acquireConversationLock(filepath.Join(p.root, "presence", id+".lock"))
+	release, active, err := acquireConversationLock(p.presencePath(id))
 	if err != nil {
 		return nil, fmt.Errorf("agy: acquire conversation lock: %w", err)
 	}
@@ -767,6 +771,115 @@ func (p *Provider) cleanupArtifacts(ctx context.Context, result provider.WriteRe
 
 func (p *Provider) CleanupWrite(ctx context.Context, result provider.WriteResult) error {
 	return p.cleanupArtifacts(ctx, result)
+}
+
+// DeleteSession removes the conversation from every place Antigravity keeps it:
+// the brain directory, the trajectory database beside it, the annotation
+// holding its name, and — for conversations old enough to have one — the
+// summary row. Nothing else under the CLI's storage names a conversation id, so
+// that set is the whole session and removing it leaves nothing dangling.
+//
+// The paths come from the id rather than from the caller's storage path: an id
+// that is not a UUID is refused, and everything deleted is then built from the
+// provider's own root, so no ref can steer a delete outside it.
+//
+// Antigravity itself offers no way to remove a conversation — version 1.1.27
+// has no subcommand for it at all — but the state is plainly the agent's own
+// and laid out per conversation, so this removes it rather than emulating a
+// deletion another would have to remember on its own.
+func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) (retErr error) {
+	if err := validateSessionID(ref.ID); err != nil {
+		return err
+	}
+	// The same presence lock a rename takes: a conversation AGY has open is
+	// still writing to the files below, so it is refused rather than pulled out
+	// from under the running CLI.
+	release, err := p.acquireLifecycleLock(ref.ID)
+	if err != nil {
+		return err
+	}
+	// Taking the lock opens the presence file into existence, so it goes for
+	// every outcome that leaves no conversation behind — a delete that finished
+	// and a conversation that was already gone alike. Either way another would
+	// otherwise be the one leaving a lock for a conversation nobody can open.
+	// It goes only after the lock it backs has been let go, and never when the
+	// removal failed partway, where the conversation is still there to guard.
+	noConversationLeft := false
+	defer func() {
+		if err := release(); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("agy: release conversation lock: %w", err))
+			return
+		}
+		if !noConversationLeft {
+			return
+		}
+		if err := os.Remove(p.presencePath(ref.ID)); err != nil && !os.IsNotExist(err) {
+			retErr = errors.Join(retErr, err)
+		}
+	}()
+	exists, err := p.conversationExists(ctx, ref)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		noConversationLeft = true
+		return provider.ErrNotFound
+	}
+	if err := p.removeConversation(ctx, ref.ID); err != nil {
+		return err
+	}
+	noConversationLeft = true
+	return nil
+}
+
+// removeConversation deletes what belongs to one conversation. Where the
+// post-write rollback in cleanupArtifacts removes only the files a migration
+// itself wrote and leaves any directory AGY has since added to, this is the
+// person deleting their own session: the brain directory goes whole, uploads
+// and scratch included.
+//
+// Every removal is attempted even after one fails, because a conversation left
+// half-removed would keep appearing in the list with its transcript already
+// gone.
+func (p *Provider) removeConversation(ctx context.Context, id string) error {
+	brainDir := filepath.Join(p.root, "brain", id)
+	if st, err := os.Lstat(brainDir); err == nil && st.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("agy: refusing to delete symlinked conversation directory %s", brainDir)
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	errs := []error{os.RemoveAll(brainDir)}
+	for _, target := range []string{
+		filepath.Join(p.root, "conversations", id+".db"),
+		filepath.Join(p.root, "conversations", id+".db-shm"),
+		filepath.Join(p.root, "conversations", id+".db-wal"),
+		p.annotationPath(id),
+	} {
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
+	}
+	errs = append(errs, p.deleteSummaryRow(ctx, id))
+	return errors.Join(errs...)
+}
+
+// deleteSummaryRow drops the legacy row when the table still holds one. A
+// conversation created by a build that no longer writes the table has no row,
+// and a machine with no table at all has nothing to drop; neither is a failure.
+func (p *Provider) deleteSummaryRow(ctx context.Context, id string) error {
+	if _, err := os.Stat(p.summariesDBPath()); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	db, err := p.openSummariesRW()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.ExecContext(ctx, `DELETE FROM conversation_summaries WHERE conversation_id = ?`, id)
+	return err
 }
 
 func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, title string) (retErr error) {

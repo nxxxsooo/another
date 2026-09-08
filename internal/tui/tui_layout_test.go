@@ -211,10 +211,18 @@ func TestHelpShowsOnlySelectedAgentCapabilities(t *testing.T) {
 	it := m.sessions.SelectedItem().(sessionItem)
 	it.summary.Provider = "agy"
 	m.sessions.SetItems([]list.Item{it})
+	if help := m.help(); strings.Contains(help, txt.helpListArchive) {
+		t.Fatalf("Antigravity help advertises an archive it keeps no state for: %q", help)
+	} else if !strings.Contains(help, txt.helpListRename) || !strings.Contains(help, txt.helpListDelete) {
+		t.Fatalf("Antigravity help hides supported rename and delete: %q", help)
+	}
+
+	it.summary.Provider = "qwen"
+	m.sessions.SetItems([]list.Item{it})
 	if help := m.help(); strings.Contains(help, txt.helpListArchive) || strings.Contains(help, txt.helpListDelete) {
-		t.Fatalf("Antigravity help advertises unsupported actions: %q", help)
+		t.Fatalf("Qwen Code help advertises unsupported actions: %q", help)
 	} else if !strings.Contains(help, txt.helpListRename) {
-		t.Fatalf("Antigravity help hides supported rename: %q", help)
+		t.Fatalf("Qwen Code help hides supported rename: %q", help)
 	}
 }
 
