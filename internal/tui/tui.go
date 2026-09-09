@@ -124,7 +124,6 @@ type modelState struct {
 	movedAway       []string
 	projectScope    util.ProjectScope
 	projectOnly     bool
-	sessionSpacing  int
 	pageGen         uint64
 	lastResume      string
 	lastArchived    *model.Summary
