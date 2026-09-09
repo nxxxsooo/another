@@ -105,6 +105,17 @@ func accepts(lang Language, line string) bool {
 	return titlePatterns[NormalizeLanguage(lang)].MatchString(line)
 }
 
+// Conforms reports whether a title already satisfies the policy, so a caller
+// can decline to pay for a model call that could only produce what is there.
+//
+// It is exported because the alternative is every trigger matching the format
+// itself. An extension that carried its own pattern would be a second policy:
+// looser than this one, free to drift, and unable to learn that the eight
+// types are a closed list. another owns the naming, so another answers this.
+func Conforms(lang Language, title string) bool {
+	return accepts(lang, strings.TrimSpace(title))
+}
+
 // ansiPattern strips colour codes some CLIs emit even with NO_COLOR set.
 var ansiPattern = regexp.MustCompile("\x1b\\[[0-9;?]*[ -~]")
 

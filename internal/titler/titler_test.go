@@ -430,3 +430,50 @@ func stubCLI(t *testing.T, name, script string) string {
 	}
 	return path
 }
+
+// Conforms is what keeps a trigger from paying for a title it already has.
+// The Pi extension used to answer this itself with ^\d{4}｜[^｜]+｜.+$, which
+// accepted any word at all in the type position — so a model that drifted off
+// the closed list produced a title another would then refuse to correct.
+func TestConformsHoldsTheClosedTypeList(t *testing.T) {
+	conforming := []string{
+		"0909｜功能｜测试会话标题重命名",
+		"0909｜Fix｜Read every agent's sessions",
+		// Leading and trailing space is how a title arrives from a store that
+		// padded it, not a different title.
+		"  0909｜探索｜Pi重命名测试  ",
+	}
+	for _, title := range conforming {
+		if !titler.Conforms(titler.LangAuto, title) {
+			t.Errorf("titler.Conforms(%q) = false, want true", title)
+		}
+	}
+
+	rejected := []string{
+		"",
+		"reply with OK",
+		"我现在基本上媒体搜索类的会走到 Agent Reach",
+		// A type outside the eight. The extension's own pattern took it.
+		"0909｜杂项｜随便写的",
+		"0909｜Misc｜Something",
+		// A date-shaped prefix is not a date component.
+		"909｜功能｜太短",
+		// Nothing after the second separator.
+		"0909｜功能｜",
+	}
+	for _, title := range rejected {
+		if titler.Conforms(titler.LangAuto, title) {
+			t.Errorf("titler.Conforms(%q) = true, want false", title)
+		}
+	}
+
+	// A configured language judges by its own vocabulary, the same way the
+	// suggestion is validated, so a session cannot be judged in one language
+	// and named in another.
+	if titler.Conforms(titler.LangEnglish, "0909｜功能｜中文标题") {
+		t.Error("English policy accepted a Chinese type")
+	}
+	if !titler.Conforms(titler.LangChinese, "0909｜功能｜中文标题") {
+		t.Error("Chinese policy rejected its own type")
+	}
+}

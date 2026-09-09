@@ -11,7 +11,7 @@ func TestRenameCommandSurface(t *testing.T) {
 	if err != nil || cmd == root {
 		t.Fatalf("missing rename command: %v", err)
 	}
-	for _, flag := range []string{"title", "auto", "from", "allow-current", "dry-run", "refresh"} {
+	for _, flag := range []string{"title", "auto", "from", "allow-current", "dry-run", "refresh", "skip-conforming"} {
 		if cmd.Flags().Lookup(flag) == nil {
 			t.Errorf("missing rename --%s", flag)
 		}

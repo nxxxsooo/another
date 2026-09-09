@@ -15,7 +15,12 @@ after every automatic retry, compaction, and queued continuation has finished;
 title-model calls on an ordinary turn and races two renames onto one session.
 
 A session whose name already matches the policy is left alone, so a title set
-by hand survives.
+by hand survives. `--skip-conforming` is what decides that, which puts the
+decision in the same place as the policy. The extension used to decide it here
+by matching the format itself and reading `pi.getSessionName()` — the name Pi
+holds in memory, which never learns about the title another wrote into the
+session file. The guard therefore stopped working after the first rename, and
+every settled turn spent a title-model call rewriting a correct title.
 
 ## Relationship to `@oipsanthony/pi-session-title`
 
