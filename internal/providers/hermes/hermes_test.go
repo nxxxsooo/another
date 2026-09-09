@@ -239,13 +239,31 @@ func TestDiscoverSkipsArchived(t *testing.T) {
 	}
 }
 
-func TestInstalled(t *testing.T) {
+// TestInstalledNeedsSessionsTable pins what "installed" claims: sessions
+// another can read. An empty state.db — the file exists before Hermes has put
+// anything in it — used to pass as installed, and every scan of it then failed.
+func TestInstalledNeedsSessionsTable(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "state.db")
 	if err := os.WriteFile(dbPath, []byte{}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	p := &Provider{dbPath: dbPath}
+	if p.Installed() {
+		t.Fatal("an empty database reported Hermes sessions")
+	}
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 0 {
+		t.Fatalf("empty database scan: sums=%d err=%v", len(sums), err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT, started_at REAL, message_count INTEGER, cwd TEXT, archived INTEGER NOT NULL DEFAULT 0)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
 	if !p.Installed() {
 		t.Fatal("expected installed")
 	}

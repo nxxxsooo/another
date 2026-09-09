@@ -198,3 +198,28 @@ func TestResumeCommandQuotesSession(t *testing.T) {
 		t.Fatalf("resume = %q", got)
 	}
 }
+
+// TestInstalledIgnoresDatabaseTakenOverByOpenCode2 pins the difference between
+// a file named opencode.db and OpenCode 1 data. OpenCode 2 migrates this very
+// path to its own schema, which leaves the legacy database in place with no
+// session table: reading it as OpenCode 1 fails, and that failure used to be
+// reported as an installed agent whose every scan errored.
+func TestInstalledIgnoresDatabaseTakenOverByOpenCode2(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "opencode.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE session_v2 (id TEXT PRIMARY KEY, directory TEXT, title TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	p := &Provider{dbPath: path}
+	if p.Installed() {
+		t.Fatal("a migrated database reported OpenCode 1 sessions")
+	}
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 0 {
+		t.Fatalf("migrated database scan: sums=%d err=%v", len(sums), err)
+	}
+}

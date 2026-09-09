@@ -340,3 +340,26 @@ func TestDeleteIsNotAdvertisedAsReversible(t *testing.T) {
 		t.Fatal("OpenCode 2 offers an undo it cannot honour: a restore there is a new session, not the original")
 	}
 }
+
+// TestInstalledNeedsSessionTable keeps "installed" meaning sessions another
+// can read. OpenCode 2 creates its database before this schema exists in it,
+// and a scan of that file used to fail rather than report nothing.
+func TestInstalledNeedsSessionTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "opencode2.db")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	p := opencode2.New()
+	if p.Installed() {
+		t.Fatal("an empty database reported OpenCode 2 sessions")
+	}
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 0 {
+		t.Fatalf("empty database scan: sums=%d err=%v", len(sums), err)
+	}
+	t.Setenv("OPENCODE2_DB_PATH", fixtureDB(t))
+	if !opencode2.New().Installed() {
+		t.Fatal("expected installed")
+	}
+}

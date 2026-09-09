@@ -32,9 +32,14 @@ const (
 )
 
 type setupItem struct {
-	id, name  string
-	command   string
-	sessions  int
+	id, name string
+	command  string
+	sessions int
+	// counted marks a session number this run can stand behind. A first run
+	// has an empty index, and an agent with sessions on disk must not be
+	// described as having none, so its storage is counted while the page is
+	// up and the row says so until the number lands.
+	counted   bool
 	data, cli bool
 	available bool
 	// adapter marks the second tier: agents another keeps working but does not
@@ -78,6 +83,40 @@ func (p SetupPlugin) Known() bool { return p.State != "" }
 
 // pluginStatusMsg carries one finished lookup.
 type pluginStatusMsg struct{ plugin SetupPlugin }
+
+// sessionCountMsg carries one agent's finished count. A count another could
+// not take is reported as zero sessions rather than left counting forever:
+// the row still says the CLI is there, which is the honest pair.
+type sessionCountMsg struct {
+	provider string
+	sessions int
+}
+
+// sessionCountCmds counts each agent's storage on its own, so the agent with
+// three sessions is not held behind the one with three thousand.
+func sessionCountCmds(count func(string) (int, error), items []setupItem) tea.Cmd {
+	if count == nil {
+		return nil
+	}
+	cmds := make([]tea.Cmd, 0, len(items))
+	for _, item := range items {
+		if item.counted {
+			continue
+		}
+		id := item.id
+		cmds = append(cmds, func() tea.Msg {
+			n, err := count(id)
+			if err != nil {
+				n = 0
+			}
+			return sessionCountMsg{provider: id, sessions: n}
+		})
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
 
 // pluginStatusCmds looks each adapter up on its own, so the one that answers
 // from a file is not held behind the one that starts a service.
@@ -123,6 +162,10 @@ type setupModel struct {
 	pluginWanted  map[string]bool
 	pluginTouched map[string]bool
 	pluginProbe   func(string) SetupPlugin
+	// countSessions reads one agent's session count off its own storage. It
+	// is what fills in the rows the index cannot answer for, which on a first
+	// run is every one of them.
+	countSessions func(string) (int, error)
 	// pluginConsented is the saved answer from an earlier run, which decides
 	// each row's default once its lookup arrives.
 	pluginConsented map[string]bool
@@ -173,7 +216,11 @@ var uiLanguages = []i18n.Lang{i18n.LangAuto, i18n.LangEnglish, i18n.LangChinese}
 // plus the two language settings. It takes and returns whole settings so a
 // preference this page does not touch survives being edited here. The caller
 // persists the result only after the program exits cleanly.
-func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Settings, plugins []SetupPlugin, probe func(string) SetupPlugin) (config.Settings, bool, error) {
+//
+// counts is what the index already knows, which on a first run is nothing at
+// all. count is how a row gets a real number anyway: it reads the agent's own
+// storage, in the background, for the agents the index cannot answer for.
+func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Settings, plugins []SetupPlugin, probe func(string) SetupPlugin, count func(string) (int, error)) (config.Settings, bool, error) {
 	initialTitle := initial.TitleModel
 	initialPolicy := initial.TitlePolicy
 	chosen := initialSetupSelection(initial.EnabledProviders)
@@ -186,6 +233,11 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 			sessions: counts[p.ID()], data: data, cli: cli, available: data || cli,
 			adapter: registry.IsCompatibilityAdapter(p.ID()),
 		}
+		// An indexed agent already has its number, and an agent with no
+		// storage has nothing to count. Everything else is counted while the
+		// page is up: that is the first run, where the index is empty and the
+		// choice this page asks for is the one the numbers inform.
+		item.counted = item.sessions > 0 || !data
 		items = append(items, item)
 	}
 	// The fold needs the two tiers contiguous; a saved display order is kept
@@ -200,6 +252,7 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 	modelInput.CharLimit = 120
 	start := setupModel{items: items, selected: chosen, spinner: sp, modelInput: modelInput, plugins: plugins}
 	start.pluginProbe = probe
+	start.countSessions = count
 	start.pluginConsented = make(map[string]bool, len(plugins))
 	start.pluginWanted = make(map[string]bool, len(plugins))
 	start.pluginTouched = make(map[string]bool, len(plugins))
@@ -577,7 +630,8 @@ func restoreTitleCursor(opts []titleOption, previous []titleOption) int {
 func (m setupModel) Init() tea.Cmd {
 	// The lookup starts with page one, which is where the time it takes is
 	// free: the row it fills in belongs to page two.
-	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle), probeSizeCmd(0), pluginStatusCmds(m.pluginProbe, m.plugins))
+	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle), probeSizeCmd(0),
+		pluginStatusCmds(m.pluginProbe, m.plugins), sessionCountCmds(m.countSessions, m.items))
 }
 
 func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -610,6 +664,16 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			wanted[id] = pluginDefault(msg.plugin, m.pluginConsented[id])
 			m.pluginWanted = wanted
 		}
+		return m, nil
+	case sessionCountMsg:
+		items := make([]setupItem, len(m.items))
+		copy(items, m.items)
+		for i, item := range items {
+			if item.id == msg.provider {
+				items[i].sessions, items[i].counted = msg.sessions, true
+			}
+		}
+		m.items = items
 		return m, nil
 	case modelsLoadedMsg:
 		if msg.provider != m.modelFor {
@@ -847,7 +911,10 @@ func (m setupModel) View() string {
 			cli = txt.setupCLIFound
 		}
 		data := fmt.Sprintf(txt.setupSessionsFmt, item.sessions)
-		if !item.data && item.sessions == 0 {
+		switch {
+		case !item.counted:
+			data = txt.setupSessionsCounting
+		case !item.data && item.sessions == 0:
 			data = txt.setupNoData
 		}
 		line := cursor + mark + " " + name + "  " + padRight(cli, txt.setupCLIWidth) + "  " + data
