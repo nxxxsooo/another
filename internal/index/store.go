@@ -1120,6 +1120,15 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 // be a leftover is therefore opened and matched against the prompt itself,
 // which every agent keeps. Sessions that fail to load are kept: a session
 // another cannot read is not a session another may hide.
+// DiscoverIndexable is what a provider offers the index after another's own
+// title-generation leftovers are removed. It exists for tooling that has to
+// compare discovery against the index: the raw Discover count includes
+// sessions another created while asking an agent for a title, and comparing
+// that number to the stored rows reports a healthy index as stale.
+func DiscoverIndexable(ctx context.Context, p provider.Provider, summaries []model.Summary) []model.Summary {
+	return dropTitlerSessions(ctx, p, summaries)
+}
+
 func dropTitlerSessions(ctx context.Context, p provider.Provider, summaries []model.Summary) []model.Summary {
 	out := summaries[:0]
 	for _, sm := range summaries {
