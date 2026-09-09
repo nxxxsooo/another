@@ -10,8 +10,6 @@ import { spawn } from "node:child_process"
 // Pi is the trigger, another is the naming. That split is what keeps this file
 // small enough to read.
 
-const POLICY = /^\d{4}｜[^｜]+｜.+$/u
-
 export default function register(pi: ExtensionAPI): void {
   // Detached on purpose: naming is a model call, and a turn should not end
   // slowly because a title is being written. Failures land in another's own
@@ -22,14 +20,17 @@ export default function register(pi: ExtensionAPI): void {
     if (!ctx.sessionManager.getSessionFile()) return
     const id = ctx.sessionManager.getSessionId()
     if (!id) return
-    // A session that already carries a policy title is left alone: the user
-    // may have set it by hand, and re-naming it would overwrite that.
-    const current = pi.getSessionName()
-    if (current && POLICY.test(current)) return
 
+    // --skip-conforming is how a session that already carries a policy title
+    // is left alone. Deciding that here was wrong twice over: it duplicated a
+    // policy another owns, and pi.getSessionName() reports the name Pi holds
+    // in memory, which never learns about the one another wrote into the
+    // session file. The guard therefore never fired after the first rename,
+    // and every settled turn spent another title-model call rewriting a title
+    // that was already correct.
     const child = spawn(
       "another",
-      ["rename", id, "--from", "pi", "--auto", "--allow-current", "--refresh"],
+      ["rename", id, "--from", "pi", "--auto", "--skip-conforming", "--allow-current", "--refresh"],
       { detached: true, stdio: "ignore" },
     )
     child.on("error", () => {

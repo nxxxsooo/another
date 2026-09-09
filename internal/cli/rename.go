@@ -17,7 +17,7 @@ import (
 
 func (a *App) renameCmd() *cobra.Command {
 	var from, title string
-	var auto, dryRun, refresh, allowCurrent bool
+	var auto, dryRun, refresh, allowCurrent, skipConforming bool
 	cmd := &cobra.Command{
 		Use:   "rename <session-id>",
 		Short: "Rename a session in its agent's own title store",
@@ -52,6 +52,22 @@ func (a *App) renameCmd() *cobra.Command {
 			// by a caller that can name that situation.
 			if provider.IsCurrentSession(*sm) && !allowCurrent {
 				return fmt.Errorf("refusing to rename %s: it is the session this process is running in (pass --allow-current from a SessionEnd hook)", sm.ID)
+			}
+			// A title that already follows the policy is left where it is.
+			// The check belongs to another rather than to the caller: an
+			// extension matching the format itself would be a second policy,
+			// and the one place a trigger could read the current title —
+			// the agent's own in-memory session name — cannot see the title
+			// another wrote straight into the session store.
+			if auto && skipConforming {
+				cfg, err := titleConfig()
+				if err != nil {
+					return err
+				}
+				if titler.Conforms(cfg.Language, sm.Title) {
+					fmt.Printf("Unchanged: %s already follows the policy (%s)\n", sm.ID, sm.Title)
+					return nil
+				}
 			}
 			if auto {
 				suggested, err := a.suggestTitle(ctx, p, *sm)
@@ -92,22 +108,33 @@ func (a *App) renameCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&allowCurrent, "allow-current", false, "permit renaming the running session (SessionEnd hooks)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "resolve and suggest without writing")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before rename")
+	cmd.Flags().BoolVar(&skipConforming, "skip-conforming", false, "with --auto, leave a title that already follows the policy")
 	return cmd
 }
 
-// suggestTitle runs the configured title agent once for one session. The
+// titleConfig reads the title agent the user chose in setup. Both the policy
+// check and the suggestion read it from here so a session cannot be judged
+// against one language and named in another.
+func titleConfig() (titler.Config, error) {
+	settings, err := config.LoadSettings()
+	if err != nil || settings.TitleModel == nil {
+		return titler.Config{}, fmt.Errorf("no title agent configured: run another setup, or pass --title")
+	}
+	return titler.Config{
+		Provider: settings.TitleModel.Provider,
+		Model:    settings.TitleModel.Model,
+		Language: titler.NormalizeLanguage(titler.Language(settings.TitleModel.Language)),
+	}, nil
+}
+
+// suggestTitle runs the configured title agent for one session. The
 // guards Suggest already owns — no creation time, an agent that cannot write
 // titles, a CLI that is not installed — are left to it so this path cannot
 // refuse for a reason the engine would not.
 func (a *App) suggestTitle(ctx context.Context, p provider.Provider, sm model.Summary) (string, error) {
-	settings, err := config.LoadSettings()
-	if err != nil || settings.TitleModel == nil {
-		return "", fmt.Errorf("no title agent configured: run another setup, or pass --title")
-	}
-	cfg := titler.Config{
-		Provider: settings.TitleModel.Provider,
-		Model:    settings.TitleModel.Model,
-		Language: titler.NormalizeLanguage(titler.Language(settings.TitleModel.Language)),
+	cfg, err := titleConfig()
+	if err != nil {
+		return "", err
 	}
 	ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
 	var conv *model.Conversation
@@ -123,7 +150,7 @@ func (a *App) suggestTitle(ctx context.Context, p provider.Provider, sm model.Su
 	if conv != nil {
 		msgs = conv.Messages
 	}
-	suggestion, err := titler.Suggest(ctx, cfg, titler.Request{
+	suggestion, err := titler.SuggestRetrying(ctx, cfg, titler.Request{
 		Title: sm.Title, ProjectPath: sm.ProjectPath, CreatedAt: sm.CreatedAt, Messages: msgs,
 	})
 	if err != nil {

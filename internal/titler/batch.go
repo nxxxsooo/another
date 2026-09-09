@@ -148,25 +148,46 @@ func runOne(ctx context.Context, cfg Config, item BatchItem, suggest suggestFunc
 		res.Frozen = FreezeCancelled
 		return res
 	}
+	title, err := suggestRetrying(ctx, cfg, item.Request, suggest)
+	if err != nil {
+		res.Err = err
+		return res
+	}
+	res.Title = title
+	return res
+}
+
+// SuggestRetrying names one session with the same tolerance for a transient
+// failure that a batch row gets.
+//
+// The single-session path had none, and it is the path nothing is watching:
+// the agent extensions call `another rename --auto` detached, with output
+// discarded, because a title must not slow down or interrupt a turn. One
+// INTERNAL 500 from a title agent therefore looked exactly like a broken
+// install — no title, no error, nowhere to read why. The row a person can see
+// fail in a batch screen was the one that already retried.
+func SuggestRetrying(ctx context.Context, cfg Config, req Request) (string, error) {
+	return suggestRetrying(ctx, cfg, req, Suggest)
+}
+
+func suggestRetrying(ctx context.Context, cfg Config, req Request, suggest suggestFunc) (string, error) {
 	var last error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if attempt > 1 && !wait(ctx, retryDelay) {
 			break
 		}
-		title, err := suggest(ctx, cfg, item.Request)
+		title, err := suggest(ctx, cfg, req)
 		if err == nil {
-			res.Title = title
-			return res
+			return title, nil
 		}
 		last = err
-		// A permanent failure and a cancelled batch both mean the next
-		// attempt cannot do better than this one.
+		// A permanent failure and a cancelled run both mean the next attempt
+		// cannot do better than this one.
 		if Permanent(err) || ctx.Err() != nil {
 			break
 		}
 	}
-	res.Err = last
-	return res
+	return "", last
 }
 
 // wait sleeps unless the batch is cancelled first.

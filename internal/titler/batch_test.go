@@ -268,3 +268,45 @@ func TestARowThatKeepsItsTitleIsNotAChange(t *testing.T) {
 		t.Fatalf("unexpected counts: %+v", c)
 	}
 }
+
+// The path nothing is watching gets the retry the watched one already had.
+// An agent extension calls rename detached with its output discarded, so a
+// transient failure there is silent: no title appears and no one is told why.
+func TestSuggestRetryingSurvivesOneTransientFailure(t *testing.T) {
+	fastRetries(t)
+	calls := 0
+	suggest := func(context.Context, Config, Request) (string, error) {
+		calls++
+		if calls == 1 {
+			return "", errors.New("INTERNAL 500")
+		}
+		return "0909｜Fix｜Named on the second try", nil
+	}
+	title, err := suggestRetrying(context.Background(), Config{}, Request{}, suggest)
+	if err != nil {
+		t.Fatalf("err = %v, want the retry to succeed", err)
+	}
+	if title != "0909｜Fix｜Named on the second try" {
+		t.Fatalf("title = %q", title)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2", calls)
+	}
+}
+
+// A setup that is broken rather than busy must not be retried: the second
+// call cannot answer differently, and the caller is waiting on a turn.
+func TestSuggestRetryingStopsOnAPermanentFailure(t *testing.T) {
+	fastRetries(t)
+	calls := 0
+	suggest := func(context.Context, Config, Request) (string, error) {
+		calls++
+		return "", permanent(errors.New("no such agent CLI"))
+	}
+	if _, err := suggestRetrying(context.Background(), Config{}, Request{}, suggest); err == nil {
+		t.Fatal("want the permanent failure returned")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1", calls)
+	}
+}
