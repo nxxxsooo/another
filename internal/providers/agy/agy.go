@@ -695,6 +695,19 @@ func (p *Provider) acquireLifecycleLock(id string) (func() error, error) {
 	return release, nil
 }
 
+// tryLifecycleLock takes the presence lock when it happens to be free and
+// returns nil when it is not. It is for mutations that are safe beside a
+// running AGY and only want the lock to keep another's own operations from
+// interleaving: a lock held elsewhere, or a platform with no flock at all,
+// leaves the mutation unserialized rather than refusing it.
+func (p *Provider) tryLifecycleLock(id string) func() error {
+	release, active, err := acquireConversationLock(p.presencePath(id))
+	if err != nil || active {
+		return nil
+	}
+	return release
+}
+
 // activeHolderText says who is holding the conversation open.
 //
 // The refusal used to end at "currently active", which sends a reader looking
@@ -807,9 +820,9 @@ func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) (
 	if err := validateSessionID(ref.ID); err != nil {
 		return err
 	}
-	// The same presence lock a rename takes: a conversation AGY has open is
-	// still writing to the files below, so it is refused rather than pulled out
-	// from under the running CLI.
+	// Unlike a rename, which only replaces metadata beside a running AGY, this
+	// removes the files that AGY is still writing, so a conversation it has
+	// open is refused rather than pulled out from under the running CLI.
 	release, err := p.acquireLifecycleLock(ref.ID)
 	if err != nil {
 		return err
@@ -906,15 +919,28 @@ func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, t
 	if err := validateSessionID(ref.ID); err != nil {
 		return err
 	}
-	release, err := p.acquireLifecycleLock(ref.ID)
-	if err != nil {
-		return err
+	// A rename does not wait for AGY to let the conversation go.
+	//
+	// A delete has to: it removes the transcript and trajectory database a
+	// running CLI is still writing into. A rename touches neither. It replaces
+	// the annotation — one line of protobuf text AGY writes once, when it first
+	// names the conversation, and does not hold open — and updates a legacy row
+	// SQLite already serializes. Refusing here cost people the rename they want
+	// most, on the conversation they are sitting in, and bought them nothing:
+	// naming the process holding the lock only told them to quit the session
+	// they were working in.
+	//
+	// The lock is still taken when it is free, so another's own rename and
+	// delete cannot interleave. When AGY holds it the rename goes ahead, and
+	// the worst case is AGY naming the conversation itself afterwards — the
+	// user's title losing to a later one, not a damaged conversation.
+	if release := p.tryLifecycleLock(ref.ID); release != nil {
+		defer func() {
+			if err := release(); err != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("agy: release conversation lock: %w", err))
+			}
+		}()
 	}
-	defer func() {
-		if err := release(); err != nil {
-			retErr = errors.Join(retErr, fmt.Errorf("agy: release conversation lock: %w", err))
-		}
-	}()
 	exists, err := p.conversationExists(ctx, ref)
 	if err != nil {
 		return err
