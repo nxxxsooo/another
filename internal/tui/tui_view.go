@@ -22,24 +22,42 @@ func (m modelState) markStatus() string {
 	return mutedStyle.Render(fmt.Sprintf(txt.markedFmt, len(m.marked)))
 }
 
-// contentBandWidth is the widest the browser draws itself, however wide the
-// terminal is. Every column on a session row is bounded except the title,
-// which takes whatever is left and then pads it — so on an ultrawide terminal
-// the row became a title on the left, a path on the right, and a hundred and
-// thirty cells of nothing between them. Bounding the whole browser is one
-// number instead of a cap per column, and it keeps the header, the pane and
-// the footer on the same edges rather than letting the list drift away from
-// the chrome around it.
+// The band is how wide the browser draws itself, however wide the terminal is.
+// Every column on a session row is bounded except the title, which takes
+// whatever is left and then pads it — so on an ultrawide terminal the row
+// became a title on the left, a path on the right, and a hundred and thirty
+// cells of nothing between them.
 //
-// The band is centred, so the empty cells a wide terminal has to spare become
-// margin on both sides — which reads as space around a panel, rather than as
-// a gap torn open inside every record.
-var contentBandWidth = 132
+// Up to contentBandFloor the browser is the terminal, which is every ordinary
+// window and the layout that was already reviewed there. Past it the band
+// takes contentBandPercent of the width instead of all of it: a proportion
+// keeps the browser growing with the screen — a wider terminal is still a
+// wider list — while handing the rest back as margin. A fixed cap would stop
+// growing entirely and make a 300-column terminal show exactly what a
+// 133-column one does.
+//
+// The band is centred, so the cells it gives up become margin on both sides,
+// which reads as space around a panel rather than as a gap torn open inside
+// every record.
+var (
+	contentBandFloor   = 132
+	contentBandPercent = 80
+)
 
 // bandWidth is the width every rendered thing is measured against. It is what
 // m.width used to mean everywhere below; m.width itself stays the terminal,
 // and is still what decides whether the terminal is too small at all.
-func (m modelState) bandWidth() int { return min(max(1, m.width), contentBandWidth) }
+func (m modelState) bandWidth() int {
+	width := max(1, m.width)
+	if width <= contentBandFloor {
+		return width
+	}
+	// The proportion is what the terminal offers; naturalRowWidth is what the
+	// columns can still use. The browser stops growing at the point where more
+	// width would only be padding, so a 400-column terminal shows a full row
+	// and a wide margin rather than a stretched one.
+	return min(max(contentBandFloor, width*contentBandPercent/100), max(contentBandFloor, naturalRowWidth()))
+}
 
 // bandLeft is the left margin that centres the band. Odd leftovers go to the
 // right, which is where a truncation would already have taken them.
