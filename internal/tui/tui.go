@@ -79,7 +79,11 @@ type modelState struct {
 	// marked holds the session IDs chosen for a batch action, keyed by ID
 	// rather than list index: filtering and page reloads rebuild the rows, and
 	// an index-keyed selection would silently follow a different session.
-	marked map[string]bool
+	// sessionSpacing is the blank line the row delegate puts between records,
+	// decided by layout because it depends on how much height there is to
+	// spend.
+	sessionSpacing int
+	marked         map[string]bool
 
 	// batch* carries the bulk-rename flow. Items keep mark order, results
 	// stream in out of order, and total counts both from the moment the

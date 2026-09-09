@@ -39,6 +39,25 @@ func TestModelParsersKeepOnlyUsableIdentifiers(t *testing.T) {
 			"\x1b[32manthropic/claude-opus-5\x1b[0m\n",
 			[]string{"anthropic/claude-opus-5"},
 		},
+		{
+			"claude keeps the --model values and drops its default row",
+			parseClaudeModels,
+			`{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup"}` + "\n" +
+				`{"type":"control_response","response":{"subtype":"success","request_id":"another-list-models","response":{"models":[` +
+				`{"value":"default","resolvedModel":"claude-opus-5[1m]","displayName":"Default (recommended)"},` +
+				`{"value":"opus[1m]","resolvedModel":"claude-opus-5[1m]","displayName":"Opus (1M context)"},` +
+				`{"value":"sonnet","resolvedModel":"claude-sonnet-5","displayName":"Sonnet"},` +
+				`{"value":"haiku","resolvedModel":"claude-haiku-4-5","displayName":"Haiku"}]}}}` + "\n",
+			[]string{"opus[1m]", "sonnet", "haiku"},
+		},
+		{
+			"claude ignores a failed or unrelated control response",
+			parseClaudeModels,
+			`{"type":"control_response","response":{"subtype":"error","request_id":"another-list-models","error":"unknown subtype"}}` + "\n" +
+				`not json at all` + "\n" +
+				`{"type":"result","subtype":"success","result":"hi"}` + "\n",
+			nil,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -67,12 +86,12 @@ func TestDedupeCapsAndPreservesOrder(t *testing.T) {
 // A picker is only offered for CLIs that can really list; the rest must fall
 // back to typing rather than showing IDs their --model flag would reject.
 func TestCanListModelsMatchesTheListers(t *testing.T) {
-	for _, id := range []string{"pi", "agy", "opencode", "opencode2", "OPENCODE"} {
+	for _, id := range []string{"pi", "agy", "opencode", "opencode2", "OPENCODE", "claude-code", "claude"} {
 		if !CanListModels(id) {
 			t.Fatalf("%s should support listing", id)
 		}
 	}
-	for _, id := range []string{"claude-code", "claude", "codex", "qwen", "cursor", ""} {
+	for _, id := range []string{"codex", "qwen", "cursor", ""} {
 		if CanListModels(id) {
 			t.Fatalf("%s must not claim listing support", id)
 		}
