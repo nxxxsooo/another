@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -635,10 +634,13 @@ func stateOf(chats, id string) (location, bool) {
 // transcript, believed only when it names this session, and checked against the
 // pid when this host wrote it. A sidecar from another machine is taken at its
 // word, because a dead pid here says nothing about a process there.
-func running(chats, id string) bool {
+//
+// The pid it returns is only meaningful alongside a running or unknown answer,
+// and exists so the refusal can name what to quit.
+func running(chats, id string) (util.Liveness, int) {
 	data, err := os.ReadFile(filepath.Join(chats, id+runtimeSuffix))
 	if err != nil {
-		return false
+		return util.ProcessGone, 0
 	}
 	var status struct {
 		PID       int    `json:"pid"`
@@ -646,24 +648,36 @@ func running(chats, id string) bool {
 		Hostname  string `json:"hostname"`
 	}
 	if json.Unmarshal(data, &status) != nil || status.SessionID != id || status.PID <= 0 {
-		return false
+		return util.ProcessGone, 0
 	}
 	if host, err := os.Hostname(); err != nil || status.Hostname != host {
-		return true
+		return util.ProcessRunning, status.PID
 	}
-	proc, err := os.FindProcess(status.PID)
-	if err != nil {
-		return false
-	}
-	// Signal 0 asks whether the process exists. Not being allowed to signal it
-	// is an answer too: Qwen Code is running, it just is not ours to touch.
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil || errors.Is(err, syscall.EPERM)
+	return util.ProcessLiveness(status.PID), status.PID
 }
 
+// refuseRunning guards every mutation of an existing transcript.
+//
+// An unknown answer is refused alongside a running one. The sidecar is a live
+// Qwen Code's claim on this session; where another cannot check whether the
+// process behind it survived, treating the claim as expired would move or
+// delete a transcript out from under a running agent. Better to refuse and name
+// the stale file, which the person can remove in a second, than to be wrong in
+// the direction that loses their session.
 func refuseRunning(loc location, id string) error {
-	if running(loc.chats, id) {
+	live, pid := running(loc.chats, id)
+	return refusalFor(live, pid, id, filepath.Join(loc.chats, id+runtimeSuffix))
+}
+
+// refusalFor turns a liveness answer into the refusal the person reads.
+func refusalFor(live util.Liveness, pid int, id, sidecar string) error {
+	switch live {
+	case util.ProcessRunning:
 		return fmt.Errorf("qwen: session %s is open in a running Qwen Code", id)
+	case util.ProcessUnknown:
+		return fmt.Errorf(
+			"qwen: session %s claims a running Qwen Code (pid %d) and this platform cannot check whether it still exists; quit Qwen Code, or delete %s if it is stale",
+			id, pid, sidecar)
 	}
 	return nil
 }

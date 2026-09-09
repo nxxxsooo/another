@@ -4,16 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 // guiTitles is Codex Desktop's own session-title catalog. A title here is also
@@ -128,8 +127,12 @@ func (p *Provider) writeDesktopTitle(sessionID, title string) error {
 	if err != nil {
 		return err
 	}
-	if desktopRunning() {
+	switch desktopRunning() {
+	case util.ProcessRunning:
 		return fmt.Errorf("%w: Codex Desktop is running, so its sidebar keeps the old name until it restarts",
+			provider.ErrPartial)
+	case util.ProcessUnknown:
+		return fmt.Errorf("%w: another cannot tell whether Codex Desktop is running here, so it left the sidebar alone rather than write over what Desktop has not saved",
 			provider.ErrPartial)
 	}
 
@@ -203,35 +206,33 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 // desktopRunning reports whether Codex Desktop holds its singleton lock. The
 // lock is a symlink Chromium points at "<host>-<pid>" and removes on a clean
 // exit; the pid is checked because a crash leaves the link behind.
-func desktopRunning() bool {
+//
+// Only a missing lock is read as gone, because that is Desktop's own signal for
+// having exited cleanly. A lock this code cannot make sense of is unknown, not
+// absent: Desktop writes the link when it starts, so the one thing its presence
+// rules out is Desktop being closed.
+func desktopRunning() util.Liveness {
 	dir := os.Getenv("CODEX_DESKTOP_STATE_DIR")
 	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return false
+		known, ok := desktopStateDir()
+		if !ok {
+			return util.ProcessUnknown
 		}
-		dir = filepath.Join(home, "Library", "Application Support", "Codex")
+		dir = known
 	}
 	target, err := os.Readlink(filepath.Join(dir, "SingletonLock"))
 	if err != nil {
-		return false
+		return util.ProcessGone
 	}
 	idx := strings.LastIndex(target, "-")
 	if idx < 0 {
-		return false
+		return util.ProcessUnknown
 	}
 	pid, err := strconv.Atoi(target[idx+1:])
 	if err != nil || pid <= 0 {
-		return false
+		return util.ProcessUnknown
 	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// Signal 0 asks whether the process exists. Not being allowed to signal it
-	// is an answer too: Desktop is running, it just is not ours to touch.
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil || errors.Is(err, syscall.EPERM)
+	return util.ProcessLiveness(pid)
 }
 
 func (g guiTitles) fingerprint(st os.FileInfo) (int64, int64) {

@@ -94,6 +94,31 @@ func TestRunningDesktopIsReportedNotFought(t *testing.T) {
 	}
 }
 
+// Desktop writes the singleton lock when it starts, so a lock that is present
+// but unreadable rules out the one thing another needs to know: that Desktop is
+// closed. Treating an unparseable link as "not running" would rewrite Desktop's
+// entire persisted state underneath a live app.
+func TestUnreadableSingletonLockLeavesDesktopStateAlone(t *testing.T) {
+	p, state := desktopFixture(t)
+	lockDir := t.TempDir()
+	if err := os.Symlink("no-pid-in-here", filepath.Join(lockDir, "SingletonLock")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_DESKTOP_STATE_DIR", lockDir)
+
+	before, _ := os.ReadFile(state)
+	err := p.writeDesktopTitle("01a031d4-74fa-7713-9f00-02cc43f4434b", "0831｜文档｜月度PBC总结润色")
+	if err == nil {
+		t.Fatal("a lock another could not read was treated as Desktop being closed")
+	}
+	if !errorsIsPartial(err) {
+		t.Fatalf("an unknown Desktop reads as a failed rename: %v", err)
+	}
+	if after, _ := os.ReadFile(state); string(after) != string(before) {
+		t.Fatal("Desktop state was modified while its lock was held")
+	}
+}
+
 func TestMissingDesktopStateIsNotAnError(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "sessions"), 0o755); err != nil {
