@@ -107,17 +107,28 @@ func OpenCode2Dir(configDir string) string {
 	return filepath.Join(configDir, "plugins", plugin.DirName)
 }
 
+// opencode2Bundle is the OpenCode 2 plugin as the shared install and compare
+// paths see it.
+var opencode2Bundle = bundle{
+	Integration: OpenCode2,
+	Plugin:      plugin.PluginID,
+	Names:       plugin.Names,
+	Files:       plugin.Files,
+	Hashes:      plugin.Hashes,
+	Hash:        plugin.Hash,
+}
+
 // OpenCode2Status reads the installed plugin and compares it with the one this
 // binary ships.
 func OpenCode2Status(configDir string) Status {
 	status := Status{ConfigDir: configDir, Dir: OpenCode2Dir(configDir), State: StateMissing}
 	status.RedundantEntry = redundantEntry(configDir)
-	installed, err := readInstalled(status.Dir)
+	installed, err := readInstalled(status.Dir, opencode2Bundle)
 	if err != nil || len(installed) == 0 {
 		return status
 	}
-	current := matchesShipped(installed)
-	saved, ok := readManifest(status.Dir)
+	current := sameHashes(installed, opencode2Bundle.Hashes())
+	saved, ok := readManifest(status.Dir, opencode2Bundle)
 	if !ok {
 		// Files without a manifest are the hand-copied installation this
 		// feature replaces. Identical content can be adopted, because writing
@@ -145,9 +156,9 @@ func OpenCode2Status(configDir string) Status {
 // readInstalled hashes the files another would write, as they exist on disk.
 // A file another does not ship is ignored: the comparison is about the plugin,
 // not about everything that shares its directory.
-func readInstalled(dir string) (map[string]string, error) {
+func readInstalled(dir string, b bundle) (map[string]string, error) {
 	hashes := make(map[string]string)
-	for _, name := range plugin.Names() {
+	for _, name := range b.Names() {
 		content, err := os.ReadFile(filepath.Join(dir, name))
 		if os.IsNotExist(err) {
 			continue
@@ -155,13 +166,9 @@ func readInstalled(dir string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		hashes[name] = plugin.Hash(content)
+		hashes[name] = b.Hash(content)
 	}
 	return hashes, nil
-}
-
-func matchesShipped(installed map[string]string) bool {
-	return sameHashes(installed, plugin.Hashes())
 }
 
 func sameHashes(a, b map[string]string) bool {
@@ -176,7 +183,7 @@ func sameHashes(a, b map[string]string) bool {
 	return true
 }
 
-func readManifest(dir string) (manifest, bool) {
+func readManifest(dir string, b bundle) (manifest, bool) {
 	data, err := os.ReadFile(filepath.Join(dir, manifestName))
 	if err != nil {
 		return manifest{}, false
@@ -185,7 +192,7 @@ func readManifest(dir string) (manifest, bool) {
 	if err := json.Unmarshal(data, &saved); err != nil {
 		return manifest{}, false
 	}
-	if saved.Integration != OpenCode2 || len(saved.Files) == 0 {
+	if saved.Integration != b.Integration || len(saved.Files) == 0 {
 		return manifest{}, false
 	}
 	return saved, true
