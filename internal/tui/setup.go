@@ -464,16 +464,21 @@ func restoreTitleCursor(opts []titleOption, previous []titleOption) int {
 func (m setupModel) Init() tea.Cmd {
 	// The lookup starts with page one, which is where the time it takes is
 	// free: the row it fills in belongs to page two.
-	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle), pluginStatusCmd(m.pluginProbe))
+	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle), probeSizeCmd(0), pluginStatusCmd(m.pluginProbe))
 }
 
 func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if msg.Width == m.width && msg.Height == m.height {
+			return m, nil
+		}
 		m.width, m.height = msg.Width, msg.Height
 		// Setup is centred in the window, so a resize moves the whole panel and
 		// leaves the old one behind unless the screen is cleared with it.
 		return m, tea.ClearScreen
+	case sizeProbeMsg:
+		return m, onSizeProbe(msg)
 	case pluginStatusMsg:
 		m.plugin = msg.plugin
 		if !m.pluginTouched {

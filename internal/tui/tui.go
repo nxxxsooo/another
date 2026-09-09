@@ -334,7 +334,7 @@ func (m *modelState) updateSourceCounts(counts map[string]int) {
 }
 
 func (m modelState) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.HideCursor, tea.SetWindowTitle(windowTitle), m.spinner.Tick, loadSessionsPageCmd(m, m.pageGen)}
+	cmds := []tea.Cmd{tea.HideCursor, tea.SetWindowTitle(windowTitle), m.spinner.Tick, probeSizeCmd(0), loadSessionsPageCmd(m, m.pageGen)}
 	if m.indexing {
 		cmds = append(cmds, backgroundIndexCmd(m.ctx, m.reg, m.idx))
 	} else {
