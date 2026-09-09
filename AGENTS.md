@@ -12,9 +12,10 @@ For every release, update and verify the full release-surface matrix:
 4. **Homebrew** — verify the generated Cask update in the public `nxxxsooo/homebrew-tap`, then test the real consumer upgrade path.
 5. **Local installation** — update Mingjian's installed `another` through its real installation source and verify both `which another` and `another --version`; a successful remote release does not imply the local binary changed.
 6. **Project website** — the site is live at `https://mjshao.fun/another` (landing page `mjshao-portfolio/public/another/index.html`, case page `src/app/work/projects/another.mdx`, release post `src/app/blog/posts/another-migrate-coding-agent-sessions.mdx`). Update all three for every release, including the version string, then verify each through the deployed URL.
-7. **WeChat Official Account** — prepare the matching release article and verify it in the draft box for every release. Public broadcast requires Mingjian's explicit confirmation.
 
-Tag at most once per day. A release costs the user an install and costs the maintainer seven surfaces, so same-day follow-up tags mean the first one was published too early; hold the change on `main` and let the next day's tag carry it. The exception is a hotfix for a bug that loses data, corrupts an agent's state, or leaves the released binary unusable — those ship immediately and say so in the notes.
+Writing about the project is not a release surface. A launch post, a WeChat article, or any other promotion is its own piece of work, published when there is something worth telling people about; a release does not owe one, and no draft is required to call a release complete.
+
+There is no fixed release cadence. Tag when the change on `main` is worth what a release costs — one install for every user, and every surface in the matrix above for the maintainer — and judge that per change rather than against a clock. A fix people are hitting today is worth a tag today, even if one already went out; a change nobody is waiting on can sit on `main` until something else joins it.
 
 Release notes are written for the person deciding whether to upgrade: features and fixes in their own words, grouped, with docs, chores, CI, tests, and merge commits filtered out. `.goreleaser.yaml` does the grouping and the install header; do not replace it with a raw commit list.
 
