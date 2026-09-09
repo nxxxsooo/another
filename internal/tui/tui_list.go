@@ -73,6 +73,11 @@ func (i sessionItem) FilterValue() string {
 // is not, so the map must never be reassigned after construction.
 type sessionDelegate struct {
 	marked map[string]bool
+	// spacing is the blank line between rows. It is state rather than a
+	// constant because it is only affordable on a terminal tall enough to
+	// spend it: the rhythm it buys is worth a line per row when the list has
+	// room, and worth nothing when it costs half the sessions.
+	spacing int
 	// showProject is off while every row would repeat the same path. The
 	// column only earns its width once the list spans more than one
 	// directory — which a project scope does whenever it covers Git
@@ -107,12 +112,11 @@ type sessionDelegate struct {
 
 func (sessionDelegate) Height() int { return 1 }
 
-// Spacing is zero: rows are adjacent. A blank line between them was worth its
-// cost while a row was stretched across the whole terminal and the eye needed
-// help staying on one — but a row is now a compact band of columns, and the
-// line only buys rhythm with half the sessions on screen. A picker's first job
-// is showing sessions.
-func (sessionDelegate) Spacing() int { return 0 }
+// Spacing separates one row from the next. Adjacent rows fit more sessions,
+// but fifty of them in a bounded band read as a wall: every row carries the
+// same weight, and nothing tells the eye where one record ends. The blank line
+// is what makes a row a record rather than a line of a table.
+func (d sessionDelegate) Spacing() int { return d.spacing }
 
 func (sessionDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 
@@ -600,6 +604,7 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 		marked:      m.marked,
 		showProject: !m.projectOnly || spread,
 		projectBase: base,
+		spacing:     m.sessionSpacing,
 		projectW:    projectColumnWidth(m.sessions.Items(), base),
 		timeW:       timeColumnWidth(m.sessions.Items()),
 		titleW:      titleColumnWidth(m.sessions.Items()),

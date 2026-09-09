@@ -3,6 +3,7 @@ package titler
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,25 +20,44 @@ const ListTimeout = 30 * time.Second
 // picker, and an unbounded list would let a misbehaving CLI fill the screen.
 const maxModels = 400
 
-// modelLister describes how one agent CLI names its own models. Only CLIs with
-// a real listing command appear here; the rest fall back to typing a name,
-// because guessing model IDs for them would produce a picker full of values
-// their --model flag rejects.
+// modelLister describes how one agent CLI names its own models. Only CLIs that
+// can really answer the question appear here; the rest fall back to typing a
+// name, because guessing model IDs for them would produce a picker full of
+// values their --model flag rejects.
 type modelLister struct {
-	args  []string
+	args []string
+	// stdin is written to the CLI for the agents that take the question on
+	// their wire protocol instead of as a subcommand. Empty means the
+	// command needs no input, and the CLI reads from the null device.
+	stdin string
 	parse func(string) []string
 }
 
 var modelListers = map[string]modelLister{
 	// pi prints a padded table whose first column is the provider; its
 	// --model flag takes "provider/id", so the two are joined back up.
-	"pi": {[]string{"--list-models"}, parseTableModels},
+	"pi": {args: []string{"--list-models"}, parse: parseTableModels},
 	// agy prints "id\tDisplay Name" after a progress line.
-	"agy": {[]string{"models"}, parseTabbedModels},
+	"agy": {args: []string{"models"}, parse: parseTabbedModels},
 	// Both OpenCode generations print one "provider/model" per line.
-	"opencode":  {[]string{"models"}, parsePlainModels},
-	"opencode2": {[]string{"models"}, parsePlainModels},
+	"opencode":  {args: []string{"models"}, parse: parsePlainModels},
+	"opencode2": {args: []string{"models"}, parse: parsePlainModels},
+	// Claude Code has no listing subcommand, but its headless control
+	// protocol answers list_models from the same catalog its own /model
+	// picker shows: no prompt, no model call, and it exits as soon as stdin
+	// closes. --bare keeps the question out of the user's hooks, plugins,
+	// and CLAUDE.md, which a listing has no business loading.
+	"claude-code": {
+		args:  []string{"-p", "--bare", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"},
+		stdin: claudeListRequest,
+		parse: parseClaudeModels,
+	},
 }
+
+// claudeListRequest is the one control request Claude Code needs to answer
+// with its catalog. The id is only echoed back, so it names another rather
+// than pretending to be a counter.
+const claudeListRequest = `{"type":"control_request","request_id":"another-list-models","request":{"subtype":"list_models"}}` + "\n"
 
 // ListFailure names why a listing did not produce models. Like a freeze
 // reason, it is an identifier rather than a sentence: the screen that shows it
@@ -132,6 +152,9 @@ func ListModels(ctx context.Context, providerID string) ([]string, error) {
 		cmd := exec.CommandContext(ctx, bin, lister.args...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "NO_COLOR=1", "CLICOLOR=0", "TERM=dumb")
+		if lister.stdin != "" {
+			cmd.Stdin = strings.NewReader(lister.stdin)
+		}
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Run(); err != nil {
@@ -189,6 +212,44 @@ func parsePlainModels(raw string) []string {
 			continue
 		}
 		out = append(out, line)
+	}
+	return out
+}
+
+// parseClaudeModels reads the control_response Claude Code writes for a
+// list_models request and keeps the value its --model flag accepts. Every
+// other line on that stream — hook noise, system messages, a response to some
+// other request — is ignored, and the catalog's own "default" entry is dropped
+// because the picker already offers the CLI's default as its first row.
+func parseClaudeModels(raw string) []string {
+	var out []string
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var msg struct {
+			Type     string `json:"type"`
+			Response struct {
+				Subtype  string `json:"subtype"`
+				Response struct {
+					Models []struct {
+						Value string `json:"value"`
+					} `json:"models"`
+				} `json:"response"`
+			} `json:"response"`
+		}
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			continue
+		}
+		if msg.Type != "control_response" || msg.Response.Subtype != "success" {
+			continue
+		}
+		for _, model := range msg.Response.Response.Models {
+			if value := strings.TrimSpace(model.Value); value != "" && value != "default" {
+				out = append(out, value)
+			}
+		}
 	}
 	return out
 }
