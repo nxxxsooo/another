@@ -33,7 +33,7 @@ store, so you open it there and keep going.
 - **Native sessions:** resumes in the target agent's own format — not a pasted summary.
 - **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, Qwen Code, and Antigravity.
 - **One screen:** browse, search, preview, rename, archive, delete, relocate, and migrate without leaving the list.
-- **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects.
+- **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects, or `g` to group the list by worktree.
 - **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
 - **Local and fast:** reads native local stores; the private SQLite index under `~/.cache/another/` skips unchanged sessions on re-scan.
@@ -160,6 +160,8 @@ Migration shows the exact resume command first. Press `Enter` to hand the termin
 The TUI starts scoped to the current project. A Git repository's main worktree, every registered linked worktree, and their subdirectories form one project; outside Git, the scope is an exact current-directory match. The header always shows the active scope, and search keeps that scope. An empty project view stays empty rather than silently switching global; press `f` to view all projects.
 
 One project is not one directory. When the listed sessions really do span several — worktrees, a monorepo's subtrees — a directory column appears: a chip in the path's own color, like the agent's, carrying the part of the path below the project root (`.worktrees/delete-undo`, `packages/api`, and the root's own name for a session that started there) so the shared prefix never costs the title its width. The column is only as wide as the longest path it has to show; the rest goes to the title. A directory that no longer exists keeps its path and loses its color. With every session in one directory the column stays away.
+
+Press `g` to group that list by tree. Each worktree gets a heading in its own color, carrying the tree's name and how many sessions it holds, with its sessions beneath it; a session recorded in a subdirectory counts for the tree it sits in rather than starting a group of its own. Trees are ordered by their newest session, so the work you just left is still at the top, and inside a tree the order stays by recency. The cursor never rests on a heading, and grouping is a view of the page already loaded — no reload, and the session under the cursor stays under it. Grouped, the directory column drops what the heading already said and keeps only what it did not, such as the `internal/tui` a session actually ran in. A list holding one tree is left ungrouped.
 
 ## Relocate
 

@@ -85,7 +85,7 @@ Relocation moves or forks a session within the same agent, using that agent's ow
 
 ## Project scope
 
-In a Git repository, the main worktree and every registered linked worktree form one project, and their subdirectories belong to it. A nested independent repository is excluded and stands as its own project. Outside Git, scope is an exact directory match. The TUI opens scoped to the current project; `f` switches to all projects.
+In a Git repository, the main worktree and every registered linked worktree form one project, and their subdirectories belong to it. A nested independent repository is excluded and stands as its own project. Outside Git, scope is an exact directory match. The TUI opens scoped to the current project; `f` switches to all projects. `g` groups the loaded page by tree: rows are keyed to the longest registered worktree containing their directory, so a session recorded in a subdirectory belongs to its worktree, and a directory Git no longer registers falls back to the repository root. Grouping reorders the page in memory and never issues another query.
 
 ## Safety rules
 

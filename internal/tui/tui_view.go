@@ -493,7 +493,7 @@ func (m modelState) selectionSummary() string {
 		if m.indexing {
 			return txt.indexing
 		}
-		return fmt.Sprintf(txt.sessionCountFmt, m.totalSessions)
+		return sessionCountText(m.totalSessions)
 	}
 	proj := util.TildePath(it.summary.ProjectPath)
 	return fmt.Sprintf(" %s · %s", proj, it.summary.ShortID())

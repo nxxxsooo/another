@@ -1,11 +1,20 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nxxxsooo/another/internal/util"
 )
+
+// sessionCountText counts sessions in the reader's language, singular included.
+func sessionCountText(n int) string {
+	if n == 1 {
+		return fmt.Sprintf(txt.sessionCountOneFmt, n)
+	}
+	return fmt.Sprintf(txt.sessionCountFmt, n)
+}
 
 func truncateDisplay(s string, n int) string {
 	s = util.SanitizeDisplay(s)
