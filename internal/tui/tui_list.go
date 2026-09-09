@@ -88,6 +88,12 @@ type sessionDelegate struct {
 	// thing it has to say: cells the paths do not use belong to the title.
 	// Zero means "unmeasured", which leaves the cap alone.
 	projectW int
+	// timeW is what the loaded rows need for the time column. A relative
+	// stamp fits in ten cells, but a session past the relative range falls
+	// back to an absolute date, and "Sep 30, 2026" is twelve — measured at
+	// ten it lost its last characters and printed the year as "202".
+	// Zero means "unmeasured", which keeps the relative width.
+	timeW int
 }
 
 func (sessionDelegate) Height() int { return 1 }
@@ -121,10 +127,11 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		msgs = fmt.Sprintf(txt.messageCountFmt, it.summary.MessageCount)
 	}
 
-	const (
-		timeW = 10
-		provW = agentChipWidth
-	)
+	const provW = agentChipWidth
+	timeW := relativeTimeWidth
+	if d.timeW > relativeTimeWidth {
+		timeW = d.timeW
+	}
 	// The message column is sized by the language rather than by a constant:
 	// "128条" and "128 msg" are not the same number of cells, and a column cut
 	// to the shorter of the two would truncate the count it exists to show.
@@ -224,6 +231,31 @@ func projectChip(text string, ink, tint lipgloss.Color) string {
 // It reads Items(), not VisibleItems(), for the same reason the column's own
 // visibility does: a width that changed as a filter narrowed the list would
 // move the title's right edge under the person reading it.
+// relativeTimeWidth holds the widest relative stamp — "just now" and "59m ago"
+// both fit — and is the floor the column keeps when no row needs more, so a
+// list of recent sessions is laid out exactly as it was before dates entered.
+const relativeTimeWidth = 10
+
+// timeColumnWidth is what the loaded rows need for their stamps. Past thirty
+// days FormatRelative gives an absolute date instead, and that date is wider
+// than any relative stamp; measuring it here is the same contract the project
+// column keeps, so the column grows only for lists that actually reach back
+// that far and the cells it does not need stay with the title.
+//
+// It reads every loaded row rather than the visible ones, so filtering cannot
+// move the title's edge while it is being read.
+func timeColumnWidth(items []list.Item) int {
+	widest := relativeTimeWidth
+	for _, item := range items {
+		row, ok := item.(sessionItem)
+		if !ok {
+			continue
+		}
+		widest = max(widest, ansi.StringWidth(util.FormatRelative(row.summary.UpdatedAt)))
+	}
+	return widest
+}
+
 func projectColumnWidth(items []list.Item, base string) int {
 	widest := 0
 	for _, item := range items {
@@ -461,5 +493,6 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 		showProject: !m.projectOnly || spread,
 		projectBase: base,
 		projectW:    projectColumnWidth(m.sessions.Items(), base),
+		timeW:       timeColumnWidth(m.sessions.Items()),
 	}
 }

@@ -11,3 +11,6 @@ import "fmt"
 func acquireConversationLock(string) (func() error, bool, error) {
 	return nil, false, fmt.Errorf("agy: changing an existing conversation is not supported on this platform")
 }
+
+// describeLockHolder has nothing to report where the lock itself is unavailable.
+func describeLockHolder(string) string { return "" }
