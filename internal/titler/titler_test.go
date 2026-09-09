@@ -333,6 +333,33 @@ func TestSuggestRunsQwenWithoutRecordingAThrowawaySession(t *testing.T) {
 	}
 }
 
+// Claude Code can be told not to record the run at all, which is better than
+// recognizing the leftover afterwards, and not to expand a command or a skill
+// out of the untrusted session content it is handed.
+func TestSuggestRunsClaudeWithoutRecordingAThrowawaySession(t *testing.T) {
+	stubPath := stubCLI(t, "claude", "#!/bin/sh\necho \"$@\" > \"$STUB_ARGS\"\necho '0903｜功能｜Claude 标题生成'\n")
+	argsFile := filepath.Join(t.TempDir(), "args")
+	t.Setenv("STUB_ARGS", argsFile)
+	t.Setenv("PATH", filepath.Dir(stubPath)+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	got, err := titler.Suggest(context.Background(), titler.Config{Provider: "claude", Model: "sonnet"}, titler.Request{
+		CreatedAt: time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC),
+		Messages:  []model.Message{{Role: model.RoleUser, Content: "增加 Claude 标题生成"}},
+	})
+	if err != nil || got != "0903｜功能｜Claude 标题生成" {
+		t.Fatalf("Suggest = %q, %v", got, err)
+	}
+	recorded, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"-p", "--output-format text", "--no-session-persistence", "--disable-slash-commands", "--model sonnet"} {
+		if !strings.Contains(string(recorded), want) {
+			t.Fatalf("args %q missing %q", recorded, want)
+		}
+	}
+}
+
 func TestSuggestReportsCLIFailure(t *testing.T) {
 	stubPath := stubCLI(t, "pi", "#!/bin/sh\necho 'not logged in' >&2\nexit 1\n")
 	t.Setenv("PATH", filepath.Dir(stubPath)+string(os.PathListSeparator)+os.Getenv("PATH"))

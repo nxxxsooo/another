@@ -55,8 +55,15 @@ type launcher struct {
 // one-shot prompt. Agents missing here simply cannot generate titles; they are
 // left out of the setup list rather than failing at use time.
 var launchers = map[string]launcher{
+	// Claude Code is the one agent here that can be told not to record the
+	// run: --no-session-persistence leaves no session file at all, so a
+	// title costs nothing another has to recognize and evict afterwards.
+	// --disable-slash-commands stops the untrusted session content from
+	// expanding a command or a skill, the same reason agy passes it; the
+	// contract is inlined in the prompt, so nothing is lost by not loading
+	// one.
 	"claude-code": {"claude", func(c Config, p string) []string {
-		args := []string{"-p", "--output-format", "text"}
+		args := []string{"-p", "--output-format", "text", "--no-session-persistence", "--disable-slash-commands"}
 		if c.Model != "" {
 			args = append(args, "--model", c.Model)
 		}
