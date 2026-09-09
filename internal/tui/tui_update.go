@@ -21,6 +21,8 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return m.onWindowSize(msg)
+	case sizeProbeMsg:
+		return m, onSizeProbe(msg)
 	case sessionsPageMsg:
 		return m.onSessionsPage(msg)
 	case previewLoadedMsg:
@@ -62,6 +64,11 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m modelState) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	// A probe that confirms the size already on screen is not a resize, and
+	// repainting for it would flicker the list under the user's hands.
+	if msg.Width == m.width && msg.Height == m.height {
+		return m, nil
+	}
 	m.width, m.height = msg.Width, msg.Height
 	m.layout()
 	// Bubbletea only erases the tail of a line it believes is shorter than
