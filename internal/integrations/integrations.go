@@ -39,6 +39,23 @@ func (s State) NeedsWrite() bool { return s == StateMissing || s == StateOutdate
 // to, because the content on disk is not content another wrote.
 func (s State) Blocked() bool { return s == StateModified || s == StateForeign }
 
+// bundle is a set of files another ships for one agent, reduced to what the
+// install, compare, and remove paths need. It exists so those three paths are
+// written once: an adapter that grows its own copy of them is an adapter whose
+// drift detection quietly diverges from every other one.
+type bundle struct {
+	// Integration is the id recorded in the manifest, which is what tells
+	// another's own installation apart from a directory of the same name.
+	Integration string
+	// Plugin is the id the adapter reports to its agent, where the agent has
+	// such a concept. Empty is allowed.
+	Plugin string
+	Names  func() []string
+	Files  func() map[string][]byte
+	Hashes func() map[string]string
+	Hash   func([]byte) string
+}
+
 // Status is one adapter as another found it.
 type Status struct {
 	// ConfigDir is the agent configuration directory another resolved, and

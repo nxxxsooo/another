@@ -213,11 +213,14 @@ type uiText struct {
 	setupTitleHelpModel string
 	setupTitleHelpSave  string
 
-	// The OpenCode 2 plugin row. another writes a file into another agent's
-	// configuration directory only when this row says so, so the row names
-	// the directory it would write to and what is there now.
+	// The adapter rows. another writes a file into another agent's
+	// configuration directory only when a row says so, so each row names the
+	// directory it would write to and what is there now. The toggle key is a
+	// number because the rows come and go with the agent selection, and a
+	// row that prints its own digit cannot leave a stale key behind.
 	setupPluginLabel     string
-	setupPluginToggle    string
+	setupPluginLabelPi   string
+	setupPluginToggleFmt string
 	setupPluginChecking  string
 	setupPluginMissing   string
 	setupPluginCurrent   string
@@ -434,7 +437,8 @@ var englishText = uiText{
 	setupTitleHelpSave:  "↑↓ agent  ·  ←→ language  ·  enter save  ·  esc back",
 
 	setupPluginLabel:     "OpenCode 2 title plugin",
-	setupPluginToggle:    "t toggles",
+	setupPluginLabelPi:   "Pi title extension",
+	setupPluginToggleFmt: "%d toggles",
 	setupPluginChecking:  "checking",
 	setupPluginMissing:   "not installed",
 	setupPluginCurrent:   "installed",
@@ -650,7 +654,8 @@ var chineseText = uiText{
 	setupTitleHelpSave:  "↑↓ 选 agent  ·  ←→ 选语言  ·  enter 保存  ·  esc 返回",
 
 	setupPluginLabel:     "OpenCode 2 标题插件",
-	setupPluginToggle:    "t 切换",
+	setupPluginLabelPi:   "Pi 标题扩展",
+	setupPluginToggleFmt: "%d 切换",
 	setupPluginChecking:  "检测中",
 	setupPluginMissing:   "未安装",
 	setupPluginCurrent:   "已安装",

@@ -42,6 +42,7 @@ type Settings struct {
 // current, or edited is read from the agent's configuration directory.
 type Integrations struct {
 	OpenCode2TitlePolicy bool `json:"opencode2_title_policy,omitempty"`
+	PiTitlePolicy        bool `json:"pi_title_policy,omitempty"`
 }
 
 // PathAlias redirects sessions recorded under From to where that project lives

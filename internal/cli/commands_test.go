@@ -312,33 +312,71 @@ func TestPathsReportsLinksAndUnlinks(t *testing.T) {
 func TestIntegrationsInstallStatusRemove(t *testing.T) {
 	app := newTestApp(t, newFake(t, "alpha"))
 	dir := t.TempDir()
-	out := mustRun(t, app, "integrations", "status", "--config-dir", dir)
-	wantContains(t, out, "not installed", "plugin:")
+	out := mustRun(t, app, "integrations", "status", "opencode2", "--config-dir", dir)
+	wantContains(t, out, "not installed", "files:")
 
-	out = mustRun(t, app, "integrations", "install", "--config-dir", dir)
+	out = mustRun(t, app, "integrations", "install", "opencode2", "--config-dir", dir)
 	wantContains(t, out, "Installed", "installed (another dev)")
 	settings, err := config.LoadSettings()
 	if err != nil || !settings.Integrations.OpenCode2TitlePolicy {
 		t.Fatalf("install did not record consent: %+v, %v", settings.Integrations, err)
 	}
-	out = mustRun(t, app, "integrations", "--config-dir", dir)
+	out = mustRun(t, app, "integrations", "status", "opencode2", "--config-dir", dir)
 	wantContains(t, out, "installed (another dev)")
 
-	out = mustRun(t, app, "integrations", "remove", "--config-dir", dir)
+	out = mustRun(t, app, "integrations", "remove", "opencode2", "--config-dir", dir)
 	wantContains(t, out, "Removed")
 	settings, _ = config.LoadSettings()
 	if settings.Integrations.OpenCode2TitlePolicy {
 		t.Fatal("remove left consent recorded")
 	}
-	out = mustRun(t, app, "integrations", "remove", "--config-dir", dir)
+	out = mustRun(t, app, "integrations", "remove", "opencode2", "--config-dir", dir)
 	wantContains(t, out, "Nothing installed at")
+}
+
+// Each adapter is installed, recorded, and removed on its own: consent to one
+// agent's configuration directory is not consent to another's.
+func TestIntegrationsTakeOneAdapterAtATime(t *testing.T) {
+	app := newTestApp(t, newFake(t, "alpha"))
+	dir := t.TempDir()
+	t.Setenv(integrations.PiConfigDirEnv, dir)
+
+	out := mustRun(t, app, "integrations", "install", "pi")
+	wantContains(t, out, "Installed", "pi-title-policy")
+	settings, err := config.LoadSettings()
+	if err != nil || !settings.Integrations.PiTitlePolicy {
+		t.Fatalf("install did not record consent: %+v, %v", settings.Integrations, err)
+	}
+	if settings.Integrations.OpenCode2TitlePolicy {
+		t.Fatal("installing Pi's extension consented to OpenCode 2's directory")
+	}
+	if !integrations.PiStatus(dir).State.Installed() {
+		t.Fatal("the extension was not written where Pi reads it")
+	}
+
+	out = mustRun(t, app, "integrations", "remove", "pi")
+	wantContains(t, out, "Removed")
+	settings, _ = config.LoadSettings()
+	if settings.Integrations.PiTitlePolicy {
+		t.Fatal("remove left consent recorded")
+	}
+
+	// A directory belongs to one agent, so it cannot be handed to a run that
+	// covers every adapter.
+	_, err = run(t, app, "integrations", "install", "--config-dir", dir)
+	wantErr(t, err, "--config-dir needs one agent")
+	_, err = run(t, app, "integrations", "status", "nope")
+	wantErr(t, err, "invalid argument")
 }
 
 func TestApplyIntegrationsFollowsTheRecordedAnswer(t *testing.T) {
 	newTestApp(t, newFake(t, "alpha"))
 	dir := t.TempDir()
+	resolvers := map[string]func() integrations.Status{
+		integrations.OpenCode2: func() integrations.Status { return integrations.OpenCode2Status(dir) },
+	}
 	out := captureStdout(t, func() {
-		applyIntegrations(config.Settings{}, integrations.OpenCode2Status(dir))
+		applyIntegrations(config.Settings{}, resolvers)
 	})
 	if out != "" {
 		t.Fatalf("no consent and nothing installed should print nothing, got %q", out)
@@ -346,16 +384,16 @@ func TestApplyIntegrationsFollowsTheRecordedAnswer(t *testing.T) {
 	consent := config.Settings{}
 	consent.Integrations.OpenCode2TitlePolicy = true
 	out = captureStdout(t, func() {
-		applyIntegrations(consent, integrations.OpenCode2Status(dir))
+		applyIntegrations(consent, resolvers)
 	})
 	wantContains(t, out, "OpenCode 2 title plugin:")
 	if !integrations.OpenCode2Status(dir).State.Installed() {
 		t.Fatal("consent did not install the plugin")
 	}
 	out = captureStdout(t, func() {
-		applyIntegrations(config.Settings{}, integrations.OpenCode2Status(dir))
+		applyIntegrations(config.Settings{}, resolvers)
 	})
-	wantContains(t, out, "still installed; remove it with 'another integrations remove'")
+	wantContains(t, out, "still installed; remove it with 'another integrations remove opencode2'")
 	for _, state := range []integrations.State{integrations.StateCurrent, integrations.StateOutdated, integrations.StateModified, integrations.StateAdoptable, integrations.StateForeign, integrations.StateMissing} {
 		if integrationStateText(integrations.Status{State: state, Version: "1.0"}) == "" {
 			t.Fatalf("no text for %s", state)
