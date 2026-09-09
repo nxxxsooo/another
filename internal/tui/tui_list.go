@@ -177,13 +177,27 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	// bounds the band rather than this: a title with more to say than the cap
 	// must still be allowed to say it when the cells are there, or the layout
 	// would truncate content to protect a number.
-	titleW := max(8, width-fixed-gapCount)
+	wanted := max(8, width-fixed-gapCount)
 	if d.titleW > 0 {
-		titleW = max(8, min(titleW, d.titleW))
+		wanted = max(8, min(wanted, d.titleW))
 	}
+	// The spacing is measured against the cap, not against the widest title in
+	// the list. A title may pass the cap when the cells are there, but it may
+	// not take the air on its way past: measured against the widest title, one
+	// un-renamed session carrying 138 cells of its own first message set the
+	// spacing for every other row, so the same list breathed under one scope
+	// and was crammed under the next — a difference in the layout that said
+	// nothing about the sessions in it.
+	titleW := min(wanted, titleColumnCap)
 	spare := max(0, width-fixed-titleW-gapCount)
 	gapW := columnGap(spare, gapCount)
 	spare -= (gapW - 1) * gapCount
+	// Once the gaps are paid the title takes the rest of what it wanted, ahead
+	// of the path, which is the order they were already in.
+	if grow := min(spare, wanted-titleW); grow > 0 {
+		titleW += grow
+		spare -= grow
+	}
 	// What is still over goes to the path, which is truncated on every ordinary
 	// terminal and has more to say whenever it is given the cells. A wider
 	// window should buy more of the session, not more air around it.
