@@ -72,8 +72,7 @@ func (i sessionItem) FilterValue() string {
 // mutate it in place. The list is rebuilt on every page load and the delegate
 // is not, so the map must never be reassigned after construction.
 type sessionDelegate struct {
-	marked  map[string]bool
-	spacing int
+	marked map[string]bool
 	// showProject is off while every row would repeat the same path. The
 	// column only earns its width once the list spans more than one
 	// directory — which a project scope does whenever it covers Git
@@ -108,7 +107,12 @@ type sessionDelegate struct {
 
 func (sessionDelegate) Height() int { return 1 }
 
-func (d sessionDelegate) Spacing() int { return d.spacing }
+// Spacing is zero: rows are adjacent. A blank line between them was worth its
+// cost while a row was stretched across the whole terminal and the eye needed
+// help staying on one — but a row is now a compact band of columns, and the
+// line only buys rhythm with half the sessions on screen. A picker's first job
+// is showing sessions.
+func (sessionDelegate) Spacing() int { return 0 }
 
 func (sessionDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 
@@ -594,7 +598,6 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 	}
 	return sessionDelegate{
 		marked:      m.marked,
-		spacing:     m.sessionSpacing,
 		showProject: !m.projectOnly || spread,
 		projectBase: base,
 		projectW:    projectColumnWidth(m.sessions.Items(), base),

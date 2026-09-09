@@ -83,10 +83,6 @@ func (m *modelState) layout() {
 	footerH := lipgloss.Height(m.footerView())
 	paneOuterH := max(frameH+1, m.height-headerH-footerH)
 	contentH := max(1, paneOuterH-frameH)
-	m.sessionSpacing = 0
-	if width >= 80 && contentH >= 14 {
-		m.sessionSpacing = 1
-	}
 	m.applySessionDelegate()
 	m.sessions.SetSize(max(1, width-frameW), contentH)
 

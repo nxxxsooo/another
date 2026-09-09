@@ -359,27 +359,26 @@ func TestNarrowHeaderKeepsBothDirectionControls(t *testing.T) {
 	}
 }
 
-func TestWideSessionsBreatheButNarrowSessionsStayCompact(t *testing.T) {
+// Sessions are listed one to a line at every size. A wide terminal once put a
+// blank line between them, which was worth its cost while a row was stretched
+// across the whole window and the eye needed help staying on one; a row is now
+// a compact band of columns, and the line only bought rhythm with half the
+// sessions on screen.
+func TestSessionsAreListedOneToALine(t *testing.T) {
 	items := []list.Item{
 		sessionItem{summary: model.Summary{ID: "one", Provider: "codex", Title: "First title"}},
 		sessionItem{summary: model.Summary{ID: "two", Provider: "pi", Title: "Second title"}},
 	}
 	m := layoutTestModel()
 	m.sessions.SetItems(items)
-	m.width, m.height = 100, 24
-	m.layout()
-	wide := strings.Split(ansi.Strip(m.sessions.View()), "\n")
-	wideFirst, wideSecond := lineContaining(wide, "First title"), lineContaining(wide, "Second title")
-	if wideFirst < 0 || wideSecond-wideFirst != 2 {
-		t.Fatalf("wide list row distance = %d, want 2: %q", wideSecond-wideFirst, wide)
-	}
-
-	m.width, m.height = 60, 16
-	m.layout()
-	narrow := strings.Split(ansi.Strip(m.sessions.View()), "\n")
-	narrowFirst, narrowSecond := lineContaining(narrow, "First title"), lineContaining(narrow, "Second title")
-	if narrowFirst < 0 || narrowSecond-narrowFirst != 1 {
-		t.Fatalf("narrow list row distance = %d, want 1: %q", narrowSecond-narrowFirst, narrow)
+	for _, size := range [][2]int{{60, 16}, {100, 24}, {160, 40}, {240, 50}} {
+		m.width, m.height = size[0], size[1]
+		m.layout()
+		lines := strings.Split(ansi.Strip(m.sessions.View()), "\n")
+		first, second := lineContaining(lines, "First title"), lineContaining(lines, "Second title")
+		if first < 0 || second-first != 1 {
+			t.Fatalf("%dx%d row distance = %d, want 1: %q", size[0], size[1], second-first, lines)
+		}
 	}
 }
 
