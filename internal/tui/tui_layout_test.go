@@ -1464,3 +1464,51 @@ func TestTimeColumnKeepsTheYearOfAnOldSession(t *testing.T) {
 		t.Fatalf("row lost part of %q: %q", stamp, buf.String())
 	}
 }
+
+// One session must not set the spacing of the whole list. The gaps were what
+// the columns left over, and the title claimed the widest title in the list
+// before they were measured — so a single un-renamed session carrying its own
+// first message as a title (138 cells of it) collapsed every gap to one space.
+// The same sessions, listed under a scope that did not happen to include that
+// row, were laid out with room to breathe. Nothing about the sessions differed.
+func TestOneLongTitleDoesNotCollapseTheSpacing(t *testing.T) {
+	const width = 140
+	ordinary := "0909｜Fix｜Read every agent's sessions on a first install"
+	outlier := strings.Repeat("我", 69) // 138 cells, the real one from the index
+
+	render := func(titles ...string) string {
+		items := make([]list.Item, 0, len(titles))
+		for i, title := range titles {
+			items = append(items, sessionItem{summary: model.Summary{
+				ID: fmt.Sprintf("s%d", i), Provider: "codex", Title: title,
+			}})
+		}
+		d := sessionDelegate{marked: map[string]bool{}, titleW: titleColumnWidth(items)}
+		l := newBareList(items, d, width, 8)
+		var buf strings.Builder
+		d.Render(&buf, l, 0, items[0])
+		return ansi.Strip(buf.String())
+	}
+
+	alone := render(ordinary, ordinary)
+	beside := render(ordinary, outlier)
+
+	gapOf := func(row string) int {
+		// The run of spaces between the agent chip and the title is the gap
+		// every other column is spaced by too.
+		idx := strings.Index(row, "CDX")
+		if idx < 0 {
+			t.Fatalf("no agent chip in %q", row)
+		}
+		rest := row[idx+len("CDX"):]
+		return len(rest) - len(strings.TrimLeft(rest, " "))
+	}
+
+	if got, want := gapOf(beside), gapOf(alone); got != want {
+		t.Fatalf("one long title changed the spacing of a row it is not in: gap = %d beside it, %d without it", got, want)
+	}
+	// And the spacing is the roomy one, not the collapsed one both could agree on.
+	if got := gapOf(alone); got < 2 {
+		t.Fatalf("gap = %d: a band this wide has room to space its columns", got)
+	}
+}
