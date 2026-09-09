@@ -600,7 +600,7 @@ func batchApplyCmd(ctx context.Context, reg *registry.Registry, idx *index.Store
 // after it lands: changed rows first, everything else folded into counts
 // unless expanded.
 func (m modelState) batchView() string {
-	inner := m.width - modalStyle.GetHorizontalFrameSize() - paneStyle.GetHorizontalBorderSize()
+	inner := m.bandWidth() - modalStyle.GetHorizontalFrameSize() - paneStyle.GetHorizontalBorderSize()
 	if inner < 12 {
 		inner = 12
 	}
