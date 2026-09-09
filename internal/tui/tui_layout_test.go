@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -1414,5 +1415,35 @@ func TestReversibleDeleteModalFitsTerminal(t *testing.T) {
 				t.Errorf("%s %dx%d height = %d", lang, size[0], size[1], got)
 			}
 		}
+	}
+}
+
+// A session older than the relative range prints an absolute date, and that
+// date is wider than any relative stamp. The column was a fixed ten cells, so
+// "Sep 30, 2026" arrived as "Sep 30, 20" and the year — the only part that
+// matters once a session is this old — was the part that went.
+func TestTimeColumnKeepsTheYearOfAnOldSession(t *testing.T) {
+	old := time.Date(2026, time.September, 30, 12, 0, 0, 0, time.UTC).AddDate(-1, 0, 0)
+	stamp := util.FormatRelative(old)
+	if strings.HasSuffix(stamp, "ago") {
+		t.Fatalf("fixture is not old enough to render an absolute date: %q", stamp)
+	}
+
+	m := layoutTestModel()
+	m.width, m.height = 140, 40
+	m.sessions.SetItems([]list.Item{
+		sessionItem{summary: model.Summary{ID: "old", Provider: "codex", Title: "An old session", UpdatedAt: old}},
+	})
+	m.sessions.SetSize(m.width, m.height)
+
+	rendered := sessionDelegateFor(&m)
+	if got := rendered.timeW; got < ansi.StringWidth(stamp) {
+		t.Fatalf("time column measured %d cells for a %d-cell stamp %q", got, ansi.StringWidth(stamp), stamp)
+	}
+
+	var buf strings.Builder
+	rendered.Render(&buf, m.sessions, 0, m.sessions.Items()[0])
+	if !strings.Contains(buf.String(), stamp) {
+		t.Fatalf("row lost part of %q: %q", stamp, buf.String())
 	}
 }
