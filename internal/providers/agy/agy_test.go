@@ -548,7 +548,12 @@ func TestCleanupLeavesPostWriteAnnotationUntouched(t *testing.T) {
 	}
 }
 
-func TestActiveConversationCannotBeRenamed(t *testing.T) {
+// TestRenameAcceptsTheConversationAnotherRunsIn keeps the running-session
+// policy in one place. provider.IsCurrentSession is what protects the session
+// another is sitting in, and `another rename --allow-current` is what a
+// SessionEnd hook uses to get past it. A second refusal down here made that
+// flag do nothing for Antigravity, so the store just performs the write.
+func TestRenameAcceptsTheConversationAnotherRunsIn(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("AGY_HOME", root)
 	p := agy.New()
@@ -559,11 +564,11 @@ func TestActiveConversationCannotBeRenamed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("ANTIGRAVITY_CONVERSATION_ID", written.SessionID)
-	if err := p.RenameSession(context.Background(), provider.SessionRef{ID: written.SessionID}, "changed"); err == nil || !strings.Contains(err.Error(), "currently active") {
+	if err := p.RenameSession(context.Background(), provider.SessionRef{ID: written.SessionID}, "changed"); err != nil {
 		t.Fatalf("active RenameSession error = %v", err)
 	}
-	if got := pTitle(t, root, written.SessionID); got == "changed" {
-		t.Fatal("active conversation was renamed")
+	if got := pTitle(t, root, written.SessionID); got != "changed" {
+		t.Fatalf("active conversation title = %q, want %q", got, "changed")
 	}
 }
 
