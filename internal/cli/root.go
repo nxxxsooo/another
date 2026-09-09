@@ -457,30 +457,50 @@ func (a *App) runSetup(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("load config: %w", err)
 	}
 	all := registry.NewOrdered(initial.EnabledProviders)
-	// Finding the adapter means asking OpenCode 2 where its configuration is,
+	// Finding OpenCode 2's adapter means asking it where its configuration is,
 	// which can start a stopped service. Setup must not wait for that before
-	// it draws, so the lookup runs once, in the background, and is reused
+	// it draws, so each lookup runs once, in the background, and is reused
 	// afterwards by whatever setup decides to do with it.
-	var once sync.Once
-	var found integrations.Status
-	resolve := func() integrations.Status {
-		once.Do(func() { found = integrations.OpenCode2Status(integrations.OpenCode2ConfigDir(ctx)) })
-		return found
+	resolvers := make(map[string]func() integrations.Status, len(integrations.Adapters()))
+	plugins := make([]tui.SetupPlugin, 0, len(integrations.Adapters()))
+	for _, adapter := range integrations.Adapters() {
+		var once sync.Once
+		var found integrations.Status
+		resolvers[adapter.ID] = func() integrations.Status {
+			once.Do(func() { found = adapter.Status(adapter.ConfigDir(ctx)) })
+			return found
+		}
+		// Whether a row exists at all is cheap to answer and does not wait.
+		plugins = append(plugins, tui.SetupPlugin{
+			Integration: adapter.ID,
+			Provider:    adapter.Provider,
+			Supported:   registry.CLIAvailable(adapter.Provider),
+		})
 	}
-	// Whether the row exists at all is cheap to answer and does not wait.
-	supported := registry.CLIAvailable("opencode2")
-	probe := func() tui.SetupPlugin {
+	probe := func(id string) tui.SetupPlugin {
+		row := tui.SetupPlugin{Integration: id}
+		for _, p := range plugins {
+			if p.Integration == id {
+				row = p
+			}
+		}
+		resolve, ok := resolvers[id]
+		if !ok {
+			return row
+		}
 		status := resolve()
-		return tui.SetupPlugin{Supported: supported || status.State.Installed(), Dir: status.Dir, State: status.State}
+		row.Supported = row.Supported || status.State.Installed()
+		row.Dir, row.State = status.Dir, status.State
+		return row
 	}
-	settings, done, err := tui.RunSetup(all, counts, initial, tui.SetupPlugin{Supported: supported}, probe)
+	settings, done, err := tui.RunSetup(all, counts, initial, plugins, probe)
 	if err != nil || !done {
 		return false, err
 	}
 	if err := config.SaveSettings(settings); err != nil {
 		return false, fmt.Errorf("save config: %w", err)
 	}
-	applyIntegrations(settings, resolve())
+	applyIntegrations(settings, resolvers)
 	enabled := settings.EnabledProviders
 	if err := a.Index.KeepProviders(enabled); err != nil {
 		return false, fmt.Errorf("prune index: %w", err)
@@ -506,11 +526,11 @@ func (a *App) providersCmd() *cobra.Command {
 				for _, ps := range p.DefaultPaths() {
 					fmt.Printf("    %s: %s\n", ps.Label, util.TildePath(ps.Path))
 				}
-				if p.ID() == "opencode2" {
-					// The plugin is part of whether OpenCode 2 is set up
+				if adapter, ok := integrations.ForProvider(p.ID()); ok {
+					// The adapter is part of whether that agent is set up
 					// correctly, and it lives outside every path above.
-					found := integrations.OpenCode2Status(integrations.OpenCode2ConfigDir(cmd.Context()))
-					fmt.Printf("    title plugin: %s\n", integrationStateText(found))
+					found := adapter.Status(adapter.ConfigDir(cmd.Context()))
+					fmt.Printf("    title adapter: %s\n", integrationStateText(found))
 					if found.RedundantEntry != "" {
 						fmt.Printf("    note: %s still lists this plugin; OpenCode 2 finds it without that entry\n",
 							util.TildePath(found.RedundantEntry))

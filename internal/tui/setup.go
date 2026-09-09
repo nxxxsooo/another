@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -52,20 +53,25 @@ type titleOption struct {
 	id, name, command string
 }
 
-// SetupPlugin describes the adapter another can install into OpenCode 2, as it
-// exists before setup runs. Setup asks about it rather than acting on
-// detection: the files land in an agent's own configuration directory, which
+// SetupPlugin describes one adapter another can install into an agent's own
+// configuration, as it exists before setup runs. Setup asks about it rather
+// than acting on detection: the files land in someone else's directory, which
 // another may write to only because a person said so on this page.
 type SetupPlugin struct {
-	// Supported is false when there is no OpenCode 2 to install into, which
+	// Integration is the adapter this row is about, and Provider is the
+	// agent it writes into — the row appears only while that agent is one
+	// another manages.
+	Integration string
+	Provider    string
+	// Supported is false when there is no such agent to install into, which
 	// hides the row entirely.
 	Supported bool
 	Dir       string
 	State     integrations.State
 }
 
-// Known reports whether the adapter has been looked up yet. Finding it means
-// asking OpenCode 2 where its configuration lives, which is a subprocess and
+// Known reports whether the adapter has been looked up yet. Finding OpenCode
+// 2's means asking it where its configuration lives, which is a subprocess and
 // occasionally a service start, so setup draws before the answer arrives and
 // the row says so until it does.
 func (p SetupPlugin) Known() bool { return p.State != "" }
@@ -73,11 +79,18 @@ func (p SetupPlugin) Known() bool { return p.State != "" }
 // pluginStatusMsg carries one finished lookup.
 type pluginStatusMsg struct{ plugin SetupPlugin }
 
-func pluginStatusCmd(probe func() SetupPlugin) tea.Cmd {
+// pluginStatusCmds looks each adapter up on its own, so the one that answers
+// from a file is not held behind the one that starts a service.
+func pluginStatusCmds(probe func(string) SetupPlugin, plugins []SetupPlugin) tea.Cmd {
 	if probe == nil {
 		return nil
 	}
-	return func() tea.Msg { return pluginStatusMsg{plugin: probe()} }
+	cmds := make([]tea.Cmd, 0, len(plugins))
+	for _, p := range plugins {
+		id := p.Integration
+		cmds = append(cmds, func() tea.Msg { return pluginStatusMsg{plugin: probe(id)} })
+	}
+	return tea.Batch(cmds...)
 }
 
 type setupModel struct {
@@ -101,16 +114,18 @@ type setupModel struct {
 	titleCursor int
 	modelInput  textinput.Model
 	langCursor  int
-	// plugin is the OpenCode 2 adapter row and whether it is switched on.
-	// pluginTouched keeps a lookup that lands late from overriding an answer
-	// the person has already given on the row.
-	plugin        SetupPlugin
-	pluginWanted  bool
-	pluginTouched bool
-	pluginProbe   func() SetupPlugin
+	// plugins is one row per adapter another ships, each switched on or off
+	// by itself. pluginTouched keeps a lookup that lands late from overriding
+	// an answer the person has already given on that row. Everything here is
+	// keyed by adapter id, because rows appear and disappear with the agent
+	// selection on page one.
+	plugins       []SetupPlugin
+	pluginWanted  map[string]bool
+	pluginTouched map[string]bool
+	pluginProbe   func(string) SetupPlugin
 	// pluginConsented is the saved answer from an earlier run, which decides
-	// the row's default once the lookup arrives.
-	pluginConsented bool
+	// each row's default once its lookup arrives.
+	pluginConsented map[string]bool
 	// uiLangCursor is the interface language, which page one both sets and
 	// immediately demonstrates: the page redraws in the language under the
 	// cursor, so the choice is verified by making it.
@@ -158,7 +173,7 @@ var uiLanguages = []i18n.Lang{i18n.LangAuto, i18n.LangEnglish, i18n.LangChinese}
 // plus the two language settings. It takes and returns whole settings so a
 // preference this page does not touch survives being edited here. The caller
 // persists the result only after the program exits cleanly.
-func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Settings, plugin SetupPlugin, probe func() SetupPlugin) (config.Settings, bool, error) {
+func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Settings, plugins []SetupPlugin, probe func(string) SetupPlugin) (config.Settings, bool, error) {
 	initialTitle := initial.TitleModel
 	initialPolicy := initial.TitlePolicy
 	chosen := initialSetupSelection(initial.EnabledProviders)
@@ -183,10 +198,16 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 	modelInput.Prompt = ""
 	modelInput.Placeholder = txt.modelPlaceholder
 	modelInput.CharLimit = 120
-	start := setupModel{items: items, selected: chosen, spinner: sp, modelInput: modelInput, plugin: plugin}
+	start := setupModel{items: items, selected: chosen, spinner: sp, modelInput: modelInput, plugins: plugins}
 	start.pluginProbe = probe
-	start.pluginConsented = initial.Integrations.OpenCode2TitlePolicy
-	start.pluginWanted = pluginDefault(plugin, start.pluginConsented)
+	start.pluginConsented = make(map[string]bool, len(plugins))
+	start.pluginWanted = make(map[string]bool, len(plugins))
+	start.pluginTouched = make(map[string]bool, len(plugins))
+	for _, p := range plugins {
+		consented := savedConsent(initial.Integrations, p.Integration)
+		start.pluginConsented[p.Integration] = consented
+		start.pluginWanted[p.Integration] = pluginDefault(p, consented)
+	}
 	start.showAdapters = anyAdapterSelected(items, chosen)
 	start.langCursor = languageCursor(titler.Language(initialPolicy.Language))
 	start.uiLangCursor = uiLanguageCursor(i18n.Lang(initial.UI.Language))
@@ -229,8 +250,22 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 	saved.TitleModel = model.titleModel()
 	saved.TitlePolicy = config.TitlePolicy{Language: string(model.language())}
 	saved.UI = config.UI{Language: string(model.uiLanguage())}
-	saved.Integrations.OpenCode2TitlePolicy = model.wantsPlugin()
+	for _, p := range plugins {
+		if adapter, ok := integrations.Find(p.Integration); ok {
+			*adapter.Consent(&saved.Integrations) = model.wantsPlugin(p.Integration)
+		}
+	}
 	return saved, model.done, nil
+}
+
+// savedConsent reads one adapter's stored answer without the caller having to
+// know which field holds it.
+func savedConsent(saved config.Integrations, id string) bool {
+	adapter, ok := integrations.Find(id)
+	if !ok {
+		return false
+	}
+	return *adapter.Consent(&saved)
 }
 
 // anyAdapterSelected reports whether the saved configuration already enables a
@@ -320,12 +355,9 @@ func (m setupModel) titleModel() *config.TitleModel {
 	}
 }
 
-// setupOpenCode2 is the one agent whose native naming another can adapt today.
-const setupOpenCode2 = "opencode2"
-
-// pluginDefault decides where the row starts. A plugin another already
-// maintains is already consented to, so it opens on; everything else starts
-// off, including a hand-copied installation this run would only be adopting.
+// pluginDefault decides where a row starts. A plugin another already maintains
+// is already consented to, so it opens on; everything else starts off,
+// including a hand-copied installation this run would only be adopting.
 func pluginDefault(plugin SetupPlugin, consented bool) bool {
 	if !plugin.Supported {
 		return false
@@ -333,44 +365,125 @@ func pluginDefault(plugin SetupPlugin, consented bool) bool {
 	return consented || plugin.State == integrations.StateCurrent || plugin.State == integrations.StateOutdated
 }
 
-// pluginVisible reports whether the row belongs on the page. It is tied to the
-// agent it writes into: someone who does not let another manage OpenCode 2 is
-// not being asked about OpenCode 2's plugins.
-func (m setupModel) pluginVisible() bool {
-	return m.plugin.Supported && m.selected[setupOpenCode2]
+// visiblePlugins is the rows the page actually draws, in adapter order. A row
+// is tied to the agent it writes into: someone who does not let another manage
+// OpenCode 2 is not being asked about OpenCode 2's plugins.
+func (m setupModel) visiblePlugins() []SetupPlugin {
+	rows := make([]SetupPlugin, 0, len(m.plugins))
+	for _, p := range m.plugins {
+		if p.Supported && m.selected[p.Provider] {
+			rows = append(rows, p)
+		}
+	}
+	return rows
 }
 
-// pluginToggleable reports whether the row is a choice rather than a report.
+// pluginVisible reports whether one adapter has a row on the page.
+func (m setupModel) pluginVisible(id string) bool {
+	for _, p := range m.visiblePlugins() {
+		if p.Integration == id {
+			return true
+		}
+	}
+	return false
+}
+
+// anyPluginVisible reports whether the page carries the block at all, which is
+// what decides the lines the title page has to budget for.
+func (m setupModel) anyPluginVisible() bool { return len(m.visiblePlugins()) > 0 }
+
+// plugin returns one adapter's row as another last knew it.
+func (m setupModel) plugin(id string) SetupPlugin {
+	for _, p := range m.plugins {
+		if p.Integration == id {
+			return p
+		}
+	}
+	return SetupPlugin{Integration: id}
+}
+
+// pluginToggleable reports whether a row is a choice rather than a report.
 // Files another did not write are shown but never claimed from this page; the
 // command line can force that, where the person has said what they mean.
-func (m setupModel) pluginToggleable() bool {
-	return m.pluginVisible() && m.plugin.Known() && !m.plugin.State.Blocked()
+func (m setupModel) pluginToggleable(id string) bool {
+	p := m.plugin(id)
+	return m.pluginVisible(id) && p.Known() && !p.State.Blocked()
 }
 
-// wantsPlugin is the answer setup saves and acts on. A row the page could not
-// offer keeps the answer the last run gave: saving quickly, before the lookup
-// lands, or while files another did not write sit in the way, is not a way to
-// withdraw a choice that was made deliberately.
-func (m setupModel) wantsPlugin() bool {
-	if !m.pluginVisible() {
+// wantsPlugin is the answer setup saves and acts on, per adapter. A row the
+// page could not offer keeps the answer the last run gave: saving quickly,
+// before the lookup lands, or while files another did not write sit in the
+// way, is not a way to withdraw a choice that was made deliberately.
+func (m setupModel) wantsPlugin(id string) bool {
+	if !m.pluginVisible(id) {
 		return false
 	}
-	if !m.pluginToggleable() {
-		return m.pluginConsented
+	if !m.pluginToggleable(id) {
+		return m.pluginConsented[id]
 	}
-	return m.pluginWanted
+	return m.pluginWanted[id]
 }
 
-// pluginRow draws the adapter as one line: the switch, what it does, what is
-// on disk now, and where that is. The path is on the row because this is the
-// moment another asks to write outside its own configuration.
-func (m setupModel) pluginRow(width int) string {
+// togglePlugin flips the row a number key names. The keys are positional: the
+// row prints the digit that works on it, so a row that appears or disappears
+// with the agent selection cannot leave a stale key behind.
+func (m setupModel) togglePlugin(nth int) setupModel {
+	rows := m.visiblePlugins()
+	if nth < 0 || nth >= len(rows) {
+		return m
+	}
+	id := rows[nth].Integration
+	if !m.pluginToggleable(id) {
+		return m
+	}
+	wanted := make(map[string]bool, len(m.pluginWanted))
+	touched := make(map[string]bool, len(m.pluginTouched))
+	for k, v := range m.pluginWanted {
+		wanted[k] = v
+	}
+	for k, v := range m.pluginTouched {
+		touched[k] = v
+	}
+	wanted[id] = !wanted[id]
+	touched[id] = true
+	m.pluginWanted, m.pluginTouched = wanted, touched
+	return m
+}
+
+// pluginLabel names the adapter in the interface language. The label is the
+// agent's name plus what the files do, because this row is the one place a
+// person is told another writes outside its own configuration.
+func pluginLabel(id string) string {
+	if id == integrations.Pi {
+		return txt.setupPluginLabelPi
+	}
+	return txt.setupPluginLabel
+}
+
+// pluginRows draws the block: one adapter per row, numbered by position.
+// compact leaves out the directory line, for a terminal too short to hold both
+// the rows and the list they sit under.
+func (m setupModel) pluginRows(width int, compact bool) string {
+	var b strings.Builder
+	for i, p := range m.visiblePlugins() {
+		if compact {
+			p.Dir = ""
+		}
+		b.WriteString(m.pluginRow(p, i+1, width) + "\n")
+	}
+	return b.String()
+}
+
+// pluginRow draws one adapter: the switch, what it does, what is on disk now,
+// and where that is. The path is on the row because this is the moment another
+// asks to write outside its own configuration.
+func (m setupModel) pluginRow(p SetupPlugin, key, width int) string {
 	mark := mutedStyle.Render("○")
-	if m.wantsPlugin() {
+	if m.wantsPlugin(p.Integration) {
 		mark = okStyle.Render("●")
 	}
 	state := txt.setupPluginMissing
-	switch m.plugin.State {
+	switch p.State {
 	case "":
 		state = txt.setupPluginChecking
 	case integrations.StateCurrent:
@@ -384,15 +497,15 @@ func (m setupModel) pluginRow(width int) string {
 	case integrations.StateForeign:
 		state = txt.setupPluginForeign
 	}
-	line := mark + " " + mutedStyle.Render(txt.setupPluginLabel+"  ·  "+state)
-	if m.pluginToggleable() {
-		line += mutedStyle.Render("  ·  " + txt.setupPluginToggle)
+	line := mark + " " + mutedStyle.Render(pluginLabel(p.Integration)+"  ·  "+state)
+	if m.pluginToggleable(p.Integration) {
+		line += mutedStyle.Render("  ·  " + fmt.Sprintf(txt.setupPluginToggleFmt, key))
 	}
 	row := ansi.Truncate(line, width, "…")
-	if m.plugin.Dir == "" {
+	if p.Dir == "" {
 		return row
 	}
-	return row + "\n" + ansi.Truncate(mutedStyle.Render("   "+util.TildePath(m.plugin.Dir)), width, "…")
+	return row + "\n" + ansi.Truncate(mutedStyle.Render("   "+util.TildePath(p.Dir)), width, "…")
 }
 
 // language reads the chosen title language back out.
@@ -464,7 +577,7 @@ func restoreTitleCursor(opts []titleOption, previous []titleOption) int {
 func (m setupModel) Init() tea.Cmd {
 	// The lookup starts with page one, which is where the time it takes is
 	// free: the row it fills in belongs to page two.
-	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle), probeSizeCmd(0), pluginStatusCmd(m.pluginProbe))
+	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle), probeSizeCmd(0), pluginStatusCmds(m.pluginProbe, m.plugins))
 }
 
 func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -480,9 +593,22 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sizeProbeMsg:
 		return m, onSizeProbe(msg)
 	case pluginStatusMsg:
-		m.plugin = msg.plugin
-		if !m.pluginTouched {
-			m.pluginWanted = pluginDefault(m.plugin, m.pluginConsented)
+		id := msg.plugin.Integration
+		plugins := make([]SetupPlugin, len(m.plugins))
+		copy(plugins, m.plugins)
+		for i, p := range plugins {
+			if p.Integration == id {
+				plugins[i] = msg.plugin
+			}
+		}
+		m.plugins = plugins
+		if !m.pluginTouched[id] {
+			wanted := make(map[string]bool, len(m.pluginWanted))
+			for k, v := range m.pluginWanted {
+				wanted[k] = v
+			}
+			wanted[id] = pluginDefault(msg.plugin, m.pluginConsented[id])
+			m.pluginWanted = wanted
 		}
 		return m, nil
 	case modelsLoadedMsg:
@@ -601,14 +727,15 @@ func (m setupModel) updateTitlePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right":
 		m.langCursor = (m.langCursor + 1) % len(languages)
 		return m, nil
-	case "t":
-		// The model name is typed on its own page, so a letter is free here
-		// and the switch does not need a row of its own in the list.
-		if m.pluginToggleable() {
-			m.pluginWanted = !m.pluginWanted
-			m.pluginTouched = true
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		// The model name is typed on its own page, so digits are free here.
+		// One key per row means the second adapter did not need a cursor of
+		// its own, and the row prints the digit that works on it.
+		nth, err := strconv.Atoi(msg.String())
+		if err != nil {
+			return m, nil
 		}
-		return m, nil
+		return m.togglePlugin(nth - 1), nil
 	case "enter":
 		if m.titleCursor <= 0 {
 			// Suggestions are off, so there is no model to choose.
@@ -758,6 +885,29 @@ func (m setupModel) foldLine(focused bool) string {
 	return "  " + label + mutedStyle.Render(fmt.Sprintf(txt.setupFoldHintFmt, action))
 }
 
+// titleFoot is everything below the agent list: the language row, the adapter
+// rows, and the help line. compact drops the adapter paths, which is the only
+// thing here a short terminal can give up without losing a choice.
+func (m setupModel) titleFoot(width int, compact bool) string {
+	foot := "\n" + mutedStyle.Render(txt.setupTitleLanguage) + "  " + m.titleLanguageRow() + "\n"
+	// The policy line says the language is shared with OpenCode 2 and Pi. When
+	// their rows are on the page they say the same thing about real
+	// directories, so the abstract sentence gives up its lines to the concrete
+	// ones rather than both competing for a short terminal.
+	if m.titleCursor <= 0 && !m.anyPluginVisible() {
+		foot += mutedStyle.Render(txt.setupTitlePolicy) + "\n"
+	}
+	foot += m.pluginRows(width, compact)
+	foot += "\n"
+	if m.err != "" {
+		foot += errStyle.Render("✗ "+m.err) + "\n"
+	}
+	if m.titleCursor > 0 {
+		return foot + mutedStyle.Render(txt.setupTitleHelpModel)
+	}
+	return foot + mutedStyle.Render(txt.setupTitleHelpSave)
+}
+
 func (m setupModel) titlePageBody(panelW, width int) string {
 	head := accentStyle.Render("another setup") + "\n" +
 		titleStyle.Render(txt.setupTitleTitle) + "\n" +
@@ -765,38 +915,33 @@ func (m setupModel) titlePageBody(panelW, width int) string {
 
 	if len(m.titleOpts) <= 1 {
 		body := head + mutedStyle.Render(txt.setupTitleNone) + "\n"
-		if m.pluginVisible() {
-			// The plugin is the one part of this page that still works when
-			// no agent can suggest a title: OpenCode 2 writes its own.
-			body += "\n" + m.pluginRow(width) + "\n"
+		if m.anyPluginVisible() {
+			// The adapters are the part of this page that still works when
+			// no agent can suggest a title: OpenCode 2 and Pi name their own
+			// sessions, and these rows are what lets another set the policy.
+			body += "\n" + m.pluginRows(width, false)
 		}
-		return body + "\n" + mutedStyle.Render(txt.setupTitleNoneHelp)
+		body += "\n" + mutedStyle.Render(txt.setupTitleNoneHelp)
+		if lipgloss.Height(modalStyle.Width(panelW).Render(body)) <= m.height {
+			return body
+		}
+		// Nothing on this page can be dropped except the paths, so they are
+		// what gives way; `another integrations status` still prints them.
+		return head + mutedStyle.Render(txt.setupTitleNone) + "\n\n" +
+			m.pluginRows(width, true) + "\n" + mutedStyle.Render(txt.setupTitleNoneHelp)
 	}
 
-	foot := "\n" + mutedStyle.Render(txt.setupTitleLanguage) + "  " + m.titleLanguageRow() + "\n"
-	// The policy line says the language is shared with OpenCode 2 and Pi. When
-	// the OpenCode 2 row is on the page it says the same thing about a real
-	// directory, so the abstract sentence gives up its lines to the concrete
-	// one rather than both competing for a short terminal.
-	if m.titleCursor <= 0 && !m.pluginVisible() {
-		foot += mutedStyle.Render(txt.setupTitlePolicy) + "\n"
-	}
-	if m.pluginVisible() {
-		foot += m.pluginRow(width) + "\n"
-	}
-	foot += "\n"
-	if m.err != "" {
-		foot += errStyle.Render("✗ "+m.err) + "\n"
-	}
-	if m.titleCursor > 0 {
-		foot += mutedStyle.Render(txt.setupTitleHelpModel)
-	} else {
-		foot += mutedStyle.Render(txt.setupTitleHelpSave)
-	}
-
+	foot := m.titleFoot(width, false)
 	// Same budget as the agent page: this list is every agent that can write a
 	// title, so it outgrows a short terminal for the same reason.
 	budget := m.height - lipgloss.Height(modalStyle.Width(panelW).Render(head+foot))
+	// Two adapters cost four lines of that budget, which a short terminal does
+	// not have. The list of agents is what this page is for, so the adapter
+	// paths give up their lines before the list does.
+	if budget < 2 && m.anyPluginVisible() {
+		foot = m.titleFoot(width, true)
+		budget = m.height - lipgloss.Height(modalStyle.Width(panelW).Render(head+foot))
+	}
 	if len(m.titleOpts) > budget {
 		budget--
 	}

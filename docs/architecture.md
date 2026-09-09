@@ -17,11 +17,11 @@
 | `internal/index` | SQLite store: discovery reconciliation, FTS5 search, incremental refresh, path aliases, migration dedup records. |
 | `internal/migrate` | The migration engine: context modes, projection, write, verify, rollback, dedup. |
 | `internal/titler` | AI title suggestions through an installed agent CLI, single and batch. |
-| `internal/integrations` | Adapters another installs into other agents, currently the OpenCode 2 title plugin. |
+| `internal/integrations` | Adapters another installs into other agents: the OpenCode 2 title plugin and the Pi title extension, behind one shared install, compare, and remove path. |
 | `internal/config` | Settings file, paths, atomic writes, permissions. |
 | `internal/i18n` | English and Chinese strings for the TUI. |
 | `internal/util` | Paths, project scope and nested-repo detection, JSONL scanning, title picking, display helpers. |
-| `integrations/` | Sources shipped to other agents: the OpenCode 2 title plugin, the Claude Code SessionEnd hook, the Pi title patch. |
+| `integrations/` | Sources shipped to other agents: the OpenCode 2 title plugin, the Pi title extension, the Claude Code SessionEnd hook. |
 | `docs/assets/`, `scripts/` | Generated artwork and the scripts that regenerate it, plus the install script. |
 
 ## Data flow

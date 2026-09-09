@@ -188,7 +188,7 @@ setup 第二页用 `←→` 选标题语言（与第一页的界面语言互不�
 
 <img src="docs/assets/tui-batch.svg" width="100%" alt="another 批量命名确认页：原名到新名的对照表与折叠计数">
 
-OpenCode 2 可以在首次自动命名时直接执行同一规则，而不额外调用一次模型。这个适配器随 another 二进制分发：在 `another setup` 第二页把 `OpenCode 2 标题插件` 那行打开，或运行 `another integrations install`，another 会把插件写进 OpenCode 2 的 `plugins/another-title-policy/` 并记下自己写了什么。它只写这一个目录，从不改你的 `opencode.json(c)`——OpenCode 2 自己就会发现该目录。升级 another 之后 `another integrations status` 会说明插件是否落后，`another setup` 再跑一次即可对齐；被你手工改过的文件不会被覆盖。源码与细节见 [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/)。Pi 的 session-title 扩展补丁仍需手工打，见 [`integrations/pi-session-title-policy/`](integrations/pi-session-title-policy/)。Claude Code 没有可覆盖的标题 agent，也没有"会话已命名"事件，只能在会话结束之后改名：[`integrations/claude-code-title-hook/`](integrations/claude-code-title-hook/) 里的 SessionEnd 钩子调用 `another rename --auto`，写的是 Claude Code 自己的 `custom-title` 记录，所以它自己的列表里也认。已经手工命名过的会话会跳过，手动标题不会被覆盖；和 Pi 一样需要手工装。Codex 暂无稳定的原生标题策略接口，仍由 another 整理。
+OpenCode 2 可以在首次自动命名时直接执行同一规则，而不额外调用一次模型。这个适配器随 another 二进制分发：在 `another setup` 第二页把 `OpenCode 2 标题插件` 那行打开，或运行 `another integrations install`，another 会把插件写进 OpenCode 2 的 `plugins/another-title-policy/` 并记下自己写了什么。它只写这一个目录，从不改你的 `opencode.json(c)`——OpenCode 2 自己就会发现该目录。升级 another 之后 `another integrations status` 会说明插件是否落后，`another setup` 再跑一次即可对齐；被你手工改过的文件不会被覆盖。源码与细节见 [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/)。Pi 走同一条路：another 自带一个扩展，在 `another setup` 第二页打开 `Pi 标题扩展` 那行，或运行 `another integrations install pi`，它会被写进 Pi 的 `extensions/another-title-policy/`——Pi 自己会发现该目录，another 不改你的 `settings.json`。扩展本身不生成标题：一轮结束（`agent_settled`）时调用 `another rename --auto`，策略、语言、标题 agent 都留在二进制里。源码见 [`integrations/pi-title-policy/`](integrations/pi-title-policy/)。Claude Code 没有可覆盖的标题 agent，也没有"会话已命名"事件，只能在会话结束之后改名：[`integrations/claude-code-title-hook/`](integrations/claude-code-title-hook/) 里的 SessionEnd 钩子调用 `another rename --auto`，写的是 Claude Code 自己的 `custom-title` 记录，所以它自己的列表里也认。已经手工命名过的会话会跳过，手动标题不会被覆盖；需要手工装。Codex 暂无稳定的原生标题策略接口，仍由 another 整理。
 
 ## CLI
 
@@ -218,8 +218,8 @@ another import session.another.json --to <provider> [--context MODE] [--dry-run]
 # 配置和索引
 another setup
 another integrations                      # 适配器状态
-another integrations install [--force]    # 安装或更新 OpenCode 2 标题插件
-another integrations remove
+another integrations install [agent...]  # 安装或更新适配器，不写 agent 就是全部
+another integrations remove [agent...]
 another index update
 another index rebuild
 
