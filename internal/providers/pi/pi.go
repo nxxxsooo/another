@@ -90,9 +90,32 @@ type Provider struct {
 	root string
 }
 
+// AgentDirEnv is the override Pi itself reads: it builds the name from its own
+// application name, so a stock Pi looks at PI_CODING_AGENT_DIR and nothing
+// else. Pi also reads PI_CODING_AGENT_SESSION_DIR, but that one names a single
+// project's session directory rather than the root another indexes, so there
+// is nothing here for it to override.
+const AgentDirEnv = "PI_CODING_AGENT_DIR"
+
+// LegacyAgentDirEnv is the name another used before this was checked against a
+// running Pi. Pi never read it. It stays honored so a machine that already
+// sets it keeps working, and it is deliberately second.
+const LegacyAgentDirEnv = "PI_AGENT_DIR"
+
+// AgentDir resolves the directory Pi keeps its sessions, settings, and
+// extensions in — the one place another and Pi have to agree on.
+func AgentDir() string {
+	if dir := os.Getenv(AgentDirEnv); dir != "" {
+		return config.ExpandPath(dir)
+	}
+	if dir := os.Getenv(LegacyAgentDirEnv); dir != "" {
+		return config.ExpandPath(dir)
+	}
+	return filepath.Join(config.HomeDir(), ".pi", "agent")
+}
+
 func New() *Provider {
-	root := config.EnvOrDefault("PI_AGENT_DIR", filepath.Join(config.HomeDir(), ".pi", "agent"))
-	return &Provider{root: root}
+	return &Provider{root: AgentDir()}
 }
 
 func (p *Provider) ID() string          { return ProviderID }
@@ -106,7 +129,7 @@ func (p *Provider) Installed() bool {
 func (p *Provider) SupportsResume() bool { return true }
 
 func (p *Provider) DefaultPaths() []provider.PathSpec {
-	return []provider.PathSpec{{Label: "sessions", Path: p.sessionsRoot(), Env: "PI_AGENT_DIR"}}
+	return []provider.PathSpec{{Label: "sessions", Path: p.sessionsRoot(), Env: AgentDirEnv}}
 }
 
 func (p *Provider) sessionsRoot() string { return filepath.Join(p.root, "sessions") }

@@ -6,6 +6,7 @@ import (
 
 	extension "github.com/nxxxsooo/another/integrations/pi-title-policy"
 	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/providers/pi"
 )
 
 // Pi is the title-policy extension adapter. Pi names a session through an
@@ -21,16 +22,14 @@ const PiConfigDirEnv = "ANOTHER_PI_CONFIG_DIR"
 // PiConfigDir resolves Pi's agent directory.
 //
 // Unlike OpenCode 2 there is no CLI to ask: Pi keeps its extensions beside its
-// sessions under a fixed agent directory, and the provider already reads that
-// same root. PI_AGENT_DIR is honored first for anyone who moved it.
+// sessions under one agent directory. The provider owns resolving it, and this
+// defers to it so the extension can never be installed into a directory the
+// provider does not read.
 func PiConfigDir() string {
 	if dir := os.Getenv(PiConfigDirEnv); dir != "" {
 		return config.ExpandPath(dir)
 	}
-	if dir := os.Getenv("PI_AGENT_DIR"); dir != "" {
-		return config.ExpandPath(dir)
-	}
-	return filepath.Join(config.HomeDir(), ".pi", "agent")
+	return pi.AgentDir()
 }
 
 // PiDir is where the extension belongs inside a resolved agent directory. Pi

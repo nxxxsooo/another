@@ -4,7 +4,38 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/nxxxsooo/another/internal/providers/pi"
 )
+
+// another has to install the extension into the directory Pi actually loads
+// from, which is the one the provider indexes. Resolution is checked here
+// rather than assumed, because installing into a directory Pi never reads
+// looks exactly like a successful installation.
+func TestPiConfigDirFollowsPiOwnEnv(t *testing.T) {
+	agent := t.TempDir()
+	legacy := t.TempDir()
+
+	t.Setenv(pi.LegacyAgentDirEnv, legacy)
+	if got := PiConfigDir(); got != legacy {
+		t.Fatalf("PiConfigDir() = %q, want another's older name %q honored", got, legacy)
+	}
+
+	// Pi builds this name from its own application name and reads nothing
+	// else, so it outranks the name another used before anyone checked.
+	t.Setenv(pi.AgentDirEnv, agent)
+	if got := PiConfigDir(); got != agent {
+		t.Fatalf("PiConfigDir() = %q, want Pi's own %s %q", got, pi.AgentDirEnv, agent)
+	}
+
+	// The adapter's own override still wins: it exists for the Pi another
+	// cannot locate at all.
+	override := t.TempDir()
+	t.Setenv(PiConfigDirEnv, override)
+	if got := PiConfigDir(); got != override {
+		t.Fatalf("PiConfigDir() = %q, want the override %q", got, override)
+	}
+}
 
 // The Pi extension goes through the same states as every other adapter. The
 // value of these states is that another can tell its own installation from a

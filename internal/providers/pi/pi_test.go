@@ -30,6 +30,30 @@ func writeSession(t *testing.T, root, cwd, name string, lines []string) string {
 	return path
 }
 
+// Pi reads PI_CODING_AGENT_DIR — it builds that name from its own application
+// name — and has never read PI_AGENT_DIR, which is a name another invented.
+// Anyone who moved their agent directory set the one Pi documents, so that one
+// has to win, and the older name has to keep working for anyone who set it on
+// another's word.
+func TestAgentDirPrefersTheNamePiReads(t *testing.T) {
+	agent := t.TempDir()
+	legacy := t.TempDir()
+
+	t.Setenv(pi.LegacyAgentDirEnv, legacy)
+	if got := pi.AgentDir(); got != legacy {
+		t.Fatalf("AgentDir() = %q, want %q for the name another used first", got, legacy)
+	}
+
+	t.Setenv(pi.AgentDirEnv, agent)
+	if got := pi.AgentDir(); got != agent {
+		t.Fatalf("AgentDir() = %q, want Pi's own %s to win at %q", got, pi.AgentDirEnv, agent)
+	}
+
+	if paths := pi.New().DefaultPaths(); len(paths) != 1 || paths[0].Env != pi.AgentDirEnv {
+		t.Fatalf("DefaultPaths() reports %+v, want it to name %s", paths, pi.AgentDirEnv)
+	}
+}
+
 // pi stores reasoning and tool traffic in the same message stream. Only user
 // and assistant text may cross a migration boundary.
 func TestLoadKeepsOnlyUserAndAssistantText(t *testing.T) {

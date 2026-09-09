@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { spawn } from "node:child_process"
-import { basename } from "node:path"
 
 // another names a Pi session by asking another itself, not by talking to a
 // model here. The binary already owns the title agent, the MMDD｜Type｜Topic
@@ -13,22 +12,15 @@ import { basename } from "node:path"
 
 const POLICY = /^\d{4}｜[^｜]+｜.+$/u
 
-// Pi writes a session as <timestamp>_<uuid>.jsonl, and the uuid is the id the
-// rest of another indexes it under. Reading it from the path avoids asking Pi
-// for an id that its extension API does not expose.
-function sessionID(file: string | undefined): string | undefined {
-  if (!file) return
-  const name = basename(file).replace(/\.jsonl$/u, "")
-  const id = name.slice(name.indexOf("_") + 1)
-  return /^[0-9a-f-]{36}$/iu.test(id) ? id : undefined
-}
-
 export default function register(pi: ExtensionAPI): void {
   // Detached on purpose: naming is a model call, and a turn should not end
   // slowly because a title is being written. Failures land in another's own
   // log rather than interrupting the session.
   const rename = (ctx: ExtensionContext): void => {
-    const id = sessionID(ctx.sessionManager.getSessionFile())
+    // An ephemeral session (`pi --no-session`) is never written to disk, so
+    // there is nothing for another to find and rename.
+    if (!ctx.sessionManager.getSessionFile()) return
+    const id = ctx.sessionManager.getSessionId()
     if (!id) return
     // A session that already carries a policy title is left alone: the user
     // may have set it by hand, and re-naming it would overwrite that.
@@ -47,12 +39,11 @@ export default function register(pi: ExtensionAPI): void {
     child.unref()
   }
 
-  // agent_end is the moment the turn's content is final. agent_settled repeats
-  // after compaction and retries, which is where a session that was empty at
-  // agent_end finally has something to name.
-  pi.on("agent_end", (_event, ctx) => {
-    rename(ctx as ExtensionContext)
-  })
+  // agent_settled, and only agent_settled: Pi emits it from the `finally` of
+  // the prompt run, once, after every automatic retry, compaction, and queued
+  // continuation has finished. agent_end fires earlier and fires again for
+  // each of those, so listening to both spends a title-model call twice on an
+  // ordinary turn and races two renames onto the same session.
   pi.on("agent_settled", (_event, ctx) => {
     rename(ctx as ExtensionContext)
   })
