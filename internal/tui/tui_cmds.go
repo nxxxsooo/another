@@ -18,12 +18,16 @@ import (
 )
 
 type sessionsPageMsg struct {
-	items    []list.Item
-	total    int
-	counts   map[string]int
-	provider string
-	gen      uint64
-	err      error
+	items  []list.Item
+	total  int
+	counts map[string]int
+	// scopeProjects is how many directories the scope holds, counted without
+	// the source filter so selecting an agent cannot make the directory
+	// column appear or vanish under the reader.
+	scopeProjects int
+	provider      string
+	gen           uint64
+	err           error
 }
 
 type previewLoadedMsg struct {
@@ -187,7 +191,14 @@ func loadSessionsPageCmd(m modelState, gen uint64) tea.Cmd {
 		if err == nil {
 			err = countErr
 		}
-		return sessionsPageMsg{items: sessionItems(summaries), total: total, counts: counts, provider: providerFilter, gen: gen, err: err}
+		// Counted from the scope rather than from this page: a page holds one
+		// agent's sessions, and whether the project spans directories is not
+		// that agent's business.
+		projects, projErr := idx.DistinctProjects(opts)
+		if err == nil {
+			err = projErr
+		}
+		return sessionsPageMsg{items: sessionItems(summaries), total: total, counts: counts, scopeProjects: projects, provider: providerFilter, gen: gen, err: err}
 	}
 }
 

@@ -606,7 +606,14 @@ func (m *modelState) applySessionDelegate() {
 func sessionDelegateFor(m *modelState) sessionDelegate {
 	// Items(), not VisibleItems(): a column that appeared and vanished as a
 	// filter narrowed the list would move every row beside it.
-	spread := projectsSpreadOut(m.sessions.Items())
+	// The scope's own count decides the column; the loaded rows are only a
+	// fallback for a page that arrived before the count did. Reading the rows
+	// alone let a source filter take the column away: two Antigravity sessions
+	// in one directory hid a column that the project's worktrees had earned.
+	spread := m.scopeProjects > 1
+	if m.scopeProjects == 0 {
+		spread = projectsSpreadOut(m.sessions.Items())
+	}
 	base := ""
 	if m.projectOnly {
 		base = m.projectScope.Root
