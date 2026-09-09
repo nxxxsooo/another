@@ -36,9 +36,22 @@ func New() *Provider {
 
 func (p *Provider) ID() string          { return ProviderID }
 func (p *Provider) DisplayName() string { return "OpenCode" }
+
+// Installed means a database another can read as OpenCode 1's, not a file with
+// that name. OpenCode 2 migrates this very path to its own schema and leaves it
+// in place, so on an up-to-date machine opencode.db exists with no session
+// table at all: reading it as OpenCode 1 fails, and treating that failure as
+// "this agent is installed" is what made a first run look empty.
 func (p *Provider) Installed() bool {
-	_, err := os.Stat(p.dbPath)
-	return err == nil
+	if _, err := os.Stat(p.dbPath); err != nil {
+		return false
+	}
+	db, err := p.openRO()
+	if err != nil {
+		return false
+	}
+	defer func() { _ = db.Close() }()
+	return sqliteTableExists(db, "session")
 }
 func (p *Provider) SupportsResume() bool { return true }
 
@@ -56,6 +69,11 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		return nil, err
 	}
 	defer func() { _ = db.Close() }()
+	if !sqliteTableExists(db, "session") {
+		// A database OpenCode 2 has migrated holds no OpenCode 1 sessions.
+		// That is an empty scan, not a failure the rest of the pass pays for.
+		return nil, nil
+	}
 	hasParent := sqliteColumnExists(db, "session", "parent_id")
 	parentExpr := "NULL"
 	if hasParent {
@@ -123,6 +141,14 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		}
 	}
 	return out, rows.Err()
+}
+
+// sqliteTableExists reports whether this database has that table at all, which
+// is how OpenCode 1 data is told apart from a file OpenCode 2 has taken over.
+func sqliteTableExists(db *sql.DB, table string) bool {
+	var name string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)
+	return err == nil && name == table
 }
 
 func sqliteColumnExists(db *sql.DB, table, column string) bool {

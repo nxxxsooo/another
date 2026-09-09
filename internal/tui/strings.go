@@ -182,20 +182,24 @@ type uiText struct {
 	helpRelocateForkOnly string
 
 	// Setup, page one.
-	setupAgentsTitle  string
-	setupAgentsHint   string
-	setupCLIFound     string
-	setupCLIMissing   string
-	setupCLIWidth     int
-	setupSessionsFmt  string
-	setupNoData       string
-	setupNameWidth    int
-	setupUnavailable  string
-	setupPickOne      string
-	setupAgentsHelp   string
-	setupFoldExpand   string
-	setupFoldCollapse string
-	setupFoldLabelFmt string
+	setupAgentsTitle string
+	setupAgentsHint  string
+	setupCLIFound    string
+	setupCLIMissing  string
+	setupCLIWidth    int
+	setupSessionsFmt string
+	// setupSessionsCounting is the row before its count lands. A first run
+	// has an empty index, so the number is read off the agent's own storage
+	// while the page is up rather than reported as zero.
+	setupSessionsCounting string
+	setupNoData           string
+	setupNameWidth        int
+	setupUnavailable      string
+	setupPickOne          string
+	setupAgentsHelp       string
+	setupFoldExpand       string
+	setupFoldCollapse     string
+	setupFoldLabelFmt     string
 	// setupFoldLabelOneFmt is the same line when the fold holds exactly
 	// one agent. English needs it; Chinese repeats the plural form.
 	setupFoldLabelOneFmt string
@@ -408,23 +412,24 @@ var englishText = uiText{
 	helpRelocate:         " type a directory · tab fork/move · enter confirm · esc cancel",
 	helpRelocateForkOnly: " type a directory · enter fork · esc cancel",
 
-	setupAgentsTitle:     "Choose your agents",
-	setupAgentsHint:      "Space toggles an agent; Shift+↑↓ reorders them.",
-	setupCLIFound:        "CLI found",
-	setupCLIMissing:      "no CLI",
-	setupCLIWidth:        11,
-	setupSessionsFmt:     "%d sessions",
-	setupNoData:          "no session data",
-	setupNameWidth:       16,
-	setupUnavailable:     "%s: no CLI and no session data found",
-	setupPickOne:         "Choose at least one agent",
-	setupAgentsHelp:      "↑↓ move  ·  space toggle  ·  enter next  ·  esc cancel",
-	setupFoldExpand:      "expand",
-	setupFoldCollapse:    "collapse",
-	setupFoldLabelFmt:    "%s %d adapters, not tested each release",
-	setupFoldLabelOneFmt: "%s %d adapter, not tested each release",
-	setupFoldHintFmt:     "  ·  space %s",
-	setupInterface:       "Interface",
+	setupAgentsTitle:      "Choose your agents",
+	setupAgentsHint:       "Space toggles an agent; Shift+↑↓ reorders them.",
+	setupCLIFound:         "CLI found",
+	setupCLIMissing:       "no CLI",
+	setupCLIWidth:         11,
+	setupSessionsFmt:      "%d sessions",
+	setupSessionsCounting: "counting sessions…",
+	setupNoData:           "no session data",
+	setupNameWidth:        16,
+	setupUnavailable:      "%s: no CLI and no session data found",
+	setupPickOne:          "Choose at least one agent",
+	setupAgentsHelp:       "↑↓ move  ·  space toggle  ·  enter next  ·  esc cancel",
+	setupFoldExpand:       "expand",
+	setupFoldCollapse:     "collapse",
+	setupFoldLabelFmt:     "%s %d adapters, not tested each release",
+	setupFoldLabelOneFmt:  "%s %d adapter, not tested each release",
+	setupFoldHintFmt:      "  ·  space %s",
+	setupInterface:        "Interface",
 
 	setupTitleTitle:     "AI title suggestions",
 	setupTitleHint:      "Which installed agent writes a title when you press ctrl+r.",
@@ -625,23 +630,24 @@ var chineseText = uiText{
 	helpRelocate:         " 输入目录 · tab 复制/移动 · enter 确认 · esc 取消",
 	helpRelocateForkOnly: " 输入目录 · enter 复制 · esc 取消",
 
-	setupAgentsTitle:     "选择你使用的 agent",
-	setupAgentsHint:      "Space 开关 agent；Shift+↑↓ 调整显示顺序。",
-	setupCLIFound:        "CLI 已安装",
-	setupCLIMissing:      "CLI 未安装",
-	setupCLIWidth:        12,
-	setupSessionsFmt:     "%d 个会话",
-	setupNoData:          "无会话数据",
-	setupNameWidth:       16,
-	setupUnavailable:     "%s 未检测到 CLI 或会话数据",
-	setupPickOne:         "至少选择一个 agent",
-	setupAgentsHelp:      "↑↓ 移动  ·  space 开关  ·  enter 下一步  ·  esc 取消",
-	setupFoldExpand:      "展开",
-	setupFoldCollapse:    "收起",
-	setupFoldLabelFmt:    "%s 其他 %d 个兼容适配（非每次发布实测）",
-	setupFoldLabelOneFmt: "%s 其他 %d 个兼容适配（非每次发布实测）",
-	setupFoldHintFmt:     "  ·  space %s",
-	setupInterface:       "界面语言",
+	setupAgentsTitle:      "选择你使用的 agent",
+	setupAgentsHint:       "Space 开关 agent；Shift+↑↓ 调整显示顺序。",
+	setupCLIFound:         "CLI 已安装",
+	setupCLIMissing:       "CLI 未安装",
+	setupCLIWidth:         12,
+	setupSessionsFmt:      "%d 个会话",
+	setupSessionsCounting: "正在统计会话…",
+	setupNoData:           "无会话数据",
+	setupNameWidth:        16,
+	setupUnavailable:      "%s 未检测到 CLI 或会话数据",
+	setupPickOne:          "至少选择一个 agent",
+	setupAgentsHelp:       "↑↓ 移动  ·  space 开关  ·  enter 下一步  ·  esc 取消",
+	setupFoldExpand:       "展开",
+	setupFoldCollapse:     "收起",
+	setupFoldLabelFmt:     "%s 其他 %d 个兼容适配（非每次发布实测）",
+	setupFoldLabelOneFmt:  "%s 其他 %d 个兼容适配（非每次发布实测）",
+	setupFoldHintFmt:      "  ·  space %s",
+	setupInterface:        "界面语言",
 
 	setupTitleTitle:     "重命名时的 AI 标题建议",
 	setupTitleHint:      "按 ctrl+r 时调用哪个已装 agent 生成候选标题。",

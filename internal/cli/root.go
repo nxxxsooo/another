@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -148,6 +149,18 @@ func (a *App) ensureIndex(ctx context.Context, providerFilter string, refresh bo
 		}
 	}
 	_, err := index.UpdateIncremental(ctx, a.Registry, a.Index, registry.NormalizeID(providerFilter))
+	return reportScanFailure(err)
+}
+
+// reportScanFailure lets a command run on what another could read. An agent
+// whose store cannot be scanned is worth saying out loud, but it is not a
+// reason to refuse a list that every other agent answered.
+func reportScanFailure(err error) error {
+	var failure *index.ScanFailure
+	if errors.As(err, &failure) {
+		fmt.Fprintf(os.Stderr, "another: skipped unreadable session store: %s\n", failure)
+		return nil
+	}
 	return err
 }
 
@@ -493,7 +506,7 @@ func (a *App) runSetup(ctx context.Context) (bool, error) {
 		row.Dir, row.State = status.Dir, status.State
 		return row
 	}
-	settings, done, err := tui.RunSetup(all, counts, initial, plugins, probe)
+	settings, done, err := tui.RunSetup(all, counts, initial, plugins, probe, sessionCounter(ctx, all))
 	if err != nil || !done {
 		return false, err
 	}
@@ -507,11 +520,38 @@ func (a *App) runSetup(ctx context.Context) (bool, error) {
 	}
 	a.Registry = registry.NewEnabled(enabled)
 	a.Migrate = &migrate.Engine{Registry: a.Registry, Index: a.Index}
-	if _, err := index.UpdateIncremental(ctx, a.Registry, a.Index, ""); err != nil {
+	if _, err := index.UpdateIncremental(ctx, a.Registry, a.Index, ""); reportScanFailure(err) != nil {
 		return false, fmt.Errorf("index selected agents: %w", err)
 	}
 	fmt.Printf("Configured %d agents: %s\n", len(enabled), strings.Join(enabled, ", "))
 	return true, nil
+}
+
+// sessionCounter reads one agent's session count off its own storage, which is
+// where setup's numbers have to come from on a first run: the index is empty
+// until agents have been chosen, and "0 sessions" next to an installed CLI is
+// not a report, it is a wrong answer to the question the page is asking.
+// Nothing is written; this is the same scan the index would perform, minus the
+// title-generation leftovers another created itself.
+func sessionCounter(ctx context.Context, reg *registry.Registry) func(string) (int, error) {
+	return func(id string) (int, error) {
+		p, err := reg.Get(id)
+		if err != nil {
+			return 0, err
+		}
+		if !p.Installed() {
+			return 0, nil
+		}
+		summaries, err := p.Discover(ctx, provider.DiscoverOpts{})
+		if err != nil {
+			return 0, err
+		}
+		seen := make(map[string]struct{}, len(summaries))
+		for _, sm := range index.DiscoverIndexable(ctx, p, summaries) {
+			seen[sm.ID] = struct{}{}
+		}
+		return len(seen), nil
+	}
 }
 
 func (a *App) providersCmd() *cobra.Command {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -33,9 +34,9 @@ func TestSetupRenderProbe(t *testing.T) {
 func setupFixture() setupModel {
 	return setupModel{
 		items: []setupItem{
-			{id: "pi", name: "pi", command: "pi", data: true, cli: true, available: true, sessions: 12},
-			{id: "codex", name: "Codex", command: "codex", data: true, cli: true, available: true, sessions: 20},
-			{id: "cursor", name: "Cursor", command: "cursor-agent", available: false, adapter: true},
+			{id: "pi", name: "pi", command: "pi", data: true, cli: true, available: true, sessions: 12, counted: true},
+			{id: "codex", name: "Codex", command: "codex", data: true, cli: true, available: true, sessions: 20, counted: true},
+			{id: "cursor", name: "Cursor", command: "cursor-agent", available: false, adapter: true, counted: true},
 		},
 		selected:   map[string]bool{"pi": true},
 		modelInput: textinput.New(),
@@ -588,5 +589,101 @@ func TestSetupFitsInBothLanguages(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// runSessionCounts runs the counts setup starts and collects what they report.
+func runSessionCounts(t *testing.T, m setupModel) []tea.Msg {
+	t.Helper()
+	cmd := sessionCountCmds(m.countSessions, m.items)
+	if cmd == nil {
+		t.Fatal("no counts were started")
+	}
+	// One count is its own command; several arrive as a batch.
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		return []tea.Msg{msg}
+	}
+	msgs := make([]tea.Msg, 0, len(batch))
+	for _, one := range batch {
+		msgs = append(msgs, one())
+	}
+	return msgs
+}
+
+// A first run reaches this page with an empty index, because another indexes
+// only the agents this page is about to choose. Reporting that as "0 sessions"
+// next to "CLI found" told people their sessions had not been read; the row
+// says it is still counting, and takes the number off the agent's own storage.
+func TestSetupCountsSessionsTheIndexCannotAnswerFor(t *testing.T) {
+	m := setupFixture()
+	m.items = []setupItem{
+		{id: "pi", name: "pi", command: "pi", data: true, cli: true, available: true},
+		{id: "codex", name: "Codex", command: "codex", data: true, cli: true, available: true, sessions: 20, counted: true},
+		{id: "cursor", name: "Cursor", command: "cursor-agent", available: false, adapter: true, counted: true},
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, txt.setupSessionsCounting) {
+		t.Fatalf("uncounted agent did not say so:\n%s", view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "pi") && strings.Contains(line, fmt.Sprintf(txt.setupSessionsFmt, 0)) {
+			t.Fatalf("uncounted agent was reported as empty:\n%s", view)
+		}
+	}
+
+	updated, _ := m.Update(sessionCountMsg{provider: "pi", sessions: 259})
+	got := updated.(setupModel)
+	if !got.items[0].counted || got.items[0].sessions != 259 {
+		t.Fatalf("count did not land: %+v", got.items[0])
+	}
+	view = ansi.Strip(got.View())
+	if !strings.Contains(view, fmt.Sprintf(txt.setupSessionsFmt, 259)) {
+		t.Fatalf("counted agent did not show its sessions:\n%s", view)
+	}
+	if strings.Contains(view, txt.setupSessionsCounting) {
+		t.Fatalf("counted agent still says it is counting:\n%s", view)
+	}
+}
+
+// Counting is per agent, and only for the agents the index cannot answer for:
+// an already indexed agent has its number, and an agent with no storage has
+// nothing to read.
+func TestSetupCountsOnlyTheAgentsTheIndexCannotAnswerFor(t *testing.T) {
+	m := setupFixture()
+	m.items = []setupItem{
+		{id: "pi", name: "pi", data: true, cli: true, available: true},
+		{id: "agy", name: "Antigravity", data: true, cli: true, available: true},
+		{id: "codex", name: "Codex", data: true, cli: true, available: true, sessions: 20, counted: true},
+		{id: "cursor", name: "Cursor", available: false, adapter: true, counted: true},
+	}
+	var asked []string
+	m.countSessions = func(id string) (int, error) {
+		asked = append(asked, id)
+		return 1, nil
+	}
+	for range runSessionCounts(t, m) {
+	}
+	sort.Strings(asked)
+	if !reflect.DeepEqual(asked, []string{"agy", "pi"}) {
+		t.Fatalf("counted %v, want only the agents the index cannot answer for", asked)
+	}
+}
+
+// An agent another cannot count is not left counting forever. Zero sessions
+// beside a found CLI is the honest report once the scan itself has failed.
+func TestSetupSettlesAnAgentItCannotCount(t *testing.T) {
+	m := setupFixture()
+	m.items = []setupItem{{id: "pi", name: "pi", data: true, cli: true, available: true}}
+	m.countSessions = func(string) (int, error) { return 0, errors.New("no such table: session") }
+	counts := runSessionCounts(t, m)
+	if len(counts) != 1 {
+		t.Fatalf("counts started = %d, want one", len(counts))
+	}
+	updated, _ := m.Update(counts[0])
+	got := updated.(setupModel)
+	if !got.items[0].counted || got.items[0].sessions != 0 {
+		t.Fatalf("failed count did not settle: %+v", got.items[0])
 	}
 }

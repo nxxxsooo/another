@@ -39,14 +39,33 @@ func New() *Provider {
 
 func (p *Provider) ID() string          { return ProviderID }
 func (p *Provider) DisplayName() string { return "OpenCode 2" }
+
+// Installed means a database that carries OpenCode 2's own session table. The
+// file exists from the first launch, and a version that predates this schema
+// leaves one another cannot read: reporting that as installed turns every scan
+// into a failure the whole index pass used to pay for.
 func (p *Provider) Installed() bool {
-	_, err := os.Stat(p.dbPath)
-	return err == nil
+	if _, err := os.Stat(p.dbPath); err != nil {
+		return false
+	}
+	db, err := p.openRO()
+	if err != nil {
+		return false
+	}
+	defer func() { _ = db.Close() }()
+	return sqliteTableExists(db, "session_v2")
 }
 func (p *Provider) SupportsResume() bool { return true }
 
 func (p *Provider) DefaultPaths() []provider.PathSpec {
 	return []provider.PathSpec{{Label: "database", Path: p.dbPath, Env: "OPENCODE2_DB_PATH"}}
+}
+
+// sqliteTableExists reports whether this database carries that table at all.
+func sqliteTableExists(db *sql.DB, table string) bool {
+	var name string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)
+	return err == nil && name == table
 }
 
 func (p *Provider) openRO() (*sql.DB, error) {
@@ -71,6 +90,11 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 	stamp, size, err := provider.SQLiteSourceStamp(p.dbPath, st)
 	if err != nil {
 		return nil, err
+	}
+	if !sqliteTableExists(db, "session_v2") {
+		// A database from before this schema holds no sessions another can
+		// read, which is an empty scan rather than a failed one.
+		return nil, nil
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id, directory, COALESCE(title,''), COALESCE(parent_id,''), time_created, time_updated FROM session_v2 ORDER BY time_updated DESC`)
 	if err != nil {

@@ -984,13 +984,15 @@ func recordAttributionRule(store *Store, providerID string) error {
 
 func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, providerFilter string) (int, error) {
 	total := 0
+	var failed []error
 	for _, p := range reg.All() {
 		if providerFilter != "" && p.ID() != providerFilter {
 			continue
 		}
 		if !p.Installed() {
 			if err := store.reconcileProvider(p.ID(), nil, map[string]struct{}{}); err != nil {
-				return total, err
+				failed = append(failed, fmt.Errorf("%s: %w", p.ID(), err))
+				continue
 			}
 			_ = recordDiscoverMeta(store, p.ID(), nil)
 			_ = recordAttributionRule(store, p.ID())
@@ -998,7 +1000,8 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 		}
 		summaries, err := p.Discover(ctx, provider.DiscoverOpts{})
 		if err != nil {
-			return total, fmt.Errorf("%s: %w", p.ID(), err)
+			failed = append(failed, fmt.Errorf("%s: %w", p.ID(), err))
+			continue
 		}
 		summaries = dropTitlerSessions(ctx, p, summaries)
 		seen := make(map[string]struct{}, len(summaries))
@@ -1006,7 +1009,8 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 			seen[sm.StoragePath] = struct{}{}
 		}
 		if err := store.reconcileProvider(p.ID(), summaries, seen); err != nil {
-			return total, err
+			failed = append(failed, fmt.Errorf("%s: %w", p.ID(), err))
+			continue
 		}
 		_ = recordDiscoverMeta(store, p.ID(), summaries)
 		_ = recordAttributionRule(store, p.ID())
@@ -1026,7 +1030,7 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 	if providerFilter == "" || providerFilter == codexProviderID {
 		_ = store.SetMeta(codexWireSchemaKey, now)
 	}
-	return max(total, 0), nil
+	return max(total, 0), scanFailure(failed)
 }
 
 func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store, providerFilter string) (int, error) {
@@ -1040,13 +1044,15 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 		}
 	}
 	total := 0
+	var failed []error
 	for _, p := range reg.All() {
 		if providerFilter != "" && p.ID() != providerFilter {
 			continue
 		}
 		if !p.Installed() {
 			if err := store.reconcileProvider(p.ID(), nil, map[string]struct{}{}); err != nil {
-				return total, err
+				failed = append(failed, fmt.Errorf("%s: %w", p.ID(), err))
+				continue
 			}
 			_ = recordDiscoverMeta(store, p.ID(), nil)
 			_ = recordAttributionRule(store, p.ID())
@@ -1073,7 +1079,8 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 		}
 		summaries, err := p.Discover(ctx, discoverOpts)
 		if err != nil {
-			return total, fmt.Errorf("%s: %w", pid, err)
+			failed = append(failed, fmt.Errorf("%s: %w", pid, err))
+			continue
 		}
 		// Dropping them from seen as well is what removes rows indexed
 		// before this filter existed: reconcile deletes any indexed path the
@@ -1083,7 +1090,8 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 			seen[sm.StoragePath] = struct{}{}
 		}
 		if err := store.reconcileProvider(pid, summaries, seen); err != nil {
-			return total, err
+			failed = append(failed, fmt.Errorf("%s: %w", pid, err))
+			continue
 		}
 		total += len(summaries)
 		// Skipped files never reach summaries, so record the indexed count
@@ -1106,7 +1114,32 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 	_ = store.SetMeta("last_update", time.Now().UTC().Format(time.RFC3339))
 	// A scan that pruned more than it saw is still a scan that indexed
 	// nothing, not a negative number of sessions.
-	return max(total, 0), nil
+	return max(total, 0), scanFailure(failed)
+}
+
+// ScanFailure names the agents a pass could not read. Every other agent in the
+// same pass was still scanned and is in the index: one unreadable store — a
+// database another lacks the schema for, a session file that vanished
+// mid-scan — belongs to one agent, and used to end the pass where it happened,
+// which left every agent registered after it with no sessions at all.
+type ScanFailure struct{ Errors []error }
+
+func (f *ScanFailure) Error() string {
+	parts := make([]string, 0, len(f.Errors))
+	for _, err := range f.Errors {
+		parts = append(parts, err.Error())
+	}
+	return strings.Join(parts, "; ")
+}
+
+// Unwrap exposes the per-agent failures to errors.Is and errors.As.
+func (f *ScanFailure) Unwrap() []error { return f.Errors }
+
+func scanFailure(failed []error) error {
+	if len(failed) == 0 {
+		return nil
+	}
+	return &ScanFailure{Errors: failed}
 }
 
 // dropTitlerSessions removes the sessions another created itself while asking

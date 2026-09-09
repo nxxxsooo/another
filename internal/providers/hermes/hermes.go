@@ -30,9 +30,20 @@ func New() *Provider {
 
 func (p *Provider) ID() string          { return ProviderID }
 func (p *Provider) DisplayName() string { return "Hermes" }
+
+// Installed means a state database that holds Hermes sessions. The file is
+// created before there is anything in it, and other tools leave one behind, so
+// a stat alone reports an agent whose every scan then fails.
 func (p *Provider) Installed() bool {
-	_, err := os.Stat(p.dbPath)
-	return err == nil
+	if _, err := os.Stat(p.dbPath); err != nil {
+		return false
+	}
+	db, err := p.openRO()
+	if err != nil {
+		return false
+	}
+	defer func() { _ = db.Close() }()
+	return hermesTableExists(db, "sessions")
 }
 func (p *Provider) SupportsResume() bool { return true }
 
@@ -50,6 +61,11 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		return nil, err
 	}
 	defer func() { _ = db.Close() }()
+	if !hermesTableExists(db, "sessions") {
+		// An empty state database has no sessions to report, which is not the
+		// same as a scan that failed.
+		return nil, nil
+	}
 	parentExpr := "NULL"
 	if hermesColumnExists(db, "sessions", "parent_session_id") {
 		parentExpr = "parent_session_id"
@@ -117,6 +133,13 @@ FROM sessions WHERE archived = 0 ORDER BY ` + updatedExpr + ` DESC`)
 		}
 	}
 	return out, rows.Err()
+}
+
+// hermesTableExists reports whether this database carries that table at all.
+func hermesTableExists(db *sql.DB, table string) bool {
+	var name string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)
+	return err == nil && name == table
 }
 
 func hermesColumnExists(db *sql.DB, table, column string) bool {
