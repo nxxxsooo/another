@@ -364,21 +364,39 @@ func TestNarrowHeaderKeepsBothDirectionControls(t *testing.T) {
 // across the whole window and the eye needed help staying on one; a row is now
 // a compact band of columns, and the line only bought rhythm with half the
 // sessions on screen.
-func TestSessionsAreListedOneToALine(t *testing.T) {
+// A row is one line, and whether a blank line follows it depends on how much
+// height there is to spend. Fifty adjacent rows in a bounded band read as a
+// wall — every row the same weight, nothing marking where a record ends — but
+// on a short terminal that blank line costs half the sessions, which is the
+// one thing this screen exists to show.
+func TestRowSpacingIsSpentOnlyWhereThereIsHeight(t *testing.T) {
 	items := []list.Item{
 		sessionItem{summary: model.Summary{ID: "one", Provider: "codex", Title: "First title"}},
 		sessionItem{summary: model.Summary{ID: "two", Provider: "pi", Title: "Second title"}},
 	}
-	m := layoutTestModel()
-	m.sessions.SetItems(items)
-	for _, size := range [][2]int{{60, 16}, {100, 24}, {160, 40}, {240, 50}} {
-		m.width, m.height = size[0], size[1]
-		m.layout()
-		lines := strings.Split(ansi.Strip(m.sessions.View()), "\n")
-		first, second := lineContaining(lines, "First title"), lineContaining(lines, "Second title")
-		if first < 0 || second-first != 1 {
-			t.Fatalf("%dx%d row distance = %d, want 1: %q", size[0], size[1], second-first, lines)
-		}
+	cases := []struct {
+		w, h     int
+		distance int
+		why      string
+	}{
+		{60, 16, 1, "a narrow terminal keeps rows adjacent"},
+		{100, 24, 2, "a terminal with height to spare separates records"},
+		{160, 40, 2, "so does a wide one"},
+		{240, 50, 2, "and an ultrawide one"},
+		{100, 13, 1, "a short terminal spends every line on sessions"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.why, func(t *testing.T) {
+			m := layoutTestModel()
+			m.sessions.SetItems(items)
+			m.width, m.height = tc.w, tc.h
+			m.layout()
+			lines := strings.Split(ansi.Strip(m.sessions.View()), "\n")
+			first, second := lineContaining(lines, "First title"), lineContaining(lines, "Second title")
+			if first < 0 || second-first != tc.distance {
+				t.Fatalf("%dx%d row distance = %d, want %d: %q", tc.w, tc.h, second-first, tc.distance, lines)
+			}
+		})
 	}
 }
 
