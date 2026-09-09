@@ -682,16 +682,32 @@ func (p *Provider) presencePath(id string) string {
 
 func (p *Provider) acquireLifecycleLock(id string) (func() error, error) {
 	if os.Getenv("ANTIGRAVITY_CONVERSATION_ID") == id {
-		return nil, fmt.Errorf("agy: conversation %s is currently active", id)
+		return nil, fmt.Errorf("agy: conversation %s is currently active: it is the conversation this process is running inside", id)
 	}
-	release, active, err := acquireConversationLock(p.presencePath(id))
+	path := p.presencePath(id)
+	release, active, err := acquireConversationLock(path)
 	if err != nil {
 		return nil, fmt.Errorf("agy: acquire conversation lock: %w", err)
 	}
 	if active {
-		return nil, fmt.Errorf("agy: conversation %s is currently active", id)
+		return nil, fmt.Errorf("agy: conversation %s is currently active: %s", id, activeHolderText(path))
 	}
 	return release, nil
+}
+
+// activeHolderText says who is holding the conversation open.
+//
+// The refusal used to end at "currently active", which sends a reader looking
+// for a window they may have closed hours ago: a terminal can exit while the
+// AGY process it started keeps running, and that orphan holds this lock until
+// it is killed. The lock is doing its job either way — a live process is still
+// writing to those files — so the message names the process instead of
+// softening the refusal.
+func activeHolderText(path string) string {
+	if holder := describeLockHolder(path); holder != "" {
+		return "held by " + holder + "; quit it, or kill it if it outlived the window that started it"
+	}
+	return "a running process holds " + path
 }
 
 func (p *Provider) cleanupArtifacts(ctx context.Context, result provider.WriteResult) error {
