@@ -1,7 +1,10 @@
 # Windows support — feasibility
 
 Research note, not a commitment. Branch `research/windows-support`.
-Verified against `e3781be` on macOS with cross-compilation; nothing here was run on Windows.
+Verified on macOS with cross-compilation; nothing here was run on Windows.
+
+Rebased onto `3748bb5`; the cross-builds below were re-run there and are still clean.
+Part of section 3 has since been fixed on `main` — see the note in that section.
 
 ## The compile barrier is already zero
 
@@ -55,15 +58,16 @@ confirmed against an installed agent.
 
 ## 3. Safety checks degrade silently, which is worse than failing
 
-- `providers/codex/gui_state.go:233` and `providers/qwen/qwen.go:660` decide "is this
-  agent running" with `proc.Signal(syscall.Signal(0))`. On Windows that always errors, so
-  both report *not running* and another will mutate a session store that is open. That is
-  the data-loss shape the release contract calls a hotfix.
+- ~~Codex and Qwen decide "is this agent running" with `proc.Signal(syscall.Signal(0))`
+  behind a bool, and read a failed check as *not running*.~~ **Fixed in #23** (`9090e3e`).
+  `util.Liveness` now carries a third state whose zero value is unknown, and both
+  providers refuse on it. This was worth doing on its own account: the bug was never
+  specific to Windows, only guaranteed there.
 - `os.Rename` over a file another process holds open fails on Windows with a sharing
   violation. Six write paths depend on it, including `util/paths.go:169` and
-  `config/settings.go:143`.
-- `providers/agy/lock_other.go` is the correct precedent: refuse the operation and say so.
-  Codex and Qwen should do the same rather than guess.
+  `config/settings.go:143`. **Still open**, and the largest remaining item in this section.
+- `providers/agy/lock_other.go` was the precedent the fix followed: refuse the operation
+  and say so. Any further check added here should do the same rather than guess.
 
 ## 4. Distribution does not exist yet
 
