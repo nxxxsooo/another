@@ -22,43 +22,85 @@ func (m modelState) markStatus() string {
 	return mutedStyle.Render(fmt.Sprintf(txt.markedFmt, len(m.marked)))
 }
 
+// The band is how wide the browser draws itself, however wide the terminal is.
+// Every column on a session row is bounded except the title, which takes
+// whatever is left and then pads it — so on an ultrawide terminal the row
+// became a title on the left, a path on the right, and a hundred and thirty
+// cells of nothing between them.
+//
+// Up to contentBandFloor the browser is the terminal, which is every ordinary
+// window and the layout that was already reviewed there. Past it the band
+// takes contentBandPercent of the width instead of all of it: a proportion
+// keeps the browser growing with the screen — a wider terminal is still a
+// wider list — while handing the rest back as margin. A fixed cap would stop
+// growing entirely and make a 300-column terminal show exactly what a
+// 133-column one does.
+//
+// The band is centred, so the cells it gives up become margin on both sides,
+// which reads as space around a panel rather than as a gap torn open inside
+// every record.
+var (
+	contentBandFloor   = 132
+	contentBandPercent = 80
+)
+
+// bandWidth is the width every rendered thing is measured against. It is what
+// m.width used to mean everywhere below; m.width itself stays the terminal,
+// and is still what decides whether the terminal is too small at all.
+func (m modelState) bandWidth() int {
+	width := max(1, m.width)
+	if width <= contentBandFloor {
+		return width
+	}
+	// The proportion is what the terminal offers; naturalRowWidth is what the
+	// columns can still use. The browser stops growing at the point where more
+	// width would only be padding, so a 400-column terminal shows a full row
+	// and a wide margin rather than a stretched one.
+	return min(max(contentBandFloor, width*contentBandPercent/100), max(contentBandFloor, naturalRowWidth()))
+}
+
+// bandLeft is the left margin that centres the band. Odd leftovers go to the
+// right, which is where a truncation would already have taken them.
+func (m modelState) bandLeft() int { return max(0, (m.width-m.bandWidth())/2) }
+
 func (m *modelState) layout() {
 	if m.width < 40 || m.height < 12 {
 		return
 	}
-	m.searchInput.Width = max(8, m.width-4)
-	m.renameInput.Width = max(18, min(60, m.width-20))
+	width := m.bandWidth()
+	m.searchInput.Width = max(8, width-4)
+	m.renameInput.Width = max(18, min(60, width-20))
 	// A path is longer than the box that holds it, so the field scrolls
 	// rather than widening the modal past the terminal. bubbles recomputes
 	// that scrolling window only when the cursor moves, so a width set after
 	// the value was filled in would render the whole path and tear the modal
 	// open until the next keystroke.
-	m.relocateInput.Width = max(18, min(60, m.width-20))
+	m.relocateInput.Width = max(18, min(60, width-20))
 	m.relocateInput.SetCursor(m.relocateInput.Position())
-	m.batchModelInput.Width = max(12, min(40, m.width-24))
+	m.batchModelInput.Width = max(12, min(40, width-24))
 	frameW, frameH := paneStyle.GetHorizontalFrameSize(), paneStyle.GetVerticalFrameSize()
 	headerH := lipgloss.Height(m.headerView())
 	footerH := lipgloss.Height(m.footerView())
 	paneOuterH := max(frameH+1, m.height-headerH-footerH)
 	contentH := max(1, paneOuterH-frameH)
 	m.sessionSpacing = 0
-	if m.width >= 80 && contentH >= 14 {
+	if width >= 80 && contentH >= 14 {
 		m.sessionSpacing = 1
 	}
 	m.applySessionDelegate()
-	m.sessions.SetSize(max(1, m.width-frameW), contentH)
+	m.sessions.SetSize(max(1, width-frameW), contentH)
 
-	modalInnerW := modalInnerWidth(m.width)
+	modalInnerW := modalInnerWidth(width)
 	modalListH := max(1, min(10, max(1, contentH-8)))
 	m.sourceList.SetSize(modalInnerW, min(len(m.sourceList.Items()), modalListH))
 	// The target box is the one modal with a width of its own, and lipgloss
 	// counts padding inside it. Sizing the list to the box would let a row wrap
 	// and make the modal a line taller than the pane it sits in.
-	m.targets.SetSize(max(1, targetModalWidth(m.width)-modalStyle.GetHorizontalPadding()),
+	m.targets.SetSize(max(1, targetModalWidth(width)-modalStyle.GetHorizontalPadding()),
 		min(len(m.targets.Items()), modalListH))
 
 	previewH := max(3, contentH-4)
-	m.preview.Width = max(10, m.width-modalStyle.GetHorizontalFrameSize())
+	m.preview.Width = max(10, width-modalStyle.GetHorizontalFrameSize())
 	m.preview.Height = previewH
 	y := m.preview.YOffset
 	m.preview.SetContent(ansi.Hardwrap(m.previewContent, max(1, m.preview.Width), false))
@@ -101,6 +143,7 @@ func (m modelState) View() string {
 	if m.width < 40 || m.height < 12 {
 		return ansi.Truncate("Terminal too small — resize to at least 40x12", max(1, m.width), "")
 	}
+	width := m.bandWidth()
 	header := m.headerView()
 	footer := m.footerView()
 	frameH := paneStyle.GetVerticalFrameSize()
@@ -109,42 +152,60 @@ func (m modelState) View() string {
 	// lipgloss Width() covers content plus padding; the border adds two more
 	// columns on top. Passing the full frame size here would shrink the content
 	// area below the list width and wrap every row.
-	paneW := max(1, m.width-paneStyle.GetHorizontalBorderSize())
+	paneW := max(1, width-paneStyle.GetHorizontalBorderSize())
 	listView := m.sessions.View()
 	if len(m.sessions.Items()) == 0 && !m.loading {
 		listView = m.emptySessionsView()
 	}
 	pane := paneStyle.
 		Width(paneW).Height(contentH).
-		MaxWidth(m.width).MaxHeight(contentH + frameH).
+		MaxWidth(width).MaxHeight(contentH + frameH).
 		Render(listView)
 
 	switch m.overlay {
 	case overlaySource:
 		box := sourceModalStyle.Render(accentStyle.Render(txt.sourceModalTitle) + m.modalSubtitle(txt.sourceModalHint) + "\n\n" + m.sourceList.View())
-		pane = overlay(pane, box, m.width)
+		pane = overlay(pane, box, width)
 	case overlayTarget:
-		box := targetModalStyle.Width(targetModalWidth(m.width)).Render(okStyle.Render(txt.targetModalTitle) + m.modalSubtitle(txt.targetModalHint) + "\n\n" + m.targets.View())
-		pane = overlay(pane, box, m.width)
+		box := targetModalStyle.Width(targetModalWidth(width)).Render(okStyle.Render(txt.targetModalTitle) + m.modalSubtitle(txt.targetModalHint) + "\n\n" + m.targets.View())
+		pane = overlay(pane, box, width)
 	case overlayPreview:
 		box := modalStyle.Render(m.preview.View())
-		pane = overlay(pane, box, m.width)
+		pane = overlay(pane, box, width)
 	case overlayDelete:
-		box := modalStyle.Width(textModalWidth(m.width)).Render(m.deleteView())
-		pane = overlay(pane, box, m.width)
+		box := modalStyle.Width(textModalWidth(width)).Render(m.deleteView())
+		pane = overlay(pane, box, width)
 	case overlayRename:
-		box := modalStyle.Width(textModalWidth(m.width)).Render(titleStyle.Render(txt.renameModalTitle) +
+		box := modalStyle.Width(textModalWidth(width)).Render(titleStyle.Render(txt.renameModalTitle) +
 			m.modalSubtitle(txt.renameModalHint) + "\n\n" + m.renameInput.View() +
 			m.suggestionLine())
-		pane = overlay(pane, box, m.width)
+		pane = overlay(pane, box, width)
 	case overlayRelocate:
-		box := modalStyle.Width(textModalWidth(m.width)).Render(m.relocateView())
-		pane = overlay(pane, box, m.width)
+		box := modalStyle.Width(textModalWidth(width)).Render(m.relocateView())
+		pane = overlay(pane, box, width)
 	case overlayBatchTitle:
 		box := modalStyle.Render(m.batchView())
-		pane = overlay(pane, box, m.width)
+		pane = overlay(pane, box, width)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, header, pane, footer)
+	return centerBlock(lipgloss.JoinVertical(lipgloss.Left, header, pane, footer), m.bandLeft(), m.width)
+}
+
+// centerBlock puts a rendered block at column left and pads the row out to the
+// full terminal width. The margins are plain spaces carrying no style, so the
+// terminal's own backdrop shows through them — and writing the whole row means
+// a resize repaints the cells the band used to occupy instead of leaving the
+// previous frame's border standing in them.
+func centerBlock(block string, left, total int) string {
+	if left <= 0 && total <= 0 {
+		return block
+	}
+	lines := strings.Split(block, "\n")
+	pad := strings.Repeat(" ", max(0, left))
+	for i, line := range lines {
+		line = pad + line
+		lines[i] = line + strings.Repeat(" ", max(0, total-ansi.StringWidth(line)))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // overlay centres a box over the existing pane. Cutting each covered row with
@@ -230,7 +291,7 @@ func (m modelState) suggestionLine() string {
 	default:
 		return ""
 	}
-	inner := modalInnerWidth(m.width)
+	inner := modalInnerWidth(m.bandWidth())
 	if inner < 8 {
 		return ""
 	}
@@ -321,20 +382,21 @@ func (m modelState) headerView() string {
 	}
 	left := brand + "  " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
 	right := targetChipStyle.Render(txt.targetArrow)
+	width := m.bandWidth()
 	var first string
-	if m.width >= 64 {
+	if width >= 64 {
 		header := left + mutedStyle.Render(fmt.Sprintf(txt.headerCountFmt, m.totalSessions)) + right +
 			mutedStyle.Render("   │   ") + m.scopeView(true)
-		first = ansi.Truncate(header, m.width, "…")
+		first = ansi.Truncate(header, width, "…")
 	} else {
 		brand = sourceChipStyle.Render(txt.scopeProject)
 		if !m.projectOnly {
 			brand = sourceChipStyle.Render(txt.scopeAll)
 		}
 		left = brand + " " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
-		left = ansi.Truncate(left, max(0, m.width-ansi.StringWidth(right)-2), "…")
-		gap := max(2, m.width-ansi.StringWidth(left)-ansi.StringWidth(right))
-		first = ansi.Truncate(left+strings.Repeat(" ", gap)+right, m.width, "…")
+		left = ansi.Truncate(left, max(0, width-ansi.StringWidth(right)-2), "…")
+		gap := max(2, width-ansi.StringWidth(left)-ansi.StringWidth(right))
+		first = ansi.Truncate(left+strings.Repeat(" ", gap)+right, width, "…")
 	}
 	lines := []string{first}
 	if m.searching {
@@ -407,13 +469,18 @@ func (m modelState) footerView() string {
 	case m.status != "":
 		lines = append(lines, m.status)
 	default:
-		if m.width < 92 {
+		if m.bandWidth() < 92 {
 			lines = append(lines, mutedStyle.Render(m.selectionSummary()))
 		}
 	}
 	lines = append(lines, footerStyle.Render(m.help()))
+	// The footer starts on the band's left edge but is allowed to run to the
+	// right edge of the terminal. It is a run of words, not a column: nothing
+	// lines up under it, and cutting the keymap short to respect a boundary
+	// the rows need would hide the keys to pay for an alignment nobody reads.
+	width := max(m.bandWidth(), m.width-m.bandLeft())
 	for i := range lines {
-		lines[i] = ansi.Truncate(lines[i], m.width, "…")
+		lines[i] = ansi.Truncate(lines[i], width, "…")
 	}
 	return strings.Join(lines, "\n")
 }

@@ -94,6 +94,16 @@ type sessionDelegate struct {
 	// ten it lost its last characters and printed the year as "202".
 	// Zero means "unmeasured", which keeps the relative width.
 	timeW int
+	// titleW is what the loaded titles actually need. Before it existed the
+	// title took every cell the other columns did not, then padded them: on a
+	// wide terminal that padding was the row, and the eye had to cross it to
+	// get from a title to the project it belonged to. Measured, the title is
+	// a column like the others and the cells it does not need become the
+	// spacing between all of them.
+	//
+	// Zero means "unmeasured", which gives the title everything left over —
+	// the behaviour every narrow terminal already had.
+	titleW int
 }
 
 func (sessionDelegate) Height() int { return 1 }
@@ -145,28 +155,123 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 			projW = min(projW, d.projectW)
 		}
 	}
-	fixed := 3 + timeW + provW + msgW + 3
+	// Every column is measured first, and only what none of them wants becomes
+	// space. gaps are the spaces between columns: after the time, after the
+	// agent chip, after the title, and after the project when it is drawn.
+	gapCount := 3
+	fixed := 3 + timeW + provW + msgW
 	if projW > 0 {
-		fixed += projW + 1
+		gapCount++
+		fixed += projW
 	}
-	titleW := width - fixed
-	if titleW < 8 {
-		titleW = 8
+	// The title takes what it needs rather than what is left; handed the
+	// leftover it padded it, and that padding was the row. titleColumnCap
+	// bounds the band rather than this: a title with more to say than the cap
+	// must still be allowed to say it when the cells are there, or the layout
+	// would truncate content to protect a number.
+	titleW := max(8, width-fixed-gapCount)
+	if d.titleW > 0 {
+		titleW = max(8, min(titleW, d.titleW))
 	}
+	spare := max(0, width-fixed-titleW-gapCount)
+	gapW := columnGap(spare, gapCount)
+	spare -= (gapW - 1) * gapCount
+	// What is still over goes to the path, which is truncated on every ordinary
+	// terminal and has more to say whenever it is given the cells. A wider
+	// window should buy more of the session, not more air around it.
+	if projW > 0 && spare > 0 && d.projectW > projW {
+		grow := min(spare, min(d.projectW, projectColumnCap)-projW)
+		if grow > 0 {
+			projW += grow
+			spare -= grow
+		}
+	}
+	// Only now is the width genuinely unwanted. It is split evenly around the
+	// row so the columns sit centred inside the pane; hanging it all off one
+	// end would put the emptiness back into the record.
+	leftInset := strings.Repeat(" ", spare/2)
+	rightInset := strings.Repeat(" ", spare-spare/2)
+	// One width for every gap. Columns spaced unevenly read as groups, and the
+	// groups would be an accident of which column happened to absorb a
+	// remainder rather than anything about the session.
+	gap := strings.Repeat(" ", gapW)
 	title := padRight(ansi.Truncate(it.displayTitle(), titleW, "…"), titleW)
 	if index == m.Index() {
 		title = selectedRow.Render(title)
 	}
 	provText := renderAgentChip(it.summary.Provider)
 
-	row := gutter +
-		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + " " +
-		provText + " " + title + " "
+	row := leftInset + gutter +
+		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + gap +
+		provText + gap + title + gap
 	if projW > 0 {
-		row += renderProjectCellState(it.summary.ProjectPath, d.projectBase, projW, it.missingDir) + " "
+		row += renderProjectCellState(it.summary.ProjectPath, d.projectBase, projW, it.missingDir) + gap
 	}
-	row += mutedStyle.Render(padLeft(msgs, msgW))
+	row += mutedStyle.Render(padLeft(msgs, msgW)) + rightInset
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
+}
+
+// columnGap is how wide each space between columns is, given the cells left
+// over once every column has what it needs. Spacing is bought before anything
+// else, because two columns that touch read as one — but only up to the point
+// where it stops being spacing. Past maxColumnGap the eye has to travel the
+// gap rather than take it in, which is the thing this layout is for.
+func columnGap(spare, gaps int) int {
+	if gaps <= 0 {
+		return 1
+	}
+	return 1 + max(0, min(spare/gaps, maxColumnGap-1))
+}
+
+const (
+	// maxColumnGap is the widest a space between two columns may be. Spacing
+	// is read as one thing separating two others; past a certain width it
+	// becomes a distance to cross instead, and the row stops being a single
+	// record. Slack beyond this is spent on the columns themselves, or given
+	// back as margin.
+	maxColumnGap = 6
+
+	// titleColumnCap and projectColumnCap are how much a column can use even
+	// when the terminal could give it more. Both hold text that is read left
+	// to right and truncated on an ordinary window, so a wide terminal should
+	// widen them — but only until they say everything they have to say. Past
+	// that the cells buy nothing, and a column padded beyond its content is
+	// the emptiness this layout exists to remove.
+	titleColumnCap   = 56
+	projectColumnCap = 48
+)
+
+// absoluteTimeWidth is the widest the time column ever gets: a stamp past the
+// relative range, such as "Sep 30, 2026".
+const absoluteTimeWidth = 12
+
+// naturalRowWidth is the widest a session row can be with every column full.
+// It is the ceiling on the whole browser, because a band wider than this is
+// asking the layout for space that no column has anything to put in.
+//
+// It is built from the caps rather than from the rows on screen on purpose: a
+// width measured from content would move the pane border every time a page
+// loaded, and a frame that resizes while it is being read is worse than the
+// spacing it would be correcting.
+func naturalRowWidth() int {
+	return 3 + absoluteTimeWidth + agentChipWidth + txt.messageCountWidth +
+		titleColumnCap + projectColumnCap + 4*maxColumnGap
+}
+
+// titleColumnWidth is what the loaded titles need. It reads Items() for the
+// same reason the project and time columns do: a width that changed as a
+// filter narrowed the list would move every column beside it while it was
+// being read.
+func titleColumnWidth(items []list.Item) int {
+	widest := 0
+	for _, item := range items {
+		row, ok := item.(sessionItem)
+		if !ok {
+			continue
+		}
+		widest = max(widest, ansi.StringWidth(row.displayTitle()))
+	}
+	return widest
 }
 
 // projectChipPad is what a chip costs beyond the text it holds: one cell of
@@ -494,5 +599,6 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 		projectBase: base,
 		projectW:    projectColumnWidth(m.sessions.Items(), base),
 		timeW:       timeColumnWidth(m.sessions.Items()),
+		titleW:      titleColumnWidth(m.sessions.Items()),
 	}
 }
