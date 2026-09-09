@@ -56,6 +56,36 @@ refuses the install otherwise. Older versions load the tap directly and treat
 `brew trust` as an unknown command; skip that line on those.
 
 <details>
+<summary><strong>Install fails with <code>undefined method 'run'</code></strong></summary>
+
+The cask clears the download's quarantine attribute through `postflight_steps`,
+which needs Homebrew 6.0.16 or newer. This error means the local Homebrew is
+older:
+
+```text
+Error: Cask 'another' definition is invalid: undefined method 'run' for an instance of Homebrew::InstallSteps::DSL
+```
+
+Usually it is not a missing upgrade but a stuck one. If `brew update` has been
+printing `Could not 'git stash' in /opt/homebrew`, it fetches the new version
+and then aborts the merge, leaving the source behind — official casks fail the
+same way with `undefined method 'command_wrapper'`. Check that
+`/opt/homebrew` (`/usr/local/Homebrew` on Intel) holds no local changes worth
+keeping, then reset and upgrade:
+
+```bash
+cd /opt/homebrew
+git status
+git reset --hard origin/HEAD
+brew update
+brew install nxxxsooo/tap/another
+```
+
+A tap you have already trusted stays trusted; no need to repeat `brew trust`.
+
+</details>
+
+<details>
 <summary><strong>From source</strong></summary>
 
 Go 1.24+:

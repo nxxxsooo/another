@@ -50,6 +50,29 @@ curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/insta
 Homebrew 6 要求先信任第三方 tap，否则会拒绝安装。旧版 Homebrew 不认识 `brew trust`，可跳过这一行，直接安装。
 
 <details>
+<summary><strong>安装报 <code>undefined method 'run'</code></strong></summary>
+
+Cask 用 `postflight_steps` 去掉下载后的 quarantine 属性，这个写法需要 Homebrew 6.0.16 或更高版本。看到
+
+```text
+Error: Cask 'another' definition is invalid: undefined method 'run' for an instance of Homebrew::InstallSteps::DSL
+```
+
+说明本机 Homebrew 太旧。通常不是没升级，而是升级被卡住了——`brew update` 如果打印过 `Could not 'git stash' in /opt/homebrew`，它抓完新版本就中止了合并，源码一直停在旧版；此时官方 cask 也会成片报 `undefined method 'command_wrapper'`。先确认 `/opt/homebrew`（Intel 机器为 `/usr/local/Homebrew`）里没有要保留的本地改动，然后重置并升级：
+
+```bash
+cd /opt/homebrew
+git status
+git reset --hard origin/HEAD
+brew update
+brew install nxxxsooo/tap/another
+```
+
+已经信任过的 tap 不需要再 `brew trust` 一次。
+
+</details>
+
+<details>
 <summary><strong>从源码安装</strong></summary>
 
 需要 Go 1.24 或更高版本：
