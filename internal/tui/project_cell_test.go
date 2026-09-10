@@ -13,6 +13,34 @@ import (
 	"github.com/nxxxsooo/another/internal/util"
 )
 
+// A shortened path keeps its root and its tail. Cut from the left, every row
+// in a list of sibling projects opened with the same "…" and spent its first
+// cells on the middle of a word.
+func TestElidedPathsKeepTheirRootAndTail(t *testing.T) {
+	for _, tc := range []struct {
+		path  string
+		width int
+		want  string
+	}{
+		// Untouched when it fits, then as much of the tail as the column can
+		// hold — the root stays whatever happens.
+		{"~/Documents/sync/Docs/health", 40, "~/Documents/sync/Docs/health"},
+		{"~/Documents/sync/Docs/health", 20, "~/…/sync/Docs/health"},
+		{"~/Documents/sync/Docs/health", 16, "~/…/Docs/health"},
+		{"/Users/someone/Documents/sync/Work/fit", 22, "/…/sync/Work/fit"},
+		{"~/Documents/sync/Work/huatu/projects/smart-note", 30, "~/…/huatu/projects/smart-note"},
+		{"~/Documents/sync/Work/huatu/projects/smart-note", 24, "~/…/projects/smart-note"},
+	} {
+		got := elidePath(tc.path, tc.width)
+		if got != tc.want {
+			t.Errorf("elidePath(%q, %d) = %q, want %q", tc.path, tc.width, got, tc.want)
+		}
+		if w := ansi.StringWidth(got); w > tc.width {
+			t.Errorf("elidePath(%q, %d) is %d cells wide", tc.path, tc.width, w)
+		}
+	}
+}
+
 // A reorganized workspace leaves sessions pointing at directories that are
 // gone. The path still names where the work happened, so it stays; what it
 // loses is the color, which in this column means a project you can go to.

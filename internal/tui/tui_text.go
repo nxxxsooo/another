@@ -24,6 +24,38 @@ func truncateDisplay(s string, n int) string {
 	return ansi.Truncate(s, n, "…")
 }
 
+// elidePath shortens a path from the middle, keeping its root and as much of
+// the tail as fits. Cut from the left instead, every path in a list of
+// sibling projects began with the same "…" and lost the one segment that said
+// which tree it was in: "…ents/sync/Docs/health" spends six cells proving that
+// a word ends in "ents". "~/…/Docs/health" spends three and says where it is.
+//
+// It works on the already-tilde'd string and never touches the filesystem:
+// this runs for every visible row on every keystroke.
+func elidePath(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(s) <= n {
+		return s
+	}
+	root, rest, found := strings.Cut(s, "/")
+	if !found {
+		return truncateLeft(s, n)
+	}
+	// An absolute path cuts to an empty root, which is still the root: the
+	// leading slash is what says the path did not start at home.
+	parts := strings.Split(rest, "/")
+	for i := 1; i < len(parts); i++ {
+		if candidate := root + "/…/" + strings.Join(parts[i:], "/"); ansi.StringWidth(candidate) <= n {
+			return candidate
+		}
+	}
+	// Not even the root and the last segment fit; the tail is what identifies
+	// the project, so it is the part that survives.
+	return truncateLeft(s, n)
+}
+
 // truncateLeft keeps the tail of a path. The leading directories repeat across
 // projects; the last segments are what identify one.
 func truncateLeft(s string, n int) string {

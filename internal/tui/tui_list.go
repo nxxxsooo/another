@@ -414,7 +414,7 @@ func renderProjectChipCell(path, text string, shown bool, width int, missing boo
 	if missing {
 		ink, tint = twinTheme.textSubtle, twinTheme.border
 	}
-	return padRight(projectChip(truncateLeft(text, width-projectChipPad), ink, tint), width)
+	return padRight(projectChip(elidePath(text, width-projectChipPad), ink, tint), width)
 }
 
 // projectChip is the chip body. It is not bold: the agent code is three
