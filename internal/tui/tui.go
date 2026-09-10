@@ -82,6 +82,10 @@ type modelState struct {
 	// sessionSpacing is the blank line the row delegate puts between records,
 	// decided by layout because it depends on how much height there is to
 	// spend.
+	// scopeProjects is how many directories the current scope covers, counted
+	// without the source filter. The directory column is decided from it so
+	// that choosing an agent cannot add or remove a column.
+	scopeProjects  int
 	sessionSpacing int
 	marked         map[string]bool
 

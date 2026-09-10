@@ -1512,3 +1512,34 @@ func TestOneLongTitleDoesNotCollapseTheSpacing(t *testing.T) {
 		t.Fatalf("gap = %d: a band this wide has room to space its columns", got)
 	}
 }
+
+// Choosing a source must not take the directory column away. A project that
+// spans worktrees has earned the column; filtering to an agent whose sessions
+// all sit in the root leaves one directory on screen, and reading the column
+// off those rows made it vanish — moving every column beside it while someone
+// was reading, which is the thing the width rule already refuses to do.
+func TestProjectColumnSurvivesASourceFilter(t *testing.T) {
+	root := "/Users/mingjian/Documents/sync/GitHub/another"
+	m := layoutTestModel()
+	m.width, m.height = 140, 40
+	m.projectOnly = true
+	m.projectScope.Root = root
+	// What the scope holds: the root plus a worktree under it.
+	m.scopeProjects = 2
+	// What this page holds after filtering to one agent: the root only.
+	m.sessions.SetItems([]list.Item{
+		sessionItem{summary: model.Summary{ID: "one", Provider: "agy", Title: "First", ProjectPath: root}},
+		sessionItem{summary: model.Summary{ID: "two", Provider: "agy", Title: "Second", ProjectPath: root}},
+	})
+	m.layout()
+
+	if got := sessionDelegateFor(&m); !got.showProject {
+		t.Fatal("a source filter hid the directory column the project had earned")
+	}
+
+	// A project that really is one directory still keeps the column away.
+	m.scopeProjects = 1
+	if got := sessionDelegateFor(&m); got.showProject {
+		t.Fatal("a single-directory project drew a column with nothing to say")
+	}
+}

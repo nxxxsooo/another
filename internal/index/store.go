@@ -475,6 +475,26 @@ type ListOpts struct {
 	IncludeSubagents bool
 }
 
+// DistinctProjects counts the directories the sessions in a scope come from.
+//
+// It exists so the browser can decide whether a directory column is worth a
+// row's width from the scope itself rather than from whatever is on screen.
+// Reading the visible rows makes the column appear and vanish as a source
+// filter narrows the list, which moves every column beside it while someone is
+// reading — the same reason the column's width is measured from Items() rather
+// than VisibleItems(). Provider is deliberately ignored: whether a project
+// spans worktrees is a fact about the project, not about the agent selected.
+func (s *Store) DistinctProjects(opts ListOpts) (int, error) {
+	opts.Provider = ""
+	opts.Limit, opts.Offset = 0, 0
+	where, args := s.listWhere(opts)
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(DISTINCT project_path)`+where+` AND project_path <> ''`, args...).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func (s *Store) listWhere(opts ListOpts) (string, []any) {
 	q := ` FROM sessions WHERE 1=1`
 	var args []any

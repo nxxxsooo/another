@@ -90,6 +90,7 @@ func (m modelState) onSessionsPage(msg sessionsPageMsg) (tea.Model, tea.Cmd) {
 	}
 	m.sessions.SetItems(msg.items)
 	m.totalSessions = msg.total
+	m.scopeProjects = msg.scopeProjects
 	m.updateSourceCounts(msg.counts)
 	m.layout()
 	return m, nil
