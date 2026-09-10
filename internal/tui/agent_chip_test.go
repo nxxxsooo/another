@@ -12,7 +12,7 @@ import (
 func knownAgentIDs() []string {
 	return []string{
 		"claude-code", "codex", "cursor", "opencode", "opencode2",
-		"commandcode", "hermes", "pi", "qwen", "agy",
+		"commandcode", "codem", "hermes", "pi", "qwen", "agy",
 	}
 }
 

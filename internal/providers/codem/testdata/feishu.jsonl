@@ -1,0 +1,4 @@
+{"type":"header","schema_version":10,"session_id":"sess_feishu_p2p_1838d9652f1b4dc8","started_at":"2026-08-18T13:33:28.133759+08:00","cwd":"/Users/example/work/notes","profile":"[active]","provider":"openai_compat","model":"codem-router/auto","linco_version":"0.8.4+2186.gd9d2bea.dirty","project_key":"personal_7628047890547477469"}
+{"type":"user_message","at":"2026-08-18T13:33:40.000000+08:00","content":"把今天的会议纪要整理成三条"}
+{"type":"assistant_text","at":"2026-08-18T13:33:52.000000+08:00","text":"整理好了，三条都在 notes/meeting.md 里。"}
+{"type":"turn_end","at":"2026-08-18T13:33:52.400000+08:00","stop_reason":"EndTurn"}

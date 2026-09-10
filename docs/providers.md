@@ -18,6 +18,7 @@ It depends on who owns the session, and the confirmation says which case you are
 - **OpenCode 2.** The server owns the deletion. Pushing the conversation back through its API would create a new session with a new ID, which is a copy rather than an undo, so there is none and the modal says so.
 - **Antigravity.** A session is not one file but a whole brain directory beside a trajectory database, often tens of megabytes, and `another` will not hold that many bytes in memory waiting for second thoughts, so there is no undo there either.
 - **Qwen Code.** A session is a transcript plus the sidecars that belong to it and the backups of every file it edited, so the same reasoning applies and the delete is final.
+- **CodeM.** A session is a transcript plus the working directory CodeM keeps beside it for that session's scratchpad and tool results, so the same reasoning applies and the delete is final.
 
 The offer lasts only as long as the list. `another` keeps no trash directory of its own, `Esc` gives it up on the spot, and a path the agent has since written to again is never overwritten.
 
@@ -36,6 +37,18 @@ The offer lasts only as long as the list. `another` keeps no trash directory of 
 **Delete clears the whole session.** The transcript in whichever state holds it, the worktree, pull request and prompt-ledger sidecars, the runtime sidecar `qwen sessions ps` reads, the file backups the session's own edits produced, and its entry in the project's pin-and-group store — the same set Qwen Code's own delete removes.
 
 **A running session is refused.** Qwen Code marks a live session with a runtime sidecar beside the transcript and refuses to archive one; `another` reads the same sidecar and refuses both archive and delete, because moving the file out from under a process that is appending to it loses the turn in flight. A sidecar written on another machine counts as live, since a pid here says nothing about a process there.
+
+## CodeM
+
+**A session belongs to a directory, and the directory is a hash.** CodeM files a transcript under the first 16 hex characters of the sha256 of the directory the session started in, and `codem --resume <id>` only looks inside the hash of the directory it is run from. The resume line `another` prints therefore begins with `cd`: run somewhere else, that command fails outright rather than opening the wrong session. It is also why the directory a session belongs to is read out of the transcript's own header rather than off its path — the hash does not go backwards.
+
+**Relocate is absent for the same reason.** Moving a session to another directory would mean moving the file to a different hash and rewriting its header. CodeM has no operation that does that, so `another` does not invent one.
+
+**There is no title to rename.** CodeM stores no session title anywhere; `codem sessions list` derives one from the first user message every time it runs, and `another` does the same. A rename would have nowhere to land but `another`'s own state, so the cell is a dash.
+
+**Injected turns do not travel.** CodeM adds loaded skills and reminders to a session as whole user messages wrapped in `<system-reminder>`. Those are the CLI talking to its own model, not the person, and they are left behind when the conversation is migrated.
+
+**The Feishu client's sessions are ordinary sessions.** A conversation started from Feishu is written to the same store with an id like `sess_feishu_p2p_…`, so it lists, opens, and migrates like any other. The loose `sess_*.json` files at the top of the store are that client's own records, not transcripts, and are not indexed.
 
 ## Child sessions
 
