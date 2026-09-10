@@ -1543,3 +1543,47 @@ func TestProjectColumnSurvivesASourceFilter(t *testing.T) {
 		t.Fatal("a single-directory project drew a column with nothing to say")
 	}
 }
+
+// Changing scope must not slide the row sideways. The leftover width was split
+// evenly around the row, so a scope whose paths are long and the same scope
+// narrowed to one project — `~/Documents/sync/Docs` against `Docs` — differed
+// by the whole width of the directory column, and half of that arrived as left
+// margin. Pressing `f` moved every column on screen by fifteen cells.
+func TestScopeToggleDoesNotSlideTheRow(t *testing.T) {
+	const width = 231
+	base := "/Users/mingjian/Documents/sync/Docs"
+	title := "0909｜探索｜两个Google账号领取免费Pro至明年9月"
+
+	agentColumnAt := func(paths []string, projectBase string) int {
+		items := make([]list.Item, 0, len(paths))
+		for i, p := range paths {
+			items = append(items, sessionItem{summary: model.Summary{
+				ID: fmt.Sprint(i), Provider: "codex", Title: title, ProjectPath: p,
+			}})
+		}
+		d := sessionDelegate{
+			marked: map[string]bool{}, showProject: true, projectBase: projectBase,
+			projectW: projectColumnWidth(items, projectBase, false, nil),
+			titleW:   titleColumnWidth(items),
+		}
+		l := newBareList(items, d, width, 8)
+		var buf strings.Builder
+		d.Render(&buf, l, 0, items[0])
+		row := ansi.Strip(buf.String())
+		at := strings.Index(row, "CDX")
+		if at < 0 {
+			t.Fatalf("no agent chip in %q", row)
+		}
+		return ansi.StringWidth(row[:at])
+	}
+
+	all := agentColumnAt([]string{
+		"/Users/mingjian/Documents/sync/Work/huatu/projects/ai-pioneer",
+		"/Users/mingjian/Documents/sync/Tuning",
+	}, "")
+	scoped := agentColumnAt([]string{base + "/health", base + "/finance/trading"}, base)
+
+	if all != scoped {
+		t.Fatalf("scope moved the agent column: %d in the whole index, %d in one project", all, scoped)
+	}
+}
