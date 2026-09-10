@@ -375,10 +375,6 @@ func projectChip(text string, ink, tint lipgloss.Color) string {
 	return lipgloss.NewStyle().Foreground(ink).Background(tint).Render(" " + text + " ")
 }
 
-// relativeTimeWidth holds the widest relative stamp — "just now" and "59m ago"
-// both fit.
-const relativeTimeWidth = 10
-
 // compactTimeWidth is the time column under date bands: "15:04", "Jan 06", and
 // whatever the language calls the current minute.
 func compactTimeWidth() int {

@@ -5,10 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/nxxxsooo/another/internal/model"
 )
 
 // A band is a calendar day, not a duration. Ten past midnight and ten to
@@ -133,10 +131,4 @@ func TestDateBandsAreNotSelectable(t *testing.T) {
 			t.Fatalf("the cursor stopped on a band at step %d", i)
 		}
 	}
-}
-
-func dateRow(id string, at time.Time) list.Item {
-	return sessionItem{summary: model.Summary{
-		ID: id, Provider: "pi", Title: "A session", ProjectPath: "/tmp/project", UpdatedAt: at,
-	}}
 }
