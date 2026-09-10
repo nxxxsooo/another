@@ -252,11 +252,19 @@ func (d sessionDelegate) columns(width int) rowColumns {
 			spare -= grow
 		}
 	}
-	// Only now is the width genuinely unwanted. It is split evenly around the
-	// row so the columns sit centred inside the pane; hanging it all off one
-	// end would put the emptiness back into the record.
-	leftInset := strings.Repeat(" ", spare/2)
-	rightInset := strings.Repeat(" ", spare-spare/2)
+	// Only now is the width genuinely unwanted, and it is put around the row so
+	// the columns sit centred inside the pane rather than hanging off one end.
+	//
+	// How much goes on the left is measured from the band, not from what the
+	// cells left over. Halving the leftover slid the whole row sideways every
+	// time the content changed width: a scope holding `~/Documents/sync/Docs`
+	// draws a column wide enough for it, the same scope narrowed to that
+	// project draws `Docs`, and the thirty cells between them arrived as
+	// fifteen cells of left margin — so pressing `f` moved every column on
+	// screen while someone was reading them. A row shorter than a full one now
+	// ends earlier instead of starting later.
+	leftInset := strings.Repeat(" ", min(spare, max(0, (width-naturalRowWidth())/2)))
+	rightInset := strings.Repeat(" ", spare-len(leftInset))
 	// One width for every gap. Columns spaced unevenly read as groups, and the
 	// groups would be an accident of which column happened to absorb a
 	// remainder rather than anything about the session.
