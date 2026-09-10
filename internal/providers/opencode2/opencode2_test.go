@@ -80,31 +80,130 @@ func TestDiscoverAndLoadV2Schema(t *testing.T) {
 	}
 }
 
-func TestWriteUsesOfficialImportContract(t *testing.T) {
-	path := fixtureDB(t)
-	capture := filepath.Join(t.TempDir(), "payload.json")
+// importStub stands in for the OpenCode 2 CLI: it records every call, copies
+// the payload it was handed, and can refuse the way an older build or a
+// failing server would.
+func importStub(t *testing.T, capture, calls string) {
+	t.Helper()
 	script := filepath.Join(t.TempDir(), "opencode2")
-	body := "#!/bin/sh\ncp \"$4\" \"$CAPTURE\"\nprintf 'Imported session: test\\n'\n"
+	body := `#!/bin/sh
+printf '%s\n' "$*" >> "$CALLS"
+if [ -n "$FAIL_MESSAGE" ]; then
+	printf '%s\n' "$FAIL_MESSAGE"
+	exit 1
+fi
+if [ "$1" = "session" ]; then
+	if [ -n "$REFUSE_SESSION_IMPORT" ]; then
+		printf 'DESCRIPTION\n  OpenCode 2 preview\n\nUSAGE\n  opencode2 session <subcommand>\n\nFLAGS\n  --help\n'
+		exit 1
+	fi
+	cp "$5" "$CAPTURE"
+else
+	cp "$4" "$CAPTURE"
+fi
+printf 'Imported session: test\n'
+`
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("OPENCODE2_DB_PATH", path)
 	t.Setenv("OPENCODE2_COMMAND", script)
 	t.Setenv("CAPTURE", capture)
-	p := opencode2.New()
+	t.Setenv("CALLS", calls)
+}
+
+// serveImport stands in for the server persisting an imported session: the row
+// appears in the database shortly after the payload changes hands, which is
+// the only evidence another accepts that a migration landed.
+func serveImport(t *testing.T, dbPath, capture string) {
+	t.Helper()
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+			data, err := os.ReadFile(capture)
+			if err != nil {
+				continue
+			}
+			var payload struct {
+				Info struct {
+					ID    string `json:"id"`
+					Title string `json:"title"`
+				} `json:"info"`
+			}
+			if json.Unmarshal(data, &payload) != nil || payload.Info.ID == "" {
+				continue
+			}
+			if err := insertSession(dbPath, payload.Info.ID, payload.Info.Title); err != nil {
+				t.Errorf("stand-in server could not store the session: %v", err)
+			}
+			return
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		<-done
+	})
+}
+
+func insertSession(dbPath, id, title string) error {
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	_, err = db.Exec(`INSERT INTO session_v2
+		(id,project_id,parent_id,slug,directory,title,version,metadata,agent,model,time_created,time_updated)
+		VALUES (?,'project',NULL,'imported','/tmp/target',?,'2.0',NULL,'build',NULL,3000,3000)`, id, title)
+	return err
+}
+
+// writeCarriedSession migrates one short conversation through whatever stub the
+// test installed.
+func writeCarriedSession(t *testing.T) (*provider.WriteResult, error) {
+	t.Helper()
 	start := time.UnixMilli(10000)
-	res, err := p.Write(context.Background(), &model.Conversation{
+	return opencode2.New().Write(context.Background(), &model.Conversation{
 		ID: "source", Provider: "codex", ProjectPath: "/tmp/target", Title: "carried title",
 		Messages: []model.Message{
 			{Role: model.RoleUser, Content: "question", Timestamp: start},
 			{Role: model.RoleAssistant, Content: "answer", Timestamp: start.Add(time.Second)},
 		},
 	}, provider.WriteOpts{})
+}
+
+func recordedCalls(t *testing.T, calls string) []string {
+	t.Helper()
+	data, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no call was recorded: %v", err)
+	}
+	return strings.Split(strings.TrimSpace(string(data)), "\n")
+}
+
+func TestWriteUsesOfficialImportContract(t *testing.T) {
+	path := fixtureDB(t)
+	dir := t.TempDir()
+	capture, calls := filepath.Join(dir, "payload.json"), filepath.Join(dir, "calls")
+	importStub(t, capture, calls)
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	serveImport(t, path, capture)
+	res, err := writeCarriedSession(t)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.ProjectPath != "/tmp/target" || !strings.HasPrefix(res.SessionID, "ses_") {
 		t.Fatalf("write result = %+v", res)
+	}
+	// The subcommand is the contract. `import` moved under `session` during
+	// the preview, and a payload assertion alone let that drift ship as a
+	// migration that never reached OpenCode 2.
+	if got := recordedCalls(t, calls); len(got) != 1 || !strings.HasPrefix(got[0], "session import --directory /tmp/target /") {
+		t.Fatalf("import command = %q", got)
 	}
 	data, err := os.ReadFile(capture)
 	if err != nil {
@@ -126,6 +225,65 @@ func TestWriteUsesOfficialImportContract(t *testing.T) {
 	}
 	if payload.Info.Metadata["another_migration"] == nil {
 		t.Fatal("official import payload lost migration marker")
+	}
+}
+
+// A build old enough to keep `import` at the top level refuses the current
+// form by printing its own help, which never reaches the server, so retrying
+// the older command cannot import the conversation twice.
+func TestWriteFallsBackToTheLegacyImportCommand(t *testing.T) {
+	path := fixtureDB(t)
+	dir := t.TempDir()
+	capture, calls := filepath.Join(dir, "payload.json"), filepath.Join(dir, "calls")
+	importStub(t, capture, calls)
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	t.Setenv("REFUSE_SESSION_IMPORT", "1")
+	serveImport(t, path, capture)
+	if _, err := writeCarriedSession(t); err != nil {
+		t.Fatal(err)
+	}
+	got := recordedCalls(t, calls)
+	if len(got) != 2 || !strings.HasPrefix(got[0], "session import ") || !strings.HasPrefix(got[1], "import --directory /tmp/target /") {
+		t.Fatalf("import commands = %q", got)
+	}
+}
+
+// Any refusal other than an unparsed command may have reached the server, so
+// it is reported rather than retried, and it is reported in words that fit the
+// one line the person actually sees.
+func TestWriteDoesNotRetryARefusalTheServerCouldHaveSeen(t *testing.T) {
+	path := fixtureDB(t)
+	dir := t.TempDir()
+	capture, calls := filepath.Join(dir, "payload.json"), filepath.Join(dir, "calls")
+	importStub(t, capture, calls)
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	t.Setenv("FAIL_MESSAGE", "Error: directory /tmp/target is not a project")
+	_, err := writeCarriedSession(t)
+	if err == nil {
+		t.Fatal("a failed import was reported as a migration")
+	}
+	if !strings.Contains(err.Error(), "not a project") {
+		t.Fatalf("error hides what OpenCode 2 said: %v", err)
+	}
+	if got := recordedCalls(t, calls); len(got) != 1 {
+		t.Fatalf("a failure the server may have seen was retried: %q", got)
+	}
+}
+
+// The import exits before the server has stored anything, so a zero exit is
+// not evidence. Without this the person is handed a resume line for a session
+// that does not exist.
+func TestWriteReportsAnImportThatNeverLanded(t *testing.T) {
+	path := fixtureDB(t)
+	dir := t.TempDir()
+	importStub(t, filepath.Join(dir, "payload.json"), filepath.Join(dir, "calls"))
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	_, err := writeCarriedSession(t)
+	if err == nil {
+		t.Fatal("an import that stored nothing was reported as a migration")
+	}
+	if !strings.Contains(err.Error(), "nothing was migrated") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

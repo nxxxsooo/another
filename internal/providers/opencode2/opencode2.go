@@ -320,12 +320,84 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 	if err := tmp.Close(); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, p.command, "import", "--directory", project, path)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("opencode2 import: %w: %s", err, strings.TrimSpace(string(out)))
+	if err := p.runImport(ctx, project, path); err != nil {
+		return nil, err
+	}
+	// `opencode2` reports its own exit status, not the server's answer, the
+	// same way rename, delete, and move do. The session's own row decides.
+	if err := p.awaitSession(ctx, sessionID); err != nil {
+		return nil, err
 	}
 	return result, nil
+}
+
+// runImport hands the payload to OpenCode 2's own importer. The subcommand
+// moved under `session` during the preview, so the current form is tried first
+// and the older top-level one only when the CLI refused to parse the arguments
+// at all — a refusal that never reaches the server, so the retry cannot import
+// the conversation twice.
+func (p *Provider) runImport(ctx context.Context, project, path string) error {
+	out, err := p.importOnce(ctx, []string{"session", "import", "--directory", project, path})
+	if err == nil {
+		return nil
+	}
+	if isUsageRefusal(out) {
+		if _, legacyErr := p.importOnce(ctx, []string{"import", "--directory", project, path}); legacyErr == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("opencode2 import: %w: %s", err, importFailureDetail(out))
+}
+
+func (p *Provider) importOnce(ctx context.Context, args []string) (string, error) {
+	cmd := exec.CommandContext(ctx, p.command, args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// isUsageRefusal reports the CLI printing its own help instead of doing the
+// work, which is how an unknown subcommand arrives: a screenful of usage and a
+// non-zero exit, with nothing sent to the server.
+func isUsageRefusal(out string) bool {
+	return strings.Contains(out, "USAGE") && strings.Contains(out, "FLAGS")
+}
+
+// importFailureDetail keeps the CLI's own words without pasting a whole help
+// dump into a one-line status, where it used to arrive as the single word
+// "DESCRIPTION".
+func importFailureDetail(out string) string {
+	if isUsageRefusal(out) {
+		return "this OpenCode 2 build does not accept the import command; run `opencode2 upgrade`"
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return truncateForError(line)
+		}
+	}
+	return "no output"
+}
+
+// awaitSession waits for an imported session to appear in the database, since
+// the import returns before the server has persisted it.
+func (p *Provider) awaitSession(ctx context.Context, sessionID string) error {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, err := p.storedTitle(sessionID)
+		if err == nil {
+			return nil
+		}
+		if !strings.Contains(err.Error(), "is gone") {
+			return fmt.Errorf("opencode2 import: %w", err)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("opencode2 import: OpenCode 2 reported success but session %s is not there; nothing was migrated", sessionID)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }
 
 func importPayload(conv *model.Conversation, sessionID, project, agent string, modelRef map[string]any) ([]byte, error) {
