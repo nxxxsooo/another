@@ -222,8 +222,8 @@ func TestLayoutSample(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(previous)
 
-	restore := contentBandPercent
-	defer func() { contentBandPercent = restore }()
+	restoreBand, restoreGap := contentBandPercent, maxColumnGap
+	defer func() { contentBandPercent, maxColumnGap = restoreBand, restoreGap }()
 
 	// Column widths are measured per language — "128条" and "128 msg" are not
 	// the same number of cells — so a layout reviewed in one language says
@@ -243,20 +243,23 @@ func TestLayoutSample(t *testing.T) {
 
 	for _, percent := range sampleNumbers("LAYOUT_SAMPLE_PERCENTS", []int{contentBandPercent}) {
 		contentBandPercent = percent
-		for _, width := range sampleNumbers("LAYOUT_SAMPLE_WIDTHS", []int{100, 132, 160, 200, 240}) {
-			height := sampleNumbers("LAYOUT_SAMPLE_HEIGHT", []int{32})[0]
-			m := sampleModel(t, width, height)
-			if which != overlayNone {
-				m = sampleWithOverlay(m, which)
+		for _, gap := range sampleNumbers("LAYOUT_SAMPLE_GAPS", []int{maxColumnGap}) {
+			maxColumnGap = gap
+			for _, width := range sampleNumbers("LAYOUT_SAMPLE_WIDTHS", []int{100, 132, 160, 200, 240}) {
+				height := sampleNumbers("LAYOUT_SAMPLE_HEIGHT", []int{32})[0]
+				m := sampleModel(t, width, height)
+				if which != overlayNone {
+					m = sampleWithOverlay(m, which)
+				}
+				widest := 0
+				for _, row := range sessionRows(m.View()) {
+					widest = max(widest, widestBlankRun(row))
+				}
+				view := m.View()
+				fmt.Printf("\n%s\nterminal %dx%d · band %d · margin %d · gap %d · overlay %s · widest blank run in a row %d\n%s\n%s\n",
+					strings.Repeat("=", width), width, height, m.bandWidth(), m.bandLeft(), gap, overlayName,
+					widest, strings.Repeat("=", width), view)
 			}
-			widest := 0
-			for _, row := range sessionRows(m.View()) {
-				widest = max(widest, widestBlankRun(row))
-			}
-			view := m.View()
-			fmt.Printf("\n%s\nterminal %dx%d · band %d · margin %d · overlay %s · view %d lines · widest blank run in a row %d\n%s\n%s\n",
-				strings.Repeat("=", width), width, height, m.bandWidth(), m.bandLeft(), overlayName,
-				lipgloss.Height(view), widest, strings.Repeat("=", width), view)
 		}
 	}
 }

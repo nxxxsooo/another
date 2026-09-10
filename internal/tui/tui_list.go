@@ -293,14 +293,17 @@ func columnGap(spare, gaps int) int {
 	return 1 + max(0, min(spare/gaps, maxColumnGap-1))
 }
 
-const (
-	// maxColumnGap is the widest a space between two columns may be. Spacing
-	// is read as one thing separating two others; past a certain width it
-	// becomes a distance to cross instead, and the row stops being a single
-	// record. Slack beyond this is spent on the columns themselves, or given
-	// back as margin.
-	maxColumnGap = 6
+// maxColumnGap is the widest a space between two columns may be. Spacing is
+// read as one thing separating two others; past a certain width it becomes a
+// distance to cross instead, and the row stops being a single record. Slack
+// beyond this is spent on the columns themselves, or given back as margin.
+//
+// A var rather than a const so the layout sample can render candidate values
+// side by side, the same way it does for the band proportion. A spacing
+// argument is settled by looking at the alternatives, not by picking a number.
+var maxColumnGap = 6
 
+const (
 	// titleColumnCap and projectColumnCap are how much a column can use even
 	// when the terminal could give it more. Both hold text that is read left
 	// to right and truncated on an ordinary window, so a wide terminal should
