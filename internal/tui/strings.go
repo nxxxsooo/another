@@ -29,7 +29,17 @@ type uiText struct {
 	headerCountFmt string
 	scopeProject   string
 	scopeThis      string
-	scopeAll       string
+	// scopeAll names the project scope and sourceAll names the agent filter.
+	// Both were the bare word "all" in one chip style, so the header said it
+	// twice and meant something different each time.
+	scopeAll  string
+	sourceAll string
+	// positionFmt is where the cursor sits in the list. positionCapFmt is the
+	// same when one page does not hold everything that matched, because a
+	// list that counts to 361 while it can only scroll to 200 is describing a
+	// scrollbar that does not exist.
+	positionFmt    string
+	positionCapFmt string
 	// groupNoProject names the band holding sessions with no directory on
 	// record. They are still sessions, and a band with no label would read as
 	// a rendering fault rather than as the one group that cannot be named.
@@ -306,10 +316,13 @@ var englishText = uiText{
 
 	sourceArrow:    "← source ",
 	targetArrow:    "target →",
-	headerCountFmt: "   │   %d sessions   │   ",
-	scopeProject:   "project",
+	headerCountFmt: "   │   %s   │   ",
+	scopeProject:   "this project",
 	scopeThis:      "this project",
-	scopeAll:       "all",
+	scopeAll:       "all projects",
+	sourceAll:      "all agents",
+	positionFmt:    "%d/%d",
+	positionCapFmt: "%d/%d of %d",
 	groupNoProject: "no directory",
 
 	emptySearch:       "\n  No session matches",
@@ -546,10 +559,13 @@ var chineseText = uiText{
 
 	sourceArrow:    "← 来源 ",
 	targetArrow:    "去向 →",
-	headerCountFmt: "   │   %d 个会话   │   ",
-	scopeProject:   "项目",
+	headerCountFmt: "   │   %s   │   ",
+	scopeProject:   "当前项目",
 	scopeThis:      "当前项目",
-	scopeAll:       "全部",
+	scopeAll:       "全部项目",
+	sourceAll:      "全部 agent",
+	positionFmt:    "%d/%d",
+	positionCapFmt: "%d/%d，共 %d",
 	groupNoProject: "无目录",
 
 	emptySearch:       "\n  没有匹配的会话",

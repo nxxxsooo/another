@@ -572,30 +572,69 @@ func (m modelState) relocateView() string {
 		m.relocateInput.View() + "\n\n" + modes
 }
 
+// listPosition is where the cursor sits and how far the list goes. One page is
+// capped, so the loaded rows and the number of sessions that matched are not
+// always the same, and the capped form says both rather than promising a list
+// that cannot be scrolled to.
+func (m modelState) listPosition() string {
+	loaded := len(m.sessions.Items())
+	if loaded == 0 {
+		return fmt.Sprintf(txt.sessionCountFmt, m.totalSessions)
+	}
+	at := m.sessions.Index() + 1
+	if m.totalSessions > loaded {
+		return fmt.Sprintf(txt.positionCapFmt, at, loaded, m.totalSessions)
+	}
+	return fmt.Sprintf(txt.positionFmt, at, loaded)
+}
+
 func (m modelState) headerView() string {
 	brand := accentStyle.Render(" another ")
 	source := m.currentSource()
 	sourceName := source.name
 	if sourceName == "all" {
-		sourceName = txt.scopeAll
+		sourceName = txt.sourceAll
 	}
 	left := brand + "  " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
 	right := targetChipStyle.Render(txt.targetArrow)
 	width := m.bandWidth()
-	var first string
-	if width >= 64 {
-		header := left + mutedStyle.Render(fmt.Sprintf(txt.headerCountFmt, m.totalSessions)) + right +
-			mutedStyle.Render("   │   ") + m.scopeView(true)
-		first = ansi.Truncate(header, width, "…")
-	} else {
-		brand = sourceChipStyle.Render(txt.scopeProject)
-		if !m.projectOnly {
-			brand = sourceChipStyle.Render(txt.scopeAll)
+
+	// Widest form that fits, rather than a width threshold. The threshold was
+	// a single number covering a line whose length depends on the language,
+	// the agent's name, the position, and the project path, so at some sizes
+	// it chose a layout that then had to be truncated — and what it cut was
+	// the target chip, the one thing in the header naming a key.
+	position := mutedStyle.Render(fmt.Sprintf(txt.headerCountFmt, m.listPosition()))
+	separator := mutedStyle.Render("   │   ")
+	// The brand goes before the count does. The window title already says
+	// which program this is, while the position is the only thing on screen
+	// that says how far the list goes.
+	bare := mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
+	// Below that the padding goes before anything it separates does. The scope
+	// is worth more than the space around it: it decides which sessions are on
+	// screen at all, so it outlives the wide separators and the brand.
+	tight := mutedStyle.Render(" " + m.listPosition() + " ")
+	first := ""
+	for _, candidate := range []string{
+		left + position + right + separator + m.scopeView(true),
+		left + position + right + separator + m.scopeView(false),
+		bare + position + right + separator + m.scopeView(false),
+		bare + position + right + " " + m.scopeView(false),
+		bare + tight + right + " " + m.scopeView(false),
+		bare + position + right,
+	} {
+		if ansi.StringWidth(candidate) <= width {
+			first = candidate
+			break
 		}
-		left = brand + " " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
-		left = ansi.Truncate(left, max(0, width-ansi.StringWidth(right)-2), "…")
-		gap := max(2, width-ansi.StringWidth(left)-ansi.StringWidth(right))
-		first = ansi.Truncate(left+strings.Repeat(" ", gap)+right, width, "…")
+	}
+	if first == "" {
+		// No room for the brand or the count: the scope and the agent filter
+		// are what change what is on screen, and the target chip names a key.
+		compact := m.scopeView(false) + " " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
+		compact = ansi.Truncate(compact, max(0, width-ansi.StringWidth(right)-2), "…")
+		gap := max(2, width-ansi.StringWidth(compact)-ansi.StringWidth(right))
+		first = ansi.Truncate(compact+strings.Repeat(" ", gap)+right, width, "…")
 	}
 	lines := []string{first}
 	if m.searching {
@@ -610,11 +649,14 @@ func (m modelState) scopeView(showPath bool) string {
 		path = m.cwd
 	}
 	path = util.TildePath(path)
+	// Not the source chip's violet. Violet means source in this interface, and
+	// the scope is a filter over directories, not an agent — painted the same
+	// way, the header showed two identical chips that meant different things.
 	var line string
 	if m.projectOnly {
-		line = sourceChipStyle.Render(txt.scopeThis)
+		line = scopeChipStyle.Render(txt.scopeThis)
 	} else {
-		line = sourceChipStyle.Render(txt.scopeAll)
+		line = scopeChipStyle.Render(txt.scopeAll)
 	}
 	if showPath && path != "" {
 		line += mutedStyle.Render("  ·  " + path)

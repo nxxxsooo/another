@@ -248,6 +248,60 @@ func TestHelpShowsOnlySelectedAgentCapabilities(t *testing.T) {
 	}
 }
 
+// The header drops whole pieces rather than cutting one in half. It used to
+// switch layouts at a fixed width, and the line it switched to was longer than
+// that width in some languages — so the truncation landed on the target chip,
+// which is the only thing in the header that names a key.
+func TestHeaderDropsPiecesRatherThanTruncating(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		previous := applyLanguage(lang)
+		for width := 40; width <= 200; width++ {
+			m := sampleModel(t, width, 24)
+			header := ansi.Strip(strings.Split(m.headerView(), "\n")[0])
+			if got := ansi.StringWidth(header); got > m.bandWidth() {
+				t.Fatalf("%s %d: header is %d cells, past the band at %d: %q",
+					lang, width, got, m.bandWidth(), header)
+			}
+			// The target chip names the → key. Whatever else the header gives
+			// up, it keeps that, whole.
+			if !strings.Contains(header, ansi.Strip(txt.targetArrow)) {
+				t.Fatalf("%s %d: header lost the target chip: %q", lang, width, header)
+			}
+		}
+		applyLanguage(previous)
+	}
+}
+
+// The position follows the cursor. A list of 361 with no idea where you are in
+// it was the complaint; a number that does not move would be the same one.
+func TestHeaderPositionFollowsTheCursor(t *testing.T) {
+	m := sampleModel(t, 132, 32)
+	first := ansi.Strip(m.headerView())
+	if !strings.Contains(first, "1/") {
+		t.Fatalf("header does not open at the first row: %q", first)
+	}
+	m.sessions.Select(4)
+	fifth := ansi.Strip(m.headerView())
+	if !strings.Contains(fifth, "5/") {
+		t.Fatalf("header did not follow the cursor to row 5: %q", fifth)
+	}
+}
+
+// One page is capped, so the header says both numbers when they differ. It
+// used to print the total alone, which promised a list that could not be
+// scrolled to.
+func TestHeaderSaysWhenAPageIsCapped(t *testing.T) {
+	m := sampleModel(t, 132, 32)
+	m.totalSessions = 361
+	if got := m.listPosition(); !strings.Contains(got, "361") || !strings.Contains(got, "10") {
+		t.Fatalf("a capped page reads %q, want both the page and the total", got)
+	}
+	m.totalSessions = len(m.sessions.Items())
+	if got := m.listPosition(); strings.Count(got, "10") != 1 {
+		t.Fatalf("an uncapped page reads %q, want the total said once", got)
+	}
+}
+
 // The keymap exists because keys were being hidden, so a keymap that runs off
 // the bottom or the side of the screen is the same bug wearing a border. The
 // browser supports terminals down to 40x12, where the full list cannot fit at

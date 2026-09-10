@@ -131,12 +131,22 @@ func TestDirectionalStylesAreWiredIntoViews(t *testing.T) {
 
 	header := m.headerView()
 	for name, want := range map[string]string{
-		"source chip": sourceChipStyle.Render(txt.scopeAll),
+		"source chip": sourceChipStyle.Render(txt.sourceAll),
 		"target chip": targetChipStyle.Render(txt.targetArrow),
+		"scope chip":  scopeChipStyle.Render(txt.scopeAll),
 	} {
 		if !strings.Contains(header, want) {
 			t.Errorf("header does not use %s", name)
 		}
+	}
+	// The agent filter and the project scope are different questions. They
+	// were both the word "all" in the same violet chip, so the header stated
+	// one thing twice and answered neither.
+	if txt.sourceAll == txt.scopeAll {
+		t.Error("the agent filter and the project scope are named the same thing")
+	}
+	if sourceChipStyle.Render("x") == scopeChipStyle.Render("x") {
+		t.Error("the agent filter and the project scope are painted the same way")
 	}
 
 	m.overlay = overlaySource

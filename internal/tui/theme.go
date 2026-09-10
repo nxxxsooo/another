@@ -115,7 +115,11 @@ var (
 	sourceChipStyle   = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.source).Padding(0, 1)
 	targetChipStyle   = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.surface).Background(twinTheme.target).Padding(0, 1)
 	chipActive        = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.border).Padding(0, 1)
-	chipMuted         = lipgloss.NewStyle().Foreground(twinTheme.textSubtle).Padding(0, 1)
-	selectedRow       = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.intersection)
-	dangerChoice      = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.danger).Padding(0, 1)
+	// scopeChipStyle carries the project scope. It is deliberately neutral:
+	// the violet chip beside it means "source", and a scope painted in the
+	// same colour read as a second source rather than as a different question.
+	scopeChipStyle = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.border).Padding(0, 1)
+	chipMuted      = lipgloss.NewStyle().Foreground(twinTheme.textSubtle).Padding(0, 1)
+	selectedRow    = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.intersection)
+	dangerChoice   = lipgloss.NewStyle().Bold(true).Foreground(twinTheme.text).Background(twinTheme.danger).Padding(0, 1)
 )
