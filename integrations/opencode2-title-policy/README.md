@@ -3,14 +3,31 @@
 This adapter makes OpenCode 2's first automatic session title follow another's
 shared `MMDD｜Type｜Topic` policy without a second model call.
 
-It does two things:
+It does three things:
 
 1. overrides the built-in hidden `title` agent so the existing title request
    returns `Type｜Topic` in the language selected by
    `~/.config/another/config.json`;
 2. listens for the native rename that carries it, reads the session's own
    creation time, prefixes that date in `Asia/Shanghai`, validates the result,
-   and writes it back through OpenCode 2's official `session.rename()` API.
+   and writes it back through OpenCode 2's official `session.rename()` API;
+3. asks for the title itself when a session goes idle still carrying no name.
+
+The third exists because OpenCode 2 asks for a title once, moments after the
+first prompt, and never asks again. When that single request does not land —
+the title provider fails, or the server restarts mid-session — the session
+keeps no name at all, and nothing repairs it: OpenCode 2 lists it as
+`New session - <timestamp>`, and another falls back to showing the raw prompt.
+On idle with an empty title the plugin waits five seconds in case the native
+title is merely slow, checks again, and then asks the `title` agent's own model
+for one line, using the opening user message. That keeps background title
+traffic on whatever provider the user routed it to; a title model the catalog
+hides — a relay pinned in the configuration and marked `deprecated` resolves
+for the native request but is refused when asked for directly — costs nothing
+to try, and the default model answers instead. The answer goes through the same
+policy as a native one. An answer that is not a policy title is left unwritten
+rather than forced, so the session stays nameless and the next idle tries
+again.
 
 Every rename is judged on its own title, with no state kept between events.
 That is deliberate: the previous version remembered which sessions it was

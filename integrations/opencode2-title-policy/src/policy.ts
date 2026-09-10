@@ -98,3 +98,36 @@ export function finalizeTitle(partial: string, created: number, configured: Titl
   if (configured !== "auto" && parsed.language !== configured) return
   return `${date}｜${parsed.type}｜${parsed.topic}`
 }
+
+// The repair below asks for a title outside OpenCode 2's own title request, so
+// the first user message has to travel in the prompt. It is cut short on
+// purpose: a session is recognizable from how it opens, and this request is
+// meant to cost about what the one it replaces would have cost.
+export function repairPrompt(language: TitleLanguage, firstUserMessage: string): string {
+  return `${titlePrompt(language)}
+
+Name the session that begins with this message:
+
+${firstUserMessage.trim().slice(0, 2000)}`
+}
+
+// A generated answer is not a rename event. OpenCode 2 writes the title agent's
+// reply to the session verbatim, so the native path only ever sees one line;
+// a model answering this prompt directly still returns a code fence, a quoted
+// title, or an empty line first.
+export function cleanGenerated(text: string): string {
+  const line = text
+    .split("\n")
+    .map((part) => part.trim())
+    .find((part) => part !== "" && !part.startsWith("```"))
+  return (line ?? "").replace(/^["'`“”‘’「」]+|["'`“”‘’「」]+$/gu, "").trim()
+}
+
+// repairTitle judges a generated answer the way the native path judges a
+// rename: a refusal is replaced, and anything that is not a policy title is
+// declined rather than written, which leaves the next idle free to try again.
+export function repairTitle(generated: string, created: number, configured: TitleLanguage): string | undefined {
+  const text = cleanGenerated(generated)
+  if (!text) return
+  return isRefusal(text) ? fallbackTitle(created, configured) : finalizeTitle(text, created, configured)
+}
