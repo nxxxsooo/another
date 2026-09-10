@@ -586,12 +586,18 @@ func (m modelState) listPosition() string {
 			continue
 		}
 		sessions++
-		if i == m.sessions.Index() {
+		// The first session at or past the cursor. Asking for the row the
+		// cursor is exactly on reports nothing while it sits on a band, and a
+		// band is where it lands before skipGroupHeader moves it along.
+		if at == 0 && i >= m.sessions.Index() {
 			at = sessions
 		}
 	}
 	if sessions == 0 {
 		return fmt.Sprintf(txt.sessionCountFmt, m.totalSessions)
+	}
+	if at == 0 {
+		at = sessions
 	}
 	// The cursor's number is padded to the width of the number it counts
 	// towards, so scrolling does not reflow the header. Unpadded, moving from

@@ -340,6 +340,22 @@ func TestPositionCountsSessionsNotBands(t *testing.T) {
 	}
 }
 
+// The cursor is put on a band before anything moves it off one, and a position
+// counted from the row it is exactly on reported nothing at all there.
+func TestPositionIsNeverZeroOnABand(t *testing.T) {
+	m := sampleModel(t, 132, 32)
+	m.groupMode = groupDate
+	m.ungrouped = sampleSessions()
+	m.sessions.SetItems(m.groupedItems()) // deliberately without skipping the band
+	m.sessions.Select(0)
+	if _, onBand := m.sessions.SelectedItem().(groupHeader); !onBand {
+		t.Skip("this page does not open on a band")
+	}
+	if got := strings.TrimSpace(m.listPosition()); strings.HasPrefix(got, "0/") {
+		t.Fatalf("the cursor on a band counts as no session at all: %q", got)
+	}
+}
+
 // One page is capped, so the header says both numbers when they differ. It
 // used to print the total alone, which promised a list that could not be
 // scrolled to.
