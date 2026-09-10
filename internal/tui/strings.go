@@ -356,7 +356,7 @@ var englishText = uiText{
 	indexing:           "indexing…",
 	sessionCountFmt:    "%d sessions",
 	sessionCountOneFmt: "%d session",
-	markedFmt:          "%d marked  ·  x mark · X all · ctrl+t batch",
+	markedFmt:          "%d marked  ·  ctrl+t batch · x mark · X all · esc clears",
 
 	cwdUnreadable:        "Could not read the current directory, showing every session: ",
 	archivedPrefix:       "Archived ",
@@ -609,7 +609,7 @@ var chineseText = uiText{
 	indexing:           "正在建立索引…",
 	sessionCountFmt:    "%d 个会话",
 	sessionCountOneFmt: "%d 个会话",
-	markedFmt:          "已标记 %d 个会话  ·  x 标记 · X 全选 · ctrl+t 批量命名",
+	markedFmt:          "已标记 %d 个会话  ·  ctrl+t 批量命名 · x 标记 · X 全选 · esc 清除",
 
 	cwdUnreadable:        "无法读取当前目录，已显示全部会话：",
 	archivedPrefix:       "已归档 ",

@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/nxxxsooo/another/internal/titler"
 )
 
@@ -15,6 +17,56 @@ func TestBatchEscapesImmediatelyWhenIdle(t *testing.T) {
 	got, _ := m.Update(escKey())
 	if left := got.(modelState); left.overlay != overlayNone {
 		t.Fatalf("overlay = %d, want closed", left.overlay)
+	}
+}
+
+// Closing the review keeps the marks, so ctrl+t reopens on the rows that
+// failed — but it says so, and says how to put them down. Without the second
+// step the only way out of a partial selection was X twice, which marks every
+// row on the page before clearing them.
+func TestEscLeavesTheReviewThenClearsTheMarks(t *testing.T) {
+	m := batchTestModel()
+	m.overlay = overlayBatchTitle
+	m.marked["session"] = true
+	m.batchResults = []titler.BatchResult{{SessionID: "session", Current: "x", Title: "y"}}
+
+	closed, _ := m.Update(escKey())
+	after := closed.(modelState)
+	if after.overlay != overlayNone {
+		t.Fatalf("esc did not close the review: overlay=%d", after.overlay)
+	}
+	if !after.marked["session"] {
+		t.Fatal("closing the review dropped the marks a retry needs")
+	}
+	if !strings.Contains(ansi.Strip(after.status), "esc") {
+		t.Fatalf("nothing says the marks are still there and how to clear them: %q", after.status)
+	}
+
+	cleared, _ := after.Update(escKey())
+	last := cleared.(modelState)
+	if len(last.marked) != 0 {
+		t.Fatalf("esc in the list did not clear the marks: %v", last.marked)
+	}
+	if last.status != "" {
+		t.Errorf("the mark status outlived the marks: %q", last.status)
+	}
+}
+
+// esc puts down one thing at a time, so a search still outranks a selection:
+// clearing marks first would leave the person looking at a filtered list they
+// just asked to leave.
+func TestEscClearsTheSearchBeforeTheMarks(t *testing.T) {
+	m := batchTestModel()
+	m.marked["session"] = true
+	m.searchQuery = "anything"
+
+	updated, _ := m.Update(escKey())
+	after := updated.(modelState)
+	if after.searchQuery != "" {
+		t.Fatal("esc did not clear the search first")
+	}
+	if !after.marked["session"] {
+		t.Fatal("esc took the marks with the search")
 	}
 }
 

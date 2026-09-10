@@ -802,6 +802,15 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchInput.SetValue("")
 			return dispatchPageLoadModel(m)
 		}
+		// A batch selection is the same kind of transient state as a search or
+		// an undo offer, and esc is how all of them are put down. Without this
+		// the only way to clear a partial selection was X twice — which marks
+		// every row on the page before it clears them.
+		if len(m.marked) > 0 {
+			clear(m.marked)
+			m.status = ""
+			return m, nil
+		}
 		m.lastArchived = nil
 		m.lastDeleted = nil
 		m.restoreDeleted = nil

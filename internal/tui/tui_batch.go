@@ -363,6 +363,12 @@ func (m modelState) updateBatchOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.overlay = overlayNone
 		m.resetBatch()
+		// The marks stay: the review is closed but the selection it was opened
+		// on is still what ctrl+t would reopen, which is how a frozen or failed
+		// row gets another attempt. The status says they are still there, and
+		// that esc again puts them down — without that the only way to clear a
+		// partial selection was X twice, which marks the whole page on the way.
+		m.status = m.markStatus()
 		m.layout()
 		return m, nil
 	case "e", "E":
