@@ -33,7 +33,7 @@ store, so you open it there and keep going.
 - **Native sessions:** resumes in the target agent's own format — not a pasted summary.
 - **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, Qwen Code, and Antigravity.
 - **One screen:** browse, search, preview, rename, archive, delete, relocate, and migrate without leaving the list.
-- **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects, or `g` to group the list by worktree.
+- **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects, or `g` to group the list by date or by worktree.
 - **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
 - **Local and fast:** reads native local stores; the private SQLite index under `~/.cache/another/` skips unchanged sessions on re-scan.
@@ -161,7 +161,13 @@ The TUI starts scoped to the current project. A Git repository's main worktree, 
 
 One project is not one directory. When the listed sessions really do span several — worktrees, a monorepo's subtrees — a directory column appears: a chip in the path's own color, like the agent's, carrying the part of the path below the project root (`.worktrees/delete-undo`, `packages/api`, and the root's own name for a session that started there) so the shared prefix never costs the title its width. The column is only as wide as the longest path it has to show; the rest goes to the title. A directory that no longer exists keeps its path and loses its color. With every session in one directory the column stays away.
 
-Press `g` to group that list by tree. Each worktree gets a heading in its own color, carrying the tree's name and how many sessions it holds, with its sessions beneath it; a session recorded in a subdirectory counts for the tree it sits in rather than starting a group of its own. Trees are ordered by their newest session, so the work you just left is still at the top, and inside a tree the order stays by recency. The cursor never rests on a heading, and grouping is a view of the page already loaded — no reload, and the session under the cursor stays under it. Grouped, the directory column drops what the heading already said and keeps only what it did not, such as the `internal/tui` a session actually ran in. A list holding one tree is left ungrouped.
+Press `g` to cycle three views of that list: ungrouped, by date, by worktree. The footer names the one it landed on. Grouping is a view of the page already loaded — no reload, and the session under the cursor stays under it — and the cursor never rests on a heading. A list holding one group is left ungrouped: a single band over everything names what every row already shares.
+
+By date, the list is banded into today, yesterday, earlier this week, earlier this month, and older. The bands are calendar days rather than 24-hour windows: 23:50 last night and 00:10 this morning are twenty minutes apart and belong to different days, which is the distinction "yesterday" is asked about. With the band carrying the day, the time column answers only what the band does not — how long ago inside today (`7m`, `13h`), the clock inside yesterday (`22:17`), the date further back (`Aug 1`) — so it costs five cells instead of twelve and hands the rest back to the title and the directory.
+
+By worktree, each tree gets a heading in its own color, carrying the tree's name and how many sessions it holds, with its sessions beneath it; a session recorded in a subdirectory counts for the tree it sits in rather than starting a group of its own. Trees are ordered by their newest session, so the work you just left is still at the top, and inside a tree the order stays by recency. There the directory column drops what the heading already said and keeps only what it did not, such as the `internal/tui` a session actually ran in. Date bands leave that column alone, because a band of time says when, not where.
+
+The footer carries only the keys every session uses, ending in `?`. That opens the full keymap, filtered to what the selected agent can natively do — an agent without an archive is never offered one. On a terminal too short to hold the whole thing it scrolls rather than dropping keys.
 
 ## Relocate
 
