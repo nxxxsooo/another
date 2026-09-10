@@ -322,7 +322,7 @@ func (m modelState) onRelocateDone(msg relocateDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.moved {
 		verb = txt.movedPrefix
 	}
-	m.status = okStyle.Render(verb + truncateLeft(util.TildePath(msg.directory), 48))
+	m.status = okStyle.Render(verb + elidePath(util.TildePath(msg.directory), 48))
 	if msg.err != nil {
 		m.status += mutedStyle.Render("  ·  " + msg.err.Error())
 	}

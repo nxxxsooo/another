@@ -514,7 +514,7 @@ func (m modelState) deleteView() string {
 	}
 	sm := m.selected.summary
 	title := truncateDisplay(sm.Title, 64)
-	project := truncateLeft(util.TildePath(sm.ProjectPath), 64)
+	project := elidePath(util.TildePath(sm.ProjectPath), 64)
 	cancel := chipActive.Render(txt.choiceCancel)
 	remove := chipMuted.Render(txt.choiceDelete)
 	if m.deleteChoice == 1 {
@@ -568,7 +568,7 @@ func (m modelState) relocateView() string {
 	return titleStyle.Render(txt.relocateModalTitle) + "\n" +
 		mutedStyle.Render(hint) + "\n\n" +
 		mutedStyle.Render(field(txt.fieldTitle)) + truncateDisplay(sm.Title, 64) + "\n" +
-		mutedStyle.Render(field(txt.fieldDirectory)) + truncateLeft(util.TildePath(sm.ProjectPath), 64) + "\n\n" +
+		mutedStyle.Render(field(txt.fieldDirectory)) + elidePath(util.TildePath(sm.ProjectPath), 64) + "\n\n" +
 		m.relocateInput.View() + "\n\n" + modes
 }
 

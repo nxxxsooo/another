@@ -242,7 +242,7 @@ func (d sessionDelegate) renderGroupHeader(h groupHeader, width int) string {
 	if room < 1 {
 		return ""
 	}
-	chip := projectChip(truncateLeft(label, room), ink, tint)
+	chip := projectChip(elidePath(label, room), ink, tint)
 	head := c.leftInset + strings.Repeat(" ", rowGutterWidth) + chip
 	count := mutedStyle.Render(sessionCountText(h.count))
 	// The rule is what makes a label a band. It is dropped rather than
