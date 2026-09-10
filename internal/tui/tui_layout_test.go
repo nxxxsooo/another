@@ -274,7 +274,7 @@ func TestGroupedRowsStartAtTheLeftEdge(t *testing.T) {
 // which is the only thing in the header that names a key.
 func TestHeaderDropsPiecesRatherThanTruncating(t *testing.T) {
 	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
-		useLanguage(t, lang)
+		previous := applyLanguage(lang)
 		for width := 40; width <= 200; width++ {
 			m := sampleModel(t, width, 24)
 			header := ansi.Strip(strings.Split(m.headerView(), "\n")[0])
@@ -288,6 +288,7 @@ func TestHeaderDropsPiecesRatherThanTruncating(t *testing.T) {
 				t.Fatalf("%s %d: header lost the target chip: %q", lang, width, header)
 			}
 		}
+		applyLanguage(previous)
 	}
 }
 
@@ -311,7 +312,7 @@ func TestHeaderPositionFollowsTheCursor(t *testing.T) {
 // and the scope along with it.
 func TestHeaderDoesNotReflowWhileScrolling(t *testing.T) {
 	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
-		useLanguage(t, lang)
+		previous := applyLanguage(lang)
 		m := sampleModel(t, 132, 32)
 		want := ansi.StringWidth(ansi.Strip(m.headerView()))
 		for i := range m.sessions.Items() {
@@ -322,6 +323,7 @@ func TestHeaderDoesNotReflowWhileScrolling(t *testing.T) {
 					lang, i+1, ansi.StringWidth(got), want, got)
 			}
 		}
+		applyLanguage(previous)
 	}
 }
 
@@ -375,7 +377,7 @@ func TestHeaderSaysWhenAPageIsCapped(t *testing.T) {
 // any layout — there it must scroll, not overflow.
 func TestHelpOverlayFitsEverySupportedTerminal(t *testing.T) {
 	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
-		useLanguage(t, lang)
+		previous := applyLanguage(lang)
 		for _, height := range []int{12, 14, 20, 24, 32, 50} {
 			for _, width := range []int{40, 60, 80, 100, 132, 200} {
 				m := sampleModel(t, width, height)
@@ -392,6 +394,7 @@ func TestHelpOverlayFitsEverySupportedTerminal(t *testing.T) {
 				}
 			}
 		}
+		applyLanguage(previous)
 	}
 }
 
@@ -446,7 +449,7 @@ func TestHelpKeyTogglesTheOverlay(t *testing.T) {
 // discoverable anywhere else.
 func TestFooterFitsAnOrdinaryTerminal(t *testing.T) {
 	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
-		useLanguage(t, lang)
+		previous := applyLanguage(lang)
 		m := layoutTestModel()
 		m.width, m.height = 80, 24
 		m.layout()
@@ -459,6 +462,7 @@ func TestFooterFitsAnOrdinaryTerminal(t *testing.T) {
 				t.Errorf("%s footer does not name %q: %q", lang, key, footer)
 			}
 		}
+		applyLanguage(previous)
 	}
 }
 
@@ -563,63 +567,15 @@ func TestMessageCountHasUnit(t *testing.T) {
 	}
 }
 
-// The target chip is anchored to the band's right edge. It used to sit between
-// the count and the scope, where every change to the most changeable thing on
-// the line moved the one chip that names a key.
-func TestTargetChipIsAnchoredToTheRightEdge(t *testing.T) {
+func TestWideHeaderKeepsTargetBesideSessionCount(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 100, 24
 	header := ansi.Strip(m.headerView())
 	if got := ansi.StringWidth(header); got > m.width {
 		t.Fatalf("header width = %d, want <= %d: %q", got, m.width, header)
 	}
-	if !strings.HasSuffix(header, ansi.Strip(txt.targetArrow)+" ") &&
-		!strings.HasSuffix(header, ansi.Strip(txt.targetArrow)) {
-		t.Fatalf("the target chip is not at the right edge: %q", header)
-	}
-}
-
-// Nothing the header says about the list may move the chip that names a key:
-// not the scope, not the count, not the cursor, not the language.
-func TestTargetChipDoesNotMoveWithTheListItDescribes(t *testing.T) {
-	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
-		t.Run(string(lang), func(t *testing.T) {
-			// Restored however this subtest ends. Put back by hand, a t.Fatal
-			// left the whole package speaking the wrong language and failed
-			// tests that had nothing to do with this one.
-			useLanguage(t, lang)
-			for _, width := range []int{80, 100, 132, 160, 200} {
-				want := -1
-				for _, scoped := range []bool{true, false} {
-					for _, total := range []int{1, 59, 361, 4000} {
-						for _, cursor := range []int{0, 4, 9} {
-							m := sampleModel(t, width, 24)
-							m.projectOnly = scoped
-							m.totalSessions = total
-							m.sessions.Select(cursor)
-							m.layout()
-							header := ansi.Strip(m.headerView())
-							chip := ansi.Strip(txt.targetArrow)
-							byteAt := strings.LastIndex(header, chip)
-							if byteAt < 0 {
-								t.Fatalf("%d: header lost the target chip: %q", width, header)
-							}
-							// Cells, not bytes: one Chinese character is three
-							// bytes and two columns, so a byte offset compares
-							// two different things across languages.
-							at := ansi.StringWidth(header[:byteAt])
-							if want < 0 {
-								want = at
-							}
-							if at != want {
-								t.Fatalf("%d: target chip moved to column %d, was %d (scope=%v total=%d cursor=%d): %q",
-									width, at, want, scoped, total, cursor, header)
-							}
-						}
-					}
-				}
-			}
-		})
+	if !strings.Contains(header, "│    "+txt.targetArrow) {
+		t.Fatalf("target action did not return beside the session count: %q", header)
 	}
 }
 

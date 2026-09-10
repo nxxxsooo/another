@@ -24,10 +24,11 @@ type uiText struct {
 	messageCountWidth int
 
 	// Header and scope.
-	sourceArrow  string
-	targetArrow  string
-	scopeProject string
-	scopeThis    string
+	sourceArrow    string
+	targetArrow    string
+	headerCountFmt string
+	scopeProject   string
+	scopeThis      string
 	// scopeAll names the project scope and sourceAll names the agent filter.
 	// Both were the bare word "all" in one chip style, so the header said it
 	// twice and meant something different each time.
@@ -327,6 +328,7 @@ var englishText = uiText{
 
 	sourceArrow:    "← source ",
 	targetArrow:    "target →",
+	headerCountFmt: "   │   %s   │   ",
 	scopeProject:   "this project",
 	scopeThis:      "this project",
 	scopeAll:       "all projects",
@@ -579,6 +581,7 @@ var chineseText = uiText{
 
 	sourceArrow:    "← 来源 ",
 	targetArrow:    "去向 →",
+	headerCountFmt: "   │   %s   │   ",
 	scopeProject:   "当前项目",
 	scopeThis:      "当前项目",
 	scopeAll:       "全部项目",

@@ -618,47 +618,47 @@ func (m modelState) headerView() string {
 	if sourceName == "all" {
 		sourceName = txt.sourceAll
 	}
-	width := m.bandWidth()
-	// The target chip is anchored to the band's right edge, so nothing in the
-	// header can push it. It used to sit between the count and the scope, and
-	// the count is the most changeable thing on the line: `1/59` in one scope
-	// and `12/200 of 361` in another, one cell wider every time the cursor
-	// passes a power of ten. Pressing `f` slid the one chip in the header that
-	// names a key, which is the chip that most needs to stay where the hand
-	// expects it. The two arrows now sit at the two edges they stand for.
+	left := brand + "  " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
 	right := targetChipStyle.Render(txt.targetArrow)
-	arrow := mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
-	position := mutedStyle.Render(m.listPosition())
-	separator := mutedStyle.Render("   ·   ")
+	width := m.bandWidth()
 
 	// Widest form that fits, rather than a width threshold. The threshold was
 	// a single number covering a line whose length depends on the language,
 	// the agent's name, the position, and the project path, so at some sizes
-	// it chose a layout that then had to be truncated.
-	//
-	// The brand goes before the count does: the window title already says
+	// it chose a layout that then had to be truncated — and what it cut was
+	// the target chip, the one thing in the header naming a key.
+	position := mutedStyle.Render(fmt.Sprintf(txt.headerCountFmt, m.listPosition()))
+	separator := mutedStyle.Render("   │   ")
+	// The brand goes before the count does. The window title already says
 	// which program this is, while the position is the only thing on screen
-	// saying how far the list goes.
+	// that says how far the list goes.
+	bare := mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
+	// Below that the padding goes before anything it separates does. The scope
+	// is worth more than the space around it: it decides which sessions are on
+	// screen at all, so it outlives the wide separators and the brand.
+	tight := mutedStyle.Render(" " + m.listPosition() + " ")
 	first := ""
 	for _, candidate := range []string{
-		brand + "  " + arrow + separator + position + separator + m.scopeView(true),
-		brand + "  " + arrow + separator + position + separator + m.scopeView(false),
-		arrow + separator + position + separator + m.scopeView(false),
-		arrow + " " + position + " " + m.scopeView(false),
-		arrow + " " + position,
-		arrow,
+		left + position + right + separator + m.scopeView(true),
+		left + position + right + separator + m.scopeView(false),
+		bare + position + right + separator + m.scopeView(false),
+		bare + position + right + " " + m.scopeView(false),
+		bare + tight + right + " " + m.scopeView(false),
+		bare + position + right,
 	} {
-		if ansi.StringWidth(candidate)+ansi.StringWidth(right)+2 <= width {
+		if ansi.StringWidth(candidate) <= width {
 			first = candidate
 			break
 		}
 	}
 	if first == "" {
-		// Not even the agent filter fits beside the chip. The chip names a key
-		// and keeps its whole width; what is left of the line is cut.
-		first = ansi.Truncate(arrow, max(0, width-ansi.StringWidth(right)-2), "…")
+		// No room for the brand or the count: the scope and the agent filter
+		// are what change what is on screen, and the target chip names a key.
+		compact := m.scopeView(false) + " " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
+		compact = ansi.Truncate(compact, max(0, width-ansi.StringWidth(right)-2), "…")
+		gap := max(2, width-ansi.StringWidth(compact)-ansi.StringWidth(right))
+		first = ansi.Truncate(compact+strings.Repeat(" ", gap)+right, width, "…")
 	}
-	first += strings.Repeat(" ", max(1, width-ansi.StringWidth(first)-ansi.StringWidth(right))) + right
 	lines := []string{first}
 	if m.searching {
 		lines = append(lines, m.searchInput.View())
