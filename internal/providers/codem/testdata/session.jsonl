@@ -1,0 +1,16 @@
+{"type":"header","schema_version":10,"session_id":"20260817T013841-fda3cceed8fd4a4a8f0bf2f1eb7497a1","started_at":"2026-08-17T09:38:41.870582+08:00","cwd":"/Users/example/work/demo","profile":"[active]","provider":"openai_compat","model":"codem-router/auto","linco_version":"0.8.4+2186.gd9d2bea.dirty","project_key":"personal_7628047890547477469"}
+{"type":"hook_execution","at":"2026-08-17T09:38:42.026500+08:00","event_name":"SessionStart","tool_name":"","handler_command":"node /Users/example/.codem/managed/plugins/session-hook.mjs","exit_code":0,"blocked":false,"elapsed_ms":56}
+{"type":"user_message","at":"2026-08-17T09:38:54.733382+08:00","content":"检查一下构建脚本"}
+{"type":"turn_request","at":"2026-08-17T09:38:54.746733+08:00","turn_index":0,"request_index":0,"model":"codem-router/auto","request_json":{"max_tokens":16384,"messages_count":3,"model":"codem-router/auto","system":"你是飞书 CodeM，飞书原生 AI 研发智能体。"}}
+{"type":"thinking","at":"2026-08-17T09:38:57.100000+08:00","content":"用户想让我检查构建脚本，先看看 Makefile。"}
+{"type":"assistant_text","at":"2026-08-17T09:38:59.758381+08:00","text":"我先看一下 Makefile。"}
+{"type":"tool_call","at":"2026-08-17T09:39:49.925406+08:00","id":"call_7b428099810a45cf98085d33","name":"run_bash","input":{"command":"cat Makefile"}}
+{"type":"tool_result","at":"2026-08-17T09:39:57.018486+08:00","id":"call_7b428099810a45cf98085d33","is_error":false,"content":"{\"exit_code\":0,\"stderr\":\"\",\"stdout\":\"build:\\n\\tgo build ./...\\n\"}"}
+{"type":"assistant_text","at":"2026-08-17T09:40:02.311000+08:00","text":"构建目标只有 `go build ./...`，没有测试步骤。"}
+{"type":"usage","at":"2026-08-17T09:40:02.320000+08:00","input_tokens":1200,"output_tokens":180}
+{"type":"turn_end","at":"2026-08-17T09:40:02.330000+08:00","stop_reason":"EndTurn"}
+{"type":"user_message","at":"2026-08-17T09:41:10.000000+08:00","content":"<system-reminder>\n<skill-instructions name=\"demo-skill\">\nThe following skill was loaded earlier in this task; treat its instructions as if the user pasted them. They remain in effect.\n</skill-instructions>\n</system-reminder>"}
+{"type":"header","schema_version":10,"session_id":"20260817T013841-fda3cceed8fd4a4a8f0bf2f1eb7497a1","started_at":"2026-08-18T10:02:00.000000+08:00","cwd":"/Users/example/work/demo","profile":"[active]","provider":"openai_compat","model":"codem-router/auto","linco_version":"0.8.5+2286.g265cd46.dirty","project_key":"personal_7628047890547477469"}
+{"type":"user_message","at":"2026-08-18T10:02:11.000000+08:00","content":"补一个 test 目标"}
+{"type":"assistant_text","at":"2026-08-18T10:02:20.000000+08:00","text":"已加上 `test: go test ./...`。"}
+{"type":"turn_end","at":"2026-08-18T10:02:20.500000+08:00","stop_reason":"EndTurn"}

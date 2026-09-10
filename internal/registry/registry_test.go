@@ -64,8 +64,8 @@ func TestNewOrderedPutsSavedProvidersFirstAndKeepsTheRest(t *testing.T) {
 
 func TestRegistryProviders(t *testing.T) {
 	reg := registry.New()
-	if len(reg.All()) < 10 {
-		t.Fatalf("expected at least 10 providers, got %d", len(reg.All()))
+	if len(reg.All()) < 11 {
+		t.Fatalf("expected at least 11 providers, got %d", len(reg.All()))
 	}
 	if _, err := reg.Get("codex"); err != nil {
 		t.Fatal(err)

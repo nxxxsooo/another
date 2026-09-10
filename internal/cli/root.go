@@ -66,7 +66,7 @@ func (a *App) Root() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "another",
 		Short:         "Hop AI coding sessions between agents",
-		Long:          "List, show, and migrate conversation sessions across Claude Code, Codex, Cursor, OpenCode, CommandCode, Hermes, and more.",
+		Long:          "List, show, and migrate conversation sessions across Claude Code, Codex, Cursor, OpenCode, CommandCode, CodeM, Hermes, and more.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version,

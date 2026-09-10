@@ -35,7 +35,7 @@ var twinTheme = theme{
 // spent on meaning: brand purple is "source", mint is "target" and "done", red
 // is "danger", pale cyan is "info". An agent painted in one of those reads as a
 // state instead of a name. What is left is divided by hue rather than by brand
-// fidelity, so ten labels stay apart in one dense column; a brand color is only
+// fidelity, so eleven labels stay apart in one dense column; a brand color is only
 // used where it happens to land in a free hue. OpenCode and OpenCode 2 share a
 // hue at two lightnesses because they are the same agent's two generations.
 var providerColors = map[string]lipgloss.Color{
@@ -45,6 +45,7 @@ var providerColors = map[string]lipgloss.Color{
 	"opencode":    charm(charmtone.Pony),    // magenta
 	"opencode2":   charm(charmtone.Cheeky),  // magenta, lighter
 	"commandcode": charm(charmtone.Zest),    // lime
+	"codem":       charm(charmtone.Guac),    // green
 	"hermes":      charm(charmtone.Malibu),  // azure
 	"pi":          charm(charmtone.Turtle),  // cyan
 	"qwen":        charm(charmtone.Mauve),   // violet

@@ -9,6 +9,7 @@ import (
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/providers/agy"
 	"github.com/nxxxsooo/another/internal/providers/claude"
+	"github.com/nxxxsooo/another/internal/providers/codem"
 	"github.com/nxxxsooo/another/internal/providers/codex"
 	"github.com/nxxxsooo/another/internal/providers/commandcode"
 	"github.com/nxxxsooo/another/internal/providers/cursor"
@@ -69,6 +70,7 @@ func newRegistry(allowed map[string]bool) *Registry {
 		opencode.New(),
 		opencode2.New(),
 		commandcode.New(),
+		codem.New(),
 		hermes.New(),
 		pi.New(),
 		qwen.New(),
@@ -149,6 +151,7 @@ func CLICommand(id string) string {
 		"opencode":    "opencode",
 		"opencode2":   "opencode2",
 		"commandcode": "commandcode",
+		"codem":       "codem",
 		"hermes":      "hermes",
 		"pi":          "pi",
 		"qwen":        "qwen",
@@ -171,7 +174,7 @@ func CLIAvailable(id string) bool {
 // providers, not deprecated ones; the tier only decides how prominently setup
 // offers them, so a list of ten does not bury the six that are tested.
 var compatibilityAdapters = map[string]bool{
-	"cursor": true, "opencode": true, "commandcode": true, "hermes": true,
+	"cursor": true, "opencode": true, "commandcode": true, "codem": true, "hermes": true,
 }
 
 // IsCompatibilityAdapter reports whether an agent belongs to the second tier.
@@ -194,6 +197,7 @@ func NormalizeID(id string) string {
 		"opencode": "opencode", "open-code": "opencode",
 		"opencode2": "opencode2", "open-code-2": "opencode2", "o2": "opencode2",
 		"commandcode": "commandcode", "command-code": "commandcode",
+		"codem": "codem", "code-m": "codem", "lark-codem": "codem", "feishu-codem": "codem",
 		"hermes": "hermes", "hermes-agent": "hermes",
 		"pi": "pi", "pi-coding-agent": "pi",
 		"qwen": "qwen", "qwen-code": "qwen", "qwencode": "qwen",

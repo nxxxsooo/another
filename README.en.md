@@ -31,7 +31,7 @@ store, so you open it there and keep going.
 ## Features
 
 - **Native sessions:** resumes in the target agent's own format — not a pasted summary.
-- **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, Qwen Code, and Antigravity.
+- **Eleven agents:** Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, CodeM, Hermes, Qwen Code, and Antigravity.
 - **One screen:** browse, search, preview, rename, archive, delete, relocate, and migrate without leaving the list.
 - **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects, or `g` to group the list by date or by worktree.
 - **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
@@ -184,7 +184,7 @@ Every relocation is read back before it is reported: OpenCode 2 compares the dir
 
 OpenCode and OpenCode 2 are deliberately separate. They use different commands, databases, schemas, and service lifecycles.
 
-The continuously tested set is **Pi, OpenCode 2, Claude Code, Codex, Antigravity, and Qwen Code**; these six enter every release regression pass. Cursor, OpenCode, CommandCode, and Hermes remain compatibility adapters, but are not promised an end-to-end maintainer test on every release. First-run setup does not auto-select agents from detected binaries or stale local data; the user chooses what another indexes and exposes.
+The continuously tested set is **Pi, OpenCode 2, Claude Code, Codex, Antigravity, and Qwen Code**; these six enter every release regression pass. Cursor, OpenCode, CommandCode, CodeM, and Hermes remain compatibility adapters, but are not promised an end-to-end maintainer test on every release. First-run setup does not auto-select agents from detected binaries or stale local data; the user chooses what another indexes and exposes.
 
 The session list marks each agent with a fixed-width color chip. Agent names differ by up to nine characters, and set as words they leave a ragged column where a short name reads as a lesser agent and every row starts its title somewhere else. The source and target pickers show the chip next to the full name, which is where this table is read from.
 
@@ -197,6 +197,7 @@ The session list marks each agent with a fixed-width color chip. Agent names dif
 | OpenCode | `opencode` | `OPC` | `opencode --session <id>` | ✓ | ✓ | — | ✓ |
 | OpenCode 2 | `opencode2` | `OC2` | `opencode2 --session <id>` | ✓ | — | ✓ | ✓ |
 | CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | — | ✓ |
+| CodeM | `codem` | `CDM` | `codem --resume <id>` | — | — | — | ✓ |
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
 | Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | ✓ | — | ✓ |
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | ✓ |

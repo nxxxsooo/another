@@ -8,7 +8,7 @@ web
 
 ## Users
 
-Primary: developers who run two or more coding-agent CLIs on the same machine and the same projects — Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, Hermes, Qwen Code, and Antigravity. They reach for `another` when they hit a rate limit, want a different model mid-task, or an agent is stuck and they do not want to lose the conversation. They also accumulate hundreds to thousands of past sessions across those tools with no single place to find, rename, or clean them up.
+Primary: developers who run two or more coding-agent CLIs on the same machine and the same projects — Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, CodeM, Hermes, Qwen Code, and Antigravity. They reach for `another` when they hit a rate limit, want a different model mid-task, or an agent is stuck and they do not want to lose the conversation. They also accumulate hundreds to thousands of past sessions across those tools with no single place to find, rename, or clean them up.
 
 Secondary: the maintainer, who uses it daily. This is a real user, not a persona.
 
@@ -39,7 +39,7 @@ A neighboring tool could copy the browser. It could not truthfully copy "the oth
 
 ## Capabilities and Constraints
 
-- Ten providers: `pi`, `codex`, `claude-code`, `cursor`, `opencode`, `opencode2`, `commandcode`, `hermes`, `qwen`, `agy`. OpenCode V1 and OpenCode 2 are parallel providers, not versions of one — isolated databases, CLIs, and schemas.
+- Eleven providers: `pi`, `codex`, `claude-code`, `cursor`, `opencode`, `opencode2`, `commandcode`, `codem`, `hermes`, `qwen`, `agy`. OpenCode V1 and OpenCode 2 are parallel providers, not versions of one — isolated databases, CLIs, and schemas.
 - Actions: browse, search (FTS5 over titles and normalized message text), preview, native resume, cross-agent migrate, rename, archive and unarchive, delete, JSON export and import.
 - The TUI opens scoped to the current Git project, combining its main worktree and all registered linked worktrees; `f` switches visibly between that project and all projects. Non-Git directories use an exact current-directory scope.
 - Capability is per provider and deliberately unequal. Unsupported actions are reported, never simulated.

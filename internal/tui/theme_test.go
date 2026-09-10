@@ -73,7 +73,7 @@ func TestProviderColorsAreDistinctAndAvoidRoleColors(t *testing.T) {
 func TestProviderColorCoversEveryKnownAgent(t *testing.T) {
 	for _, id := range []string{
 		"claude-code", "codex", "cursor", "opencode", "opencode2",
-		"commandcode", "hermes", "pi", "qwen", "agy",
+		"commandcode", "codem", "hermes", "pi", "qwen", "agy",
 	} {
 		if _, ok := providerColors[id]; !ok {
 			t.Errorf("provider %s has no explicit color", id)

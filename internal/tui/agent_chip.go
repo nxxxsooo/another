@@ -49,6 +49,7 @@ var agentCodes = map[string]string{
 	"opencode":    "OPC",
 	"opencode2":   "OC2",
 	"commandcode": "CMD",
+	"codem":       "CDM",
 	"hermes":      "HRM",
 	"pi":          "PI",
 	"qwen":        "QWN",
