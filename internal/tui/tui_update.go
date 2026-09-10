@@ -838,11 +838,12 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Grouping is a view of the page already loaded, not another query:
 		// every session the list can show is in hand, so the bands appear
 		// without a round trip and the cursor keeps the session it was on.
-		m.grouped = !m.grouped
+		m.groupMode = (m.groupMode + 1) % groupModes
 		selected, _ := m.sessions.SelectedItem().(sessionItem)
 		m.sessions.SetItems(m.groupedItems())
 		m.selectSession(selected.summary.ID)
 		m.applySessionDelegate()
+		m.status = groupModeStatus(m.groupMode)
 		return m, nil
 	case "enter":
 		// Enter is the default action on the current object: resume it in its

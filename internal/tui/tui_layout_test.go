@@ -248,6 +248,26 @@ func TestHelpShowsOnlySelectedAgentCapabilities(t *testing.T) {
 	}
 }
 
+// Grouping empties the path column — every row under a band shares the band's
+// directory — which is the largest the leftover width ever gets. The margin is
+// measured from the band, so what no column can use ends the row early instead
+// of starting it late, and the bands line up with the sessions beneath them.
+func TestGroupedRowsStartAtTheLeftEdge(t *testing.T) {
+	m := sampleModel(t, 132, 30)
+	m.groupMode = groupTree
+	m.ungrouped = sampleSessions()
+	m.sessions.SetItems(m.groupedItems())
+	m.layout()
+	for _, row := range sessionRows(m.View()) {
+		if row == "" {
+			continue
+		}
+		if indent := len(row) - len(strings.TrimLeft(row, " ")); indent > rowGutterWidth+2 {
+			t.Fatalf("a grouped row starts %d cells in: %q", indent, row)
+		}
+	}
+}
+
 // The header drops whole pieces rather than cutting one in half. It used to
 // switch layouts at a fixed width, and the line it switched to was longer than
 // that width in some languages — so the truncation landed on the target chip,

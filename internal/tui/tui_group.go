@@ -3,6 +3,7 @@ package tui
 import (
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/lipgloss"
@@ -22,7 +23,12 @@ type groupHeader struct {
 	// base is what the label is read against, the same base the project column
 	// uses, so a header says ".worktrees/list-layout" rather than repeating the
 	// project root every band already shares.
-	base  string
+	base string
+	// label names a band that is not a directory — the date bands, where the
+	// heading is "Today" rather than a path. When it is set the header carries
+	// no colour of its own: a hue in this list means a project, and a band of
+	// time borrowing one would claim to be a place.
+	label string
 	count int
 }
 
@@ -69,6 +75,20 @@ func groupKeyFor(path string, roots []string) string {
 // A single group is returned ungrouped: one band over the whole list names
 // something every row already shares, and costs a line to say it.
 func groupSessions(items []list.Item, roots []string, base string) []list.Item {
+	return groupSessionsBy(items,
+		func(row sessionItem) string { return groupKeyFor(row.summary.ProjectPath, roots) },
+		func(key string, count int) groupHeader {
+			return groupHeader{path: key, base: base, count: count}
+		})
+}
+
+// groupSessionsBy is the banding both modes are built from: it clusters rows by
+// a key without reordering the groups themselves, so whatever order the page
+// arrived in survives into the bands.
+//
+// A single group is returned ungrouped: one band over the whole list names
+// something every row already shares, and costs a line to say it.
+func groupSessionsBy(items []list.Item, key func(sessionItem) string, head func(string, int) groupHeader) []list.Item {
 	order := make([]string, 0, 8)
 	members := make(map[string][]list.Item, 8)
 	for _, item := range items {
@@ -78,19 +98,19 @@ func groupSessions(items []list.Item, roots []string, base string) []list.Item {
 			// regrouping an already grouped list must produce the same list.
 			continue
 		}
-		key := groupKeyFor(row.summary.ProjectPath, roots)
-		if _, seen := members[key]; !seen {
-			order = append(order, key)
+		k := key(row)
+		if _, seen := members[k]; !seen {
+			order = append(order, k)
 		}
-		members[key] = append(members[key], item)
+		members[k] = append(members[k], item)
 	}
 	if len(order) < 2 {
 		return items
 	}
 	out := make([]list.Item, 0, len(items)+len(order))
-	for _, key := range order {
-		rows := members[key]
-		out = append(out, groupHeader{path: key, base: base, count: len(rows)})
+	for _, k := range order {
+		rows := members[k]
+		out = append(out, head(k, len(rows)))
 		out = append(out, rows...)
 	}
 	return out
@@ -155,10 +175,14 @@ func (m modelState) projectBase() string {
 // turning grouping off restores true recency order rather than the order the
 // bands left behind.
 func (m modelState) groupedItems() []list.Item {
-	if !m.grouped {
+	switch m.groupMode {
+	case groupTree:
+		return groupSessions(m.ungrouped, m.groupRoots(), m.projectBase())
+	case groupDate:
+		return groupSessionsByDate(m.ungrouped, time.Now())
+	default:
 		return m.ungrouped
 	}
-	return groupSessions(m.ungrouped, m.groupRoots(), m.projectBase())
 }
 
 // setSessionItems is the one way a page of sessions enters the list: it records
@@ -234,7 +258,12 @@ func headerSkipUpward(key string) bool {
 func (d sessionDelegate) renderGroupHeader(h groupHeader, width int) string {
 	c := d.columns(width)
 	label, ink, tint := txt.groupNoProject, twinTheme.textSubtle, twinTheme.border
-	if h.path != "" {
+	switch {
+	case h.label != "":
+		// A date band is not a place. Hue in this list means a project, so a
+		// stretch of time takes the neutral chip rather than borrowing one.
+		label = h.label
+	case h.path != "":
 		label = util.SanitizeDisplay(projectCellText(h.path, h.base))
 		ink, tint = chipColors(projectColor(h.path))
 	}
@@ -242,7 +271,13 @@ func (d sessionDelegate) renderGroupHeader(h groupHeader, width int) string {
 	if room < 1 {
 		return ""
 	}
-	chip := projectChip(elidePath(label, room), ink, tint)
+	// A path is shortened from the middle so its root survives; a band's name
+	// is a phrase, and a phrase is cut at the end like any other sentence.
+	shown := elidePath(label, room)
+	if h.label != "" {
+		shown = ansi.Truncate(label, room, "…")
+	}
+	chip := projectChip(shown, ink, tint)
 	head := c.leftInset + strings.Repeat(" ", rowGutterWidth) + chip
 	count := mutedStyle.Render(sessionCountText(h.count))
 	// The rule is what makes a label a band. It is dropped rather than

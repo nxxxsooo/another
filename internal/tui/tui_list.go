@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -93,7 +94,12 @@ type sessionDelegate struct {
 	// above it already did. groupRoots are the trees to read against, and are
 	// empty outside Git, where every directory is its own group and the column
 	// therefore falls silent entirely.
-	bands      bool
+	bands bool
+	// dateBands is set while the bands are stretches of time rather than
+	// trees. The band then says which day a row is from, so the column beside
+	// it only has to say where in that day — and a project path is still the
+	// row's own, not something the heading already said.
+	dateBands  bool
 	groupRoots []string
 	// projectW is what the loaded rows actually need, chip included. The
 	// column is capped by the pane, but it is never wider than the longest
@@ -152,6 +158,9 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	gutter := cursor + mark + " "
 
 	rel := util.FormatRelative(it.summary.UpdatedAt)
+	if d.dateBands {
+		rel = compactTime(it.summary.UpdatedAt, time.Now())
+	}
 	msgs := ""
 	if it.summary.MessageCount > 0 {
 		msgs = fmt.Sprintf(txt.messageCountFmt, it.summary.MessageCount)
@@ -190,10 +199,15 @@ const rowGutterWidth = 3
 
 func (d sessionDelegate) columns(width int) rowColumns {
 	const provW = agentChipWidth
-	timeW := relativeTimeWidth
-	if d.timeW > relativeTimeWidth {
-		timeW = d.timeW
+	// The ten-cell floor holds the widest relative stamp, so a list of recent
+	// sessions is laid out the same however few of them there are. Under date
+	// bands the stamps are short by design and the floor would be the column,
+	// so there it is measured and nothing else.
+	timeW := d.timeW
+	if !d.dateBands && timeW < relativeTimeWidth {
+		timeW = relativeTimeWidth
 	}
+	timeW = max(1, timeW)
 	// The message column is sized by the language rather than by a constant:
 	// "128条" and "128 msg" are not the same number of cells, and a column cut
 	// to the shorter of the two would truncate the count it exists to show.
@@ -454,14 +468,22 @@ const relativeTimeWidth = 10
 //
 // It reads every loaded row rather than the visible ones, so filtering cannot
 // move the title's edge while it is being read.
-func timeColumnWidth(items []list.Item) int {
+func timeColumnWidth(items []list.Item, dateBands bool) int {
 	widest := relativeTimeWidth
+	if dateBands {
+		widest = 0
+	}
+	now := time.Now()
 	for _, item := range items {
 		row, ok := item.(sessionItem)
 		if !ok {
 			continue
 		}
-		widest = max(widest, ansi.StringWidth(util.FormatRelative(row.summary.UpdatedAt)))
+		stamp := util.FormatRelative(row.summary.UpdatedAt)
+		if dateBands {
+			stamp = compactTime(row.summary.UpdatedAt, now)
+		}
+		widest = max(widest, ansi.StringWidth(stamp))
 	}
 	return widest
 }
@@ -709,7 +731,11 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 	// Grouped, the band already names the tree, so most rows have nothing left
 	// to say and the column is only worth its width if some row sits below its
 	// own tree — Lark Base hides the field it groups by for the same reason.
-	bands := hasGroupHeaders(items)
+	headers := hasGroupHeaders(items)
+	// Only tree bands stand in for the path column. A date band says when, so
+	// every row still owes its own directory.
+	bands := headers && m.groupMode == groupTree
+	dateBands := headers && m.groupMode == groupDate
 	roots := m.groupRoots()
 	showProject := !m.projectOnly || spread
 	if bands {
@@ -720,10 +746,11 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 		showProject: showProject,
 		projectBase: base,
 		bands:       bands,
+		dateBands:   dateBands,
 		groupRoots:  roots,
 		spacing:     m.sessionSpacing,
 		projectW:    projectColumnWidth(items, base, bands, roots),
-		timeW:       timeColumnWidth(items),
+		timeW:       timeColumnWidth(items, dateBands),
 		titleW:      titleColumnWidth(items),
 	}
 }

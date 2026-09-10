@@ -232,7 +232,8 @@ func TestLayoutSample(t *testing.T) {
 		defer applyLanguage(applyLanguage(i18n.Lang(lang)))
 	}
 
-	grouped := os.Getenv("LAYOUT_SAMPLE_GROUPED") != ""
+	groupModeNames := map[string]int{"tree": groupTree, "date": groupDate}
+	groupMode := groupModeNames[os.Getenv("LAYOUT_SAMPLE_GROUPED")]
 
 	overlayName := os.Getenv("LAYOUT_SAMPLE_OVERLAY")
 	if overlayName == "" {
@@ -250,10 +251,11 @@ func TestLayoutSample(t *testing.T) {
 			for _, width := range sampleNumbers("LAYOUT_SAMPLE_WIDTHS", []int{100, 132, 160, 200, 240}) {
 				height := sampleNumbers("LAYOUT_SAMPLE_HEIGHT", []int{32})[0]
 				m := sampleModel(t, width, height)
-				if grouped {
-					m.grouped = true
+				if groupMode != groupNone {
+					m.groupMode = groupMode
 					m.ungrouped = sampleSessions()
 					m.sessions.SetItems(m.groupedItems())
+					m.applySessionDelegate()
 					m.layout()
 				}
 				if which != overlayNone {

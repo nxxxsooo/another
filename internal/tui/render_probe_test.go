@@ -91,7 +91,7 @@ func TestRenderProbe(t *testing.T) {
 	// Grouping is what this repository's own sessions look like sorted into
 	// their worktrees, which is the case it was built for.
 	grouped := shown
-	grouped.grouped = true
+	grouped.groupMode = groupTree
 	grouped.setSessionItems(items)
 	grouped.layout()
 	fmt.Println("======== list (grouped by tree)")

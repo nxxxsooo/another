@@ -36,7 +36,7 @@ func groupModel(rows ...list.Item) modelState {
 	m.projectScope = util.ProjectScope{
 		CWD: groupRoot, Root: groupRoot, Git: true, Worktrees: groupWorktrees(),
 	}
-	m.grouped = true
+	m.groupMode = groupTree
 	m.setSessionItems(rows)
 	return m
 }
@@ -196,7 +196,7 @@ func keyFor(name string) tea.KeyMsg {
 // session under the cursor rather than whatever now sits at its old index.
 func TestGroupToggleKeepsTheSelectedSession(t *testing.T) {
 	m := groupModel()
-	m.grouped = false
+	m.groupMode = groupNone
 	m.setSessionItems([]list.Item{
 		groupRow("a", groupLayout, 1),
 		groupRow("b", groupRoot, 5),
@@ -207,7 +207,7 @@ func TestGroupToggleKeepsTheSelectedSession(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = updated.(modelState)
 
-	if !m.grouped || !hasGroupHeaders(m.sessions.Items()) {
+	if m.groupMode != groupTree || !hasGroupHeaders(m.sessions.Items()) {
 		t.Fatal("g did not group the list")
 	}
 	if row, ok := m.sessions.SelectedItem().(sessionItem); !ok || row.summary.ID != "d" {
@@ -216,8 +216,13 @@ func TestGroupToggleKeepsTheSelectedSession(t *testing.T) {
 
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = updated.(modelState)
-	if m.grouped || hasGroupHeaders(m.sessions.Items()) {
-		t.Fatal("g did not ungroup the list")
+	if m.groupMode != groupDate {
+		t.Fatalf("g did not move on to the date bands: mode %d", m.groupMode)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = updated.(modelState)
+	if m.groupMode != groupNone || hasGroupHeaders(m.sessions.Items()) {
+		t.Fatal("g did not come back round to an ungrouped list")
 	}
 	if ids := strings.Join(sessionIDs(m.sessions.Items()), " "); ids != "a b c d" {
 		t.Fatalf("ungrouping did not restore recency order: %q", ids)
@@ -250,7 +255,7 @@ func TestGroupedRowsDropTheColumnTheBandReplaces(t *testing.T) {
 		groupRow("a", groupLayout, 1),
 		groupRow("b", groupRoot, 5),
 	)
-	ungrouped.grouped = false
+	ungrouped.groupMode = groupNone
 	ungrouped.sessions.SetItems(ungrouped.groupedItems())
 	if !sessionDelegateFor(&ungrouped).showProject {
 		t.Fatal("an ungrouped project spanning two trees hides what tells them apart")
@@ -337,7 +342,7 @@ func TestGroupedLayoutSample(t *testing.T) {
 	defer lipgloss.SetColorProfile(previous)
 
 	for _, width := range sampleNumbers("LAYOUT_SAMPLE_WIDTHS", []int{100, 132, 160, 200}) {
-		for _, grouped := range []bool{false, true} {
+		for _, grouped := range []int{groupNone, groupTree, groupDate} {
 			m := layoutTestModel()
 			m.status = ""
 			m.cwd = sampleRepo
@@ -345,7 +350,7 @@ func TestGroupedLayoutSample(t *testing.T) {
 			m.projectScope = util.ProjectScope{
 				CWD: sampleRepo, Root: sampleRepo, Git: true, Worktrees: sampleWorktreeRoots(),
 			}
-			m.grouped = grouped
+			m.groupMode = grouped
 			m.setSessionItems(sampleWorktreeSessions())
 			m.totalSessions = len(m.ungrouped)
 			updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 32})
@@ -413,7 +418,7 @@ func TestGroupingOutsideGitFallsBackToDirectories(t *testing.T) {
 	m.cwd = "/notes"
 	m.projectOnly = true
 	m.projectScope = util.ProjectScope{CWD: "/notes", Root: "/notes"}
-	m.grouped = true
+	m.groupMode = groupTree
 	m.setSessionItems([]list.Item{
 		groupRow("a", "/notes/one", 1),
 		groupRow("b", "/notes/two", 5),

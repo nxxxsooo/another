@@ -46,6 +46,17 @@ const (
 	overlayHelp
 )
 
+// The list is either flat, banded by the tree the work happened in, or banded
+// by when it happened. One key cycles them, in that order: off is where a new
+// user starts, trees are what a project scope is usually asking about, and
+// dates are what a list spanning months is.
+const (
+	groupNone = iota
+	groupTree
+	groupDate
+	groupModes
+)
+
 type modelState struct {
 	reg    *registry.Registry
 	idx    *index.Store
@@ -139,11 +150,12 @@ type modelState struct {
 	movedAway       []string
 	projectScope    util.ProjectScope
 	projectOnly     bool
-	// grouped clusters the list by tree: one band per worktree, sessions under
-	// the band they started in. ungrouped is the page as the index returned it,
-	// in recency order, kept so turning grouping off restores that order rather
-	// than the order the bands left behind.
-	grouped      bool
+	// groupMode bands the list: by tree, one band per worktree with sessions
+	// under the band they started in, or by date, one band per stretch of time.
+	// ungrouped is the page as the index returned it, in recency order, kept so
+	// turning grouping off restores that order rather than the order the bands
+	// left behind.
+	groupMode    int
 	ungrouped    []list.Item
 	pageGen      uint64
 	lastResume   string

@@ -44,6 +44,18 @@ type uiText struct {
 	// record. They are still sessions, and a band with no label would read as
 	// a rendering fault rather than as the one group that cannot be named.
 	groupNoProject string
+	// The date bands, and the line the g key leaves behind naming the mode it
+	// moved to. Three states cannot be told apart on sight the way two can.
+	bandToday     string
+	bandYesterday string
+	bandThisWeek  string
+	bandThisMonth string
+	bandOlder     string
+	bandUnknown   string
+	compactNow    string
+	groupOff      string
+	groupByTree   string
+	groupByDate   string
 
 	// Empty states.
 	emptySearch  string
@@ -324,6 +336,16 @@ var englishText = uiText{
 	positionFmt:    "%d/%d",
 	positionCapFmt: "%d/%d of %d",
 	groupNoProject: "no directory",
+	bandToday:      "Today",
+	bandYesterday:  "Yesterday",
+	bandThisWeek:   "Earlier this week",
+	bandThisMonth:  "Earlier this month",
+	bandOlder:      "Older",
+	bandUnknown:    "undated",
+	compactNow:     "now",
+	groupOff:       "  Not grouped",
+	groupByTree:    "  Grouped by directory",
+	groupByDate:    "  Grouped by date",
 
 	emptySearch:       "\n  No session matches",
 	emptyProject:      "\n  No sessions in this project\n  Press f to see all",
@@ -480,7 +502,7 @@ var englishText = uiText{
 	helpKeyMarkAll:   "mark everything shown",
 	helpKeyBatch:     "retitle the marked ones",
 	helpKeyQuit:      "quit",
-	helpKeyGroup:     "group by directory",
+	helpKeyGroup:     "group: off, dir, date",
 
 	setupAgentsTitle:      "Choose your agents",
 	setupAgentsHint:       "Space toggles an agent; Shift+↑↓ reorders them.",
@@ -567,6 +589,16 @@ var chineseText = uiText{
 	positionFmt:    "%d/%d",
 	positionCapFmt: "%d/%d，共 %d",
 	groupNoProject: "无目录",
+	bandToday:      "今天",
+	bandYesterday:  "昨天",
+	bandThisWeek:   "本周早些时候",
+	bandThisMonth:  "本月早些时候",
+	bandOlder:      "更早",
+	bandUnknown:    "无日期",
+	compactNow:     "刚刚",
+	groupOff:       "  不分组",
+	groupByTree:    "  按目录分组",
+	groupByDate:    "  按日期分组",
 
 	emptySearch:       "\n  没有匹配的会话",
 	emptyProject:      "\n  当前项目没有会话\n  按 f 查看全部",
@@ -720,7 +752,7 @@ var chineseText = uiText{
 	helpKeyMarkAll:       "标记列出的全部会话",
 	helpKeyBatch:         "给标记的会话重起标题",
 	helpKeyQuit:          "退出",
-	helpKeyGroup:         "按目录分组",
+	helpKeyGroup:         "分组：关 / 目录 / 日期",
 
 	helpRelocate:         " 输入目录 · tab 复制/移动 · enter 确认 · esc 取消",
 	helpRelocateForkOnly: " 输入目录 · enter 复制 · esc 取消",
