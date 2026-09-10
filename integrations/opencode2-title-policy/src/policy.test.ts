@@ -1,6 +1,16 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { fallbackTitle, finalizeTitle, isRefusal, loadLanguage, parsePartialTitle, titlePrompt } from "./policy.ts"
+import {
+  cleanGenerated,
+  fallbackTitle,
+  finalizeTitle,
+  isRefusal,
+  loadLanguage,
+  parsePartialTitle,
+  repairPrompt,
+  repairTitle,
+  titlePrompt,
+} from "./policy.ts"
 
 test("prompt is strict and language-specific", () => {
   assert.match(titlePrompt("en"), /Feature Design Fix Optimize Release Explore Docs Research/)
@@ -74,4 +84,32 @@ test("an already dated title is left alone", () => {
 
 test("missing config defaults to auto", () => {
   assert.equal(loadLanguage({ HOME: "/definitely/missing" }), "auto")
+})
+
+// The repair reads a model's answer directly instead of a rename event, so it
+// has to survive the packaging a model puts around one line of text.
+test("a generated answer is read through its packaging", () => {
+  assert.equal(cleanGenerated("Fix｜Cancel batch naming"), "Fix｜Cancel batch naming")
+  assert.equal(cleanGenerated('\n"Fix｜Cancel batch naming"\n'), "Fix｜Cancel batch naming")
+  assert.equal(cleanGenerated("```\n修复｜取消批量命名\n```"), "修复｜取消批量命名")
+  assert.equal(cleanGenerated("「修复｜取消批量命名」"), "修复｜取消批量命名")
+  assert.equal(cleanGenerated("   \n\n"), "")
+})
+
+test("a repaired session is dated, and an unusable answer is declined", () => {
+  const created = Date.parse("2026-09-04T23:30:00Z")
+  assert.equal(repairTitle("Fix｜Cancel batch naming", created, "en"), "0905｜Fix｜Cancel batch naming")
+  assert.equal(repairTitle(" KEEP ", created, "zh"), "0905｜探索｜未命名会话")
+  // Declined, not forced: the session stays nameless and the next idle retries.
+  assert.equal(repairTitle("Here is a good title for you!", created, "auto"), undefined)
+  assert.equal(repairTitle("", created, "auto"), undefined)
+  // The repair must not re-date a title that already carries a date.
+  assert.equal(repairTitle("0905｜修复｜取消批量命名", created, "zh"), undefined)
+})
+
+test("the repair prompt carries the policy and the opening message", () => {
+  const prompt = repairPrompt("zh", `  ${"话".repeat(3000)}  `)
+  assert.match(prompt, /功能 设计 修复 优化 发布 探索 文档 研究/)
+  assert.match(prompt, /Name the session that begins with this message/)
+  assert.ok(prompt.endsWith("话".repeat(2000)), "the opening message is cut, not carried whole")
 })
