@@ -96,6 +96,17 @@ func TestRenderProbe(t *testing.T) {
 	grouped.layout()
 	fmt.Println("======== list (grouped by tree)")
 	fmt.Println(grouped.View())
+	dated := shown
+	dated.groupMode = groupDate
+	dated.setSessionItems(items)
+	dated.layout()
+	fmt.Println("======== list (grouped by date)")
+	fmt.Println(dated.View())
+	keys := shown
+	keys.overlay = overlayHelp
+	keys.layout()
+	fmt.Println("======== keys")
+	fmt.Println(keys.View())
 	shown.overlay = overlaySource
 	shown.layout()
 	fmt.Println("======== source picker")
