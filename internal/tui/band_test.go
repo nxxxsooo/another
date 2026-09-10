@@ -117,21 +117,19 @@ func TestBandGrowsWithTheTerminal(t *testing.T) {
 	}
 }
 
-// The rows stop at the band, but the footer is a run of words with nothing
-// lining up under it. Cutting the keymap short to respect the rows' boundary
-// would hide keys to buy an alignment no one reads, so it may run on to the
-// terminal's right edge.
-func TestFooterMayRunPastTheBand(t *testing.T) {
+// The footer sits inside the band, under the rows it describes. It was once
+// allowed to run past the band's right edge, because a keymap assembled from
+// every supported action did not fit inside it — that keymap is the ? overlay
+// now, and the line that replaced it lines up with the pane.
+func TestFooterStaysInsideTheBand(t *testing.T) {
 	m := bandTestModel(t, 240, 30)
 	if got := m.bandWidth() + m.bandLeft(); got >= 240 {
 		t.Fatalf("band already reaches the edge at %d; this test proves nothing", got)
 	}
-	footer := ansi.Strip(m.footerView())
-	if ansi.StringWidth(footer) <= m.bandWidth() {
-		t.Skip("this footer is short enough to fit the band; nothing to prove here")
-	}
-	if got := ansi.StringWidth(footer); got > 240-m.bandLeft() {
-		t.Fatalf("footer width = %d, past the terminal's own right edge at %d", got, 240-m.bandLeft())
+	for _, line := range strings.Split(ansi.Strip(m.footerView()), "\n") {
+		if got := ansi.StringWidth(line); got > m.bandWidth() {
+			t.Fatalf("footer line is %d cells, past the band at %d: %q", got, m.bandWidth(), line)
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/model"
 )
 
@@ -24,8 +26,14 @@ import (
 // argument has to be reproducible. TestRenderProbe reads the real index and
 // shows what this machine has today; this shows the same page to everyone, so
 // two people can disagree about the same screen.
+// The ages are relative to the moment the sample is rendered, not to a date
+// written down here. FormatRelative reads the real clock, so a fixture pinned
+// to a calendar date drifted every day it was not looked at: a row written as
+// seven minutes old printed "13h ago" the next morning and "3d ago" the next
+// week, and the page two people were meant to disagree about was a different
+// page for each of them.
 func sampleSessions() []list.Item {
-	now := time.Date(2026, 9, 9, 18, 0, 0, 0, time.UTC)
+	now := time.Now()
 	rows := []struct {
 		provider, title, path string
 		messages              int
@@ -65,6 +73,19 @@ func sampleModel(t *testing.T, width, height int) modelState {
 	m.sessions.SetItems(sampleSessions())
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return updated.(modelState)
+}
+
+// sampleOverlays are the panels the sample can be asked to draw over the list.
+// A modal is sized against the terminal it is drawn in, and its worst case is
+// the smallest one it still has to fit inside, so it needs looking at the same
+// way a row does.
+var sampleOverlays = map[string]int{
+	"none":     overlayNone,
+	"help":     overlayHelp,
+	"source":   overlaySource,
+	"target":   overlayTarget,
+	"delete":   overlayDelete,
+	"relocate": overlayRelocate,
 }
 
 // widestBlankRun is how far the eye has to travel across nothing to get from
@@ -204,19 +225,62 @@ func TestLayoutSample(t *testing.T) {
 	restore := contentBandPercent
 	defer func() { contentBandPercent = restore }()
 
+	// Column widths are measured per language — "128条" and "128 msg" are not
+	// the same number of cells — so a layout reviewed in one language says
+	// only that much about the other.
+	if lang := os.Getenv("LAYOUT_SAMPLE_LANG"); lang != "" {
+		defer applyLanguage(applyLanguage(i18n.Lang(lang)))
+	}
+
+	overlayName := os.Getenv("LAYOUT_SAMPLE_OVERLAY")
+	if overlayName == "" {
+		overlayName = "none"
+	}
+	which, ok := sampleOverlays[overlayName]
+	if !ok {
+		t.Fatalf("LAYOUT_SAMPLE_OVERLAY=%q is not one of %v", overlayName, sampleOverlayNames())
+	}
+
 	for _, percent := range sampleNumbers("LAYOUT_SAMPLE_PERCENTS", []int{contentBandPercent}) {
 		contentBandPercent = percent
 		for _, width := range sampleNumbers("LAYOUT_SAMPLE_WIDTHS", []int{100, 132, 160, 200, 240}) {
-			m := sampleModel(t, width, 32)
+			height := sampleNumbers("LAYOUT_SAMPLE_HEIGHT", []int{32})[0]
+			m := sampleModel(t, width, height)
+			if which != overlayNone {
+				m = sampleWithOverlay(m, which)
+			}
 			widest := 0
 			for _, row := range sessionRows(m.View()) {
 				widest = max(widest, widestBlankRun(row))
 			}
-			fmt.Printf("\n%s\nterminal %d · band %d · margin %d · widest blank run in a row %d\n%s\n%s\n",
-				strings.Repeat("=", width), width, m.bandWidth(), m.bandLeft(), widest,
-				strings.Repeat("=", width), m.View())
+			view := m.View()
+			fmt.Printf("\n%s\nterminal %dx%d · band %d · margin %d · overlay %s · view %d lines · widest blank run in a row %d\n%s\n%s\n",
+				strings.Repeat("=", width), width, height, m.bandWidth(), m.bandLeft(), overlayName,
+				lipgloss.Height(view), widest, strings.Repeat("=", width), view)
 		}
 	}
+}
+
+func sampleOverlayNames() []string {
+	names := make([]string, 0, len(sampleOverlays))
+	for name := range sampleOverlays {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// sampleWithOverlay opens a panel over the sample list, filling in the state
+// that panel reads so it draws the way it would in the running browser.
+func sampleWithOverlay(m modelState, which int) modelState {
+	if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
+		sel := it
+		m.selected = &sel
+		m.targets.SetItems(targetItems(m.reg, it.summary.Provider))
+	}
+	m.overlay = which
+	m.layout()
+	return m
 }
 
 // sampleNumbers reads a comma-separated list of widths or percentages from the

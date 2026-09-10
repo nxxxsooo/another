@@ -203,27 +203,143 @@ func TestHeaderAndEmptyViewExposeProjectScope(t *testing.T) {
 	}
 }
 
+// helpActions is every action the ? overlay would offer for the selected
+// session. It reads the groups rather than the rendered box because the
+// question here is which actions are advertised at all, and a short terminal
+// scrolls the panel rather than dropping one.
+func helpActions(m modelState) string {
+	left, right := m.keyHelpColumns()
+	var b strings.Builder
+	for _, set := range [][]keyGroup{left, right} {
+		for _, g := range set {
+			for _, row := range g.rows {
+				b.WriteString(row.key + "\t" + row.label + "\n")
+			}
+		}
+	}
+	return b.String()
+}
+
+// The keymap advertises an action only where the selected agent implements it
+// natively. This moved out of the footer when the footer became a fixed line,
+// but it is the same contract: another never offers a lifecycle action it
+// would have to emulate.
 func TestHelpShowsOnlySelectedAgentCapabilities(t *testing.T) {
 	m := layoutTestModel()
-	if help := m.help(); !strings.Contains(help, txt.helpListRename) || !strings.Contains(help, txt.helpListArchive) || !strings.Contains(help, txt.helpListDelete) {
-		t.Fatalf("Codex help hides supported actions: %q", help)
+	if help := helpActions(m); !strings.Contains(help, txt.helpListRename) || !strings.Contains(help, txt.helpListArchive) || !strings.Contains(help, txt.helpListDelete) {
+		t.Fatalf("Codex keys hide supported actions: %q", help)
 	}
 
 	it := m.sessions.SelectedItem().(sessionItem)
 	it.summary.Provider = "agy"
 	m.sessions.SetItems([]list.Item{it})
-	if help := m.help(); strings.Contains(help, txt.helpListArchive) {
-		t.Fatalf("Antigravity help advertises an archive it keeps no state for: %q", help)
+	if help := helpActions(m); strings.Contains(help, txt.helpListArchive) {
+		t.Fatalf("Antigravity keys advertise an archive it keeps no state for: %q", help)
 	} else if !strings.Contains(help, txt.helpListRename) || !strings.Contains(help, txt.helpListDelete) {
-		t.Fatalf("Antigravity help hides supported rename and delete: %q", help)
+		t.Fatalf("Antigravity keys hide supported rename and delete: %q", help)
 	}
 
 	it.summary.Provider = "qwen"
 	m.sessions.SetItems([]list.Item{it})
-	if help := m.help(); strings.Contains(help, txt.helpListRelocate) {
-		t.Fatalf("Qwen Code help advertises a relocate it has no native move for: %q", help)
+	if help := helpActions(m); strings.Contains(help, txt.helpListRelocate) {
+		t.Fatalf("Qwen Code keys advertise a relocate it has no native move for: %q", help)
 	} else if !strings.Contains(help, txt.helpListRename) || !strings.Contains(help, txt.helpListArchive) || !strings.Contains(help, txt.helpListDelete) {
-		t.Fatalf("Qwen Code help hides supported rename, archive and delete: %q", help)
+		t.Fatalf("Qwen Code keys hide supported rename, archive and delete: %q", help)
+	}
+}
+
+// The keymap exists because keys were being hidden, so a keymap that runs off
+// the bottom or the side of the screen is the same bug wearing a border. The
+// browser supports terminals down to 40x12, where the full list cannot fit at
+// any layout — there it must scroll, not overflow.
+func TestHelpOverlayFitsEverySupportedTerminal(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		previous := applyLanguage(lang)
+		for _, height := range []int{12, 14, 20, 24, 32, 50} {
+			for _, width := range []int{40, 60, 80, 100, 132, 200} {
+				m := sampleModel(t, width, height)
+				m.overlay = overlayHelp
+				m.layout()
+				view := m.View()
+				if got := lipgloss.Height(view); got > height {
+					t.Errorf("%s %dx%d: the keymap is %d lines tall", lang, width, height, got)
+				}
+				for i, line := range strings.Split(view, "\n") {
+					if got := ansi.StringWidth(line); got > width {
+						t.Errorf("%s %dx%d: line %d is %d cells wide", lang, width, height, i, got)
+					}
+				}
+			}
+		}
+		applyLanguage(previous)
+	}
+}
+
+// Scrolling stops where the keymap ends. An offset that ran past it would show
+// a panel that answers ↑ with nothing.
+func TestHelpScrollStopsAtTheEnd(t *testing.T) {
+	m := sampleModel(t, 80, 14)
+	m.overlay = overlayHelp
+	m.layout()
+	limit := m.helpMaxScroll()
+	if limit == 0 {
+		t.Fatal("a 14-line terminal should not fit the whole keymap")
+	}
+	for i := 0; i < limit+10; i++ {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(modelState)
+	}
+	if m.helpOffset != limit {
+		t.Fatalf("scrolled to %d, past the last line at %d", m.helpOffset, limit)
+	}
+	for i := 0; i < limit+10; i++ {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+		m = updated.(modelState)
+	}
+	if m.helpOffset != 0 {
+		t.Fatalf("scrolling back left the keymap at %d", m.helpOffset)
+	}
+}
+
+// ? opens the keymap and closes it again, and the list is exactly where it was.
+func TestHelpKeyTogglesTheOverlay(t *testing.T) {
+	m := sampleModel(t, 100, 32)
+	m.sessions.Select(3)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	opened := updated.(modelState)
+	if opened.overlay != overlayHelp {
+		t.Fatalf("? did not open the keymap: overlay %d", opened.overlay)
+	}
+	updated, _ = opened.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	closed := updated.(modelState)
+	if closed.overlay != overlayNone {
+		t.Fatalf("? did not close the keymap: overlay %d", closed.overlay)
+	}
+	if closed.sessions.Index() != 3 {
+		t.Fatalf("the keymap moved the cursor to %d", closed.sessions.Index())
+	}
+}
+
+// The footer is a fixed line now, and the whole point of fixing it is that it
+// survives an ordinary terminal intact. Assembled from capabilities it reached
+// 175 cells and was cut at 100 — losing search and batch, which are not
+// discoverable anywhere else.
+func TestFooterFitsAnOrdinaryTerminal(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		previous := applyLanguage(lang)
+		m := layoutTestModel()
+		m.width, m.height = 80, 24
+		m.layout()
+		footer := ansi.Strip(m.help())
+		if got := ansi.StringWidth(footer); got > 80 {
+			t.Errorf("%s footer is %d cells, past an 80-column terminal: %q", lang, got, footer)
+		}
+		for _, key := range []string{"/", "?"} {
+			if !strings.Contains(footer, key) {
+				t.Errorf("%s footer does not name %q: %q", lang, key, footer)
+			}
+		}
+		applyLanguage(previous)
 	}
 }
 
@@ -976,10 +1092,10 @@ func TestShiftOnlyWidensTheSameVerb(t *testing.T) {
 	m.width, m.height = 100, 30
 	m.layout()
 
-	help := m.help()
-	for _, key := range []string{txt.helpListArchive, " · x ", " · X "} {
+	help := helpActions(m)
+	for _, key := range []string{txt.helpListArchive, "x\t", "X\t"} {
 		if !strings.Contains(help, key) {
-			t.Errorf("footer does not name %q: %q", key, help)
+			t.Errorf("the keymap does not name %q: %q", key, help)
 		}
 	}
 

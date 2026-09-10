@@ -40,6 +40,10 @@ const (
 	overlayRename
 	overlayRelocate
 	overlayBatchTitle
+	// overlayHelp is the full keymap. The footer carries only the keys used
+	// on every session; the rest are here, so a narrow terminal stops
+	// deciding which actions the person is allowed to find out about.
+	overlayHelp
 )
 
 type modelState struct {
@@ -60,6 +64,9 @@ type modelState struct {
 	sourceIdx    int
 	overlay      int
 	deleteChoice int // 0 cancel, 1 delete
+	// helpOffset scrolls the ? overlay on a terminal too short to hold the
+	// whole keymap. It resets every time the overlay opens.
+	helpOffset int
 
 	// relocateMove selects move over the default fork. It resets every time
 	// the overlay opens: carrying a session out of its directory is the

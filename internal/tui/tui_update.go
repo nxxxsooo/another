@@ -618,6 +618,26 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.layout()
 		return m, nil
+	case "?":
+		// The key that opens the keymap closes it again. Anywhere else it
+		// falls through, so a "?" typed into a rename stays text.
+		if m.overlay == overlayHelp {
+			m.overlay = overlayNone
+			m.layout()
+			return m, nil
+		}
+	case "up", "down", "pgup", "pgdown":
+		if m.overlay == overlayHelp {
+			step := 1
+			if msg.String() == "pgup" || msg.String() == "pgdown" {
+				step = 5
+			}
+			if msg.String() == "up" || msg.String() == "pgup" {
+				step = -step
+			}
+			m.helpOffset = min(max(0, m.helpOffset+step), m.helpMaxScroll())
+			return m, nil
+		}
 	case "left", "right":
 		if m.overlay == overlayDelete {
 			m.deleteChoice = 1 - m.deleteChoice
@@ -763,6 +783,11 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput.Focus()
 		m.layout()
 		return m, textinput.Blink
+	case "?":
+		m.overlay = overlayHelp
+		m.helpOffset = 0
+		m.layout()
+		return m, tea.Batch(tea.HideCursor, tea.ClearScreen)
 	case "esc":
 		m.err = ""
 		if m.lastResume != "" {

@@ -33,13 +33,13 @@ func relocateReadyModel(t *testing.T, providerID string) modelState {
 	return m
 }
 
-// The footer must never advertise an action the selected agent cannot do.
+// The keymap must never advertise an action the selected agent cannot do.
 func TestHelpOffersRelocateOnlyWhereItIsNative(t *testing.T) {
-	if help := relocateReadyModel(t, "pi").help(); !strings.Contains(help, txt.helpListRelocate) {
-		t.Fatalf("pi help hides relocate: %q", help)
+	if help := helpActions(relocateReadyModel(t, "pi")); !strings.Contains(help, txt.helpListRelocate) {
+		t.Fatalf("pi keys hide relocate: %q", help)
 	}
-	if help := relocateReadyModel(t, "codex").help(); strings.Contains(help, txt.helpListRelocate) {
-		t.Fatalf("Codex help advertises a relocate it cannot do: %q", help)
+	if help := helpActions(relocateReadyModel(t, "codex")); strings.Contains(help, txt.helpListRelocate) {
+		t.Fatalf("Codex keys advertise a relocate it cannot do: %q", help)
 	}
 }
 

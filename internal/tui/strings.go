@@ -164,9 +164,12 @@ type uiText struct {
 	freezeRenameUnsupported  string
 	freezeSuggestUnsupported string
 
-	// The footer key hints. The list hint is assembled from a base, one
-	// fragment per action the selected provider actually supports, and a
-	// tail, so an unsupported action is never advertised.
+	// The footer key hints. The list footer is a fixed line of the keys used
+	// on every session, because a footer assembled from every supported
+	// action outgrew an ordinary terminal and was truncated — which hid
+	// search and batch rather than the actions it was lengthened for. The
+	// provider-dependent keys moved to the ? overlay, where they are still
+	// filtered by what the selected provider actually supports.
 	helpSource           string
 	helpTarget           string
 	helpPreview          string
@@ -186,9 +189,32 @@ type uiText struct {
 	helpListArchive      string
 	helpListRelocate     string
 	helpListDelete       string
-	helpListTail         string
 	helpRelocate         string
 	helpRelocateForkOnly string
+
+	// The ? overlay. Keys themselves are literal and stay untranslated; only
+	// what they do is a sentence. The group names are what the person is
+	// trying to do, not which part of the code handles the key.
+	helpModalTitle   string
+	helpModalHint    string
+	helpModalClose   string
+	helpModalMoreFmt string
+	helpGroupBrowse  string
+	helpGroupSession string
+	helpGroupBatch   string
+	helpKeyMove      string
+	helpKeySource    string
+	helpKeyScope     string
+	helpKeySearch    string
+	helpKeyRefresh   string
+	helpKeyOpen      string
+	helpKeyMigrate   string
+	helpKeyPreview   string
+	helpKeyMark      string
+	helpKeyMarkAll   string
+	helpKeyBatch     string
+	helpKeyQuit      string
+	helpKeyGroup     string
 
 	// Setup, page one.
 	setupAgentsTitle string
@@ -414,14 +440,34 @@ var englishText = uiText{
 	helpResume:           " enter open that agent · c copy command · esc keep browsing · q quit",
 	helpArchived:         " a undo archive · esc keep it · ↑↓ keep browsing",
 	helpDeleted:          " u undo delete · esc keep it deleted · ↑↓ keep browsing",
-	helpListBase:         " ← source · ↑↓ session · enter open · → other agent · space preview · f scope · g group",
-	helpListRename:       " · ctrl+r rename",
-	helpListArchive:      " · a archive",
-	helpListRelocate:     " · m relocate",
-	helpListDelete:       " · ctrl+d delete",
-	helpListTail:         " · x mark · X all · ctrl+t batch · / search · r refresh",
+	helpListBase:         " ↑↓ session · enter open · → other agent · space preview · / search · ? keys",
+	helpListRename:       "rename the session",
+	helpListArchive:      "archive it",
+	helpListRelocate:     "send to another directory",
+	helpListDelete:       "delete it",
 	helpRelocate:         " type a directory · tab fork/move · enter confirm · esc cancel",
 	helpRelocateForkOnly: " type a directory · enter fork · esc cancel",
+
+	helpModalTitle:   "Keys",
+	helpModalHint:    "Actions the selected agent cannot do are left out.",
+	helpModalClose:   " ↑↓ scroll · esc close",
+	helpModalMoreFmt: "↑↓  %d more",
+	helpGroupBrowse:  "Browse",
+	helpGroupSession: "This session",
+	helpGroupBatch:   "Several at once",
+	helpKeyMove:      "move through the list",
+	helpKeySource:    "filter by agent",
+	helpKeyScope:     "project or all projects",
+	helpKeySearch:    "search titles and text",
+	helpKeyRefresh:   "refresh",
+	helpKeyOpen:      "open it where it lives",
+	helpKeyMigrate:   "carry it to another agent",
+	helpKeyPreview:   "preview the conversation",
+	helpKeyMark:      "mark this one",
+	helpKeyMarkAll:   "mark everything shown",
+	helpKeyBatch:     "retitle the marked ones",
+	helpKeyQuit:      "quit",
+	helpKeyGroup:     "group by directory",
 
 	setupAgentsTitle:      "Choose your agents",
 	setupAgentsHint:       "Space toggles an agent; Shift+↑↓ reorders them.",
@@ -634,12 +680,32 @@ var chineseText = uiText{
 	helpResume:           " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出",
 	helpArchived:         " a 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览",
 	helpDeleted:          " u 撤销删除 · esc 保持删除 · ↑↓ 继续浏览",
-	helpListBase:         " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围 · g 分组",
-	helpListRename:       " · ctrl+r 重命名",
-	helpListArchive:      " · a 归档",
-	helpListRelocate:     " · m 换目录",
-	helpListDelete:       " · ctrl+d 删除",
-	helpListTail:         " · x 标记 · X 全选 · ctrl+t 批量 · / 搜索 · r 刷新",
+	helpListBase:         " ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · / 搜索 · ? 快捷键",
+	helpListRename:       "重命名会话",
+	helpListArchive:      "归档",
+	helpListRelocate:     "换到另一个目录",
+	helpListDelete:       "删除",
+	helpModalTitle:       "快捷键",
+	helpModalHint:        "当前 agent 不支持的操作不会列出。",
+	helpModalClose:       " ↑↓ 滚动 · esc 关闭",
+	helpModalMoreFmt:     "↑↓  还有 %d 行",
+	helpGroupBrowse:      "浏览",
+	helpGroupSession:     "当前会话",
+	helpGroupBatch:       "批量",
+	helpKeyMove:          "上下选会话",
+	helpKeySource:        "按 agent 筛选",
+	helpKeyScope:         "本项目或全部项目",
+	helpKeySearch:        "搜索标题和消息",
+	helpKeyRefresh:       "刷新",
+	helpKeyOpen:          "在原 agent 里打开",
+	helpKeyMigrate:       "迁移到另一个 agent",
+	helpKeyPreview:       "预览对话",
+	helpKeyMark:          "标记这一条",
+	helpKeyMarkAll:       "标记列出的全部会话",
+	helpKeyBatch:         "给标记的会话重起标题",
+	helpKeyQuit:          "退出",
+	helpKeyGroup:         "按目录分组",
+
 	helpRelocate:         " 输入目录 · tab 复制/移动 · enter 确认 · esc 取消",
 	helpRelocateForkOnly: " 输入目录 · enter 复制 · esc 取消",
 

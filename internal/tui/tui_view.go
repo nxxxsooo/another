@@ -188,6 +188,9 @@ func (m modelState) View() string {
 	case overlayBatchTitle:
 		box := modalStyle.Render(m.batchView())
 		pane = overlay(pane, box, width)
+	case overlayHelp:
+		box := modalStyle.Width(m.helpModalWidth()).Render(m.helpModalView())
+		pane = overlay(pane, box, width)
 	}
 	return centerBlock(lipgloss.JoinVertical(lipgloss.Left, header, pane, footer), m.bandLeft(), m.width)
 }
@@ -298,6 +301,200 @@ func (m modelState) suggestionLine() string {
 		return ""
 	}
 	return "\n" + ansi.Truncate(line, inner, "…")
+}
+
+// keyRow is one line of the ? overlay: a literal key and what it does. The key
+// is not translated; only the sentence beside it is.
+type keyRow struct{ key, label string }
+
+type keyGroup struct {
+	name string
+	rows []keyRow
+}
+
+const (
+	// keyLabelGap separates a key from its sentence, and helpColumnGap
+	// separates the overlay's two columns. The second is wider so the columns
+	// read as two lists rather than as four ragged ones.
+	keyLabelGap   = 2
+	helpColumnGap = 4
+)
+
+// keyHelpColumns is the whole keymap, split into the two columns the overlay
+// draws. The session group is filtered by what the selected provider can
+// actually do — the same capability question the footer used to ask, moved to
+// the one surface with room to answer it.
+func (m modelState) keyHelpColumns() (left, right []keyGroup) {
+	session := []keyRow{
+		{"enter", txt.helpKeyOpen},
+		{"→", txt.helpKeyMigrate},
+		{"space", txt.helpKeyPreview},
+	}
+	caps := m.selectedSessionCapabilities()
+	if caps.rename {
+		session = append(session, keyRow{"ctrl+r", txt.helpListRename})
+	}
+	if caps.archive {
+		session = append(session, keyRow{"a", txt.helpListArchive})
+	}
+	if caps.relocate {
+		session = append(session, keyRow{"m", txt.helpListRelocate})
+	}
+	if caps.delete {
+		session = append(session, keyRow{"ctrl+d", txt.helpListDelete})
+	}
+	left = []keyGroup{
+		{txt.helpGroupBrowse, []keyRow{
+			{"↑↓", txt.helpKeyMove},
+			{"←", txt.helpKeySource},
+			{"f", txt.helpKeyScope},
+			{"g", txt.helpKeyGroup},
+			{"/", txt.helpKeySearch},
+			{"r", txt.helpKeyRefresh},
+			{"q", txt.helpKeyQuit},
+		}},
+		{txt.helpGroupBatch, []keyRow{
+			{"x", txt.helpKeyMark},
+			{"X", txt.helpKeyMarkAll},
+			{"ctrl+t", txt.helpKeyBatch},
+		}},
+	}
+	return left, []keyGroup{{txt.helpGroupSession, session}}
+}
+
+// keyWidth is the widest key in these groups. It is measured across both
+// columns at once so the sentences start in the same place on both sides.
+func keyWidth(groups ...[]keyGroup) int {
+	widest := 0
+	for _, set := range groups {
+		for _, g := range set {
+			for _, row := range g.rows {
+				widest = max(widest, ansi.StringWidth(row.key))
+			}
+		}
+	}
+	return widest
+}
+
+// keyColumnWidth is what a column needs: its widest row, or its widest group
+// name when a heading is longer than anything under it.
+func keyColumnWidth(groups []keyGroup, keyW int) int {
+	width := 0
+	for _, g := range groups {
+		if len(g.rows) == 0 {
+			continue
+		}
+		width = max(width, ansi.StringWidth(g.name))
+		for _, row := range g.rows {
+			width = max(width, keyW+keyLabelGap+ansi.StringWidth(row.label))
+		}
+	}
+	return width
+}
+
+// renderKeyGroups draws one column in exactly colW cells. Every line is padded
+// so the column beside it starts on a straight edge whatever the labels do.
+func renderKeyGroups(groups []keyGroup, keyW, colW int) string {
+	labelW := max(1, colW-keyW-keyLabelGap)
+	var lines []string
+	for _, g := range groups {
+		if len(g.rows) == 0 {
+			continue
+		}
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, mutedStyle.Render(g.name))
+		for _, row := range g.rows {
+			lines = append(lines, accentStyle.Render(padRight(row.key, keyW))+
+				strings.Repeat(" ", keyLabelGap)+ansi.Truncate(row.label, labelW, "…"))
+		}
+	}
+	for i := range lines {
+		lines[i] = padRight(lines[i], colW)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// helpBodyWidth is how wide the ? overlay's content may be. It is allowed past
+// the ordinary modal cap because it holds a two-column table rather than
+// prose: that cap exists to make a sentence wrap, and folding a keymap into
+// one tall column is the thing this overlay is avoiding.
+func helpBodyWidth(width int) int { return max(24, width-10) }
+
+// paneOuterHeight is how many lines the list pane occupies, border included.
+// It is what an overlay has to fit inside, and it is derived here rather than
+// recomputed at each call site so the view and the layout cannot disagree
+// about how much room a modal has.
+func (m modelState) paneOuterHeight() int {
+	frameH := paneStyle.GetVerticalFrameSize()
+	return max(frameH+1, m.height-lipgloss.Height(m.headerView())-lipgloss.Height(m.footerView()))
+}
+
+// helpModalView draws the keymap. Two columns when they fit, one when they do
+// not, and scrolled when the terminal is shorter than the list of keys — this
+// browser supports terminals down to 40x12, where no keymap fits at all, and a
+// panel that silently ran off the bottom would be the bug it was written to
+// fix rather than a smaller version of the fix.
+func (m modelState) helpModalView() string {
+	head := titleStyle.Render(txt.helpModalTitle) + m.modalSubtitle(txt.helpModalHint)
+	lines, room := m.helpBody()
+	if len(lines) > room {
+		offset := min(max(0, m.helpOffset), len(lines)-room)
+		hidden := len(lines) - room - offset
+		lines = lines[offset : offset+room]
+		if hidden > 0 {
+			lines = append(lines, mutedStyle.Render(fmt.Sprintf(txt.helpModalMoreFmt, hidden)))
+		}
+	}
+	return head + "\n\n" + strings.Join(lines, "\n")
+}
+
+// helpBody lays the keymap out for this terminal and reports how many of its
+// lines there is room to draw. Two columns when they fit side by side, one
+// when they do not.
+func (m modelState) helpBody() (lines []string, room int) {
+	left, right := m.keyHelpColumns()
+	keyW := keyWidth(left, right)
+	leftW, rightW := keyColumnWidth(left, keyW), keyColumnWidth(right, keyW)
+	available := helpBodyWidth(m.bandWidth())
+
+	body := ""
+	if leftW+helpColumnGap+rightW <= available {
+		body = lipgloss.JoinHorizontal(lipgloss.Top,
+			renderKeyGroups(left, keyW, leftW),
+			strings.Repeat(" ", helpColumnGap),
+			renderKeyGroups(right, keyW, rightW))
+	} else {
+		// Stacked, the session keys come first: they are what the person is
+		// looking at when they open this.
+		stacked := append(append([]keyGroup{}, right...), left...)
+		body = renderKeyGroups(stacked, keyW, min(available, keyColumnWidth(stacked, keyW)))
+	}
+
+	head := titleStyle.Render(txt.helpModalTitle) + m.modalSubtitle(txt.helpModalHint)
+	// The head, the blank line under it, and the modal's own border and
+	// padding are all spoken for before a single key is drawn.
+	lines = strings.Split(body, "\n")
+	room = max(1, m.paneOuterHeight()-modalStyle.GetVerticalFrameSize()-lipgloss.Height(head)-1)
+	if len(lines) > room {
+		room = max(1, room-1) // one line goes to the more-indicator
+	}
+	return lines, room
+}
+
+// helpMaxScroll is how far the keymap can be moved at this size. It is zero
+// whenever the whole thing already fits, which is what stops ↑↓ from scrolling
+// a panel that has nothing further to show.
+func (m modelState) helpMaxScroll() int {
+	lines, room := m.helpBody()
+	return max(0, len(lines)-room)
+}
+
+// helpModalWidth sizes the box around that content. lipgloss Width() counts
+// content plus padding, so the border is not part of the number.
+func (m modelState) helpModalWidth() int {
+	return lipgloss.Width(m.helpModalView()) + modalStyle.GetHorizontalPadding()
 }
 
 // field pads a label in the delete confirmation so the values line up. The
@@ -476,11 +673,12 @@ func (m modelState) footerView() string {
 		}
 	}
 	lines = append(lines, footerStyle.Render(m.help()))
-	// The footer starts on the band's left edge but is allowed to run to the
-	// right edge of the terminal. It is a run of words, not a column: nothing
-	// lines up under it, and cutting the keymap short to respect a boundary
-	// the rows need would hide the keys to pay for an alignment nobody reads.
-	width := max(m.bandWidth(), m.width-m.bandLeft())
+	// The footer stays inside the band, so it starts and ends where the pane
+	// does. It used to be allowed past the right edge because the keymap was
+	// assembled from every supported action and did not fit otherwise — the
+	// keys moved to the ? overlay, and what is left is short enough to line up
+	// with the rows it describes.
+	width := m.bandWidth()
 	for i := range lines {
 		lines[i] = ansi.Truncate(lines[i], width, "…")
 	}
@@ -519,6 +717,8 @@ func (m modelState) help() string {
 			return txt.helpRelocate
 		}
 		return txt.helpRelocateForkOnly
+	case overlayHelp:
+		return txt.helpModalClose
 	case overlayBatchTitle:
 		if m.batchModelPicking {
 			return txt.helpBatchModelList
@@ -543,21 +743,11 @@ func (m modelState) help() string {
 	if m.lastDeleted != nil {
 		return txt.helpDeleted
 	}
-	help := txt.helpListBase
-	caps := m.selectedSessionCapabilities()
-	if caps.rename {
-		help += txt.helpListRename
-	}
-	if caps.archive {
-		help += txt.helpListArchive
-	}
-	if caps.relocate {
-		help += txt.helpListRelocate
-	}
-	if caps.delete {
-		help += txt.helpListDelete
-	}
-	return help + txt.helpListTail
+	// A fixed line. Assembled from capabilities it reached 175 cells, which no
+	// ordinary terminal can show: the truncation fell exactly on the tail, so
+	// the keys it grew to advertise pushed search and batch off the screen
+	// instead. The provider-dependent keys are in the ? overlay now.
+	return txt.helpListBase
 }
 
 // selectedDeleteIsReversible reports whether deleting the session in the open
