@@ -301,7 +301,13 @@ func columnGap(spare, gaps int) int {
 // A var rather than a const so the layout sample can render candidate values
 // side by side, the same way it does for the band proportion. A spacing
 // argument is settled by looking at the alternatives, not by picking a number.
-var maxColumnGap = 6
+//
+// It was six. Four gaps at six cells spent 24 of a 132-cell row on emptiness
+// between columns, and the row read as five islands rather than one record.
+// Narrowing it does not close the padding inside the title column — that is a
+// separate thing — but the cells it frees go to the path, which was truncated
+// on every ordinary terminal and now usually is not.
+var maxColumnGap = 3
 
 const (
 	// titleColumnCap and projectColumnCap are how much a column can use even
