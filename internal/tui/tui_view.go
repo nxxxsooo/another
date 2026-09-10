@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -577,15 +578,31 @@ func (m modelState) relocateView() string {
 // always the same, and the capped form says both rather than promising a list
 // that cannot be scrolled to.
 func (m modelState) listPosition() string {
-	loaded := len(m.sessions.Items())
-	if loaded == 0 {
+	// Bands are counted out. They are rows in the list, but "3 of 13" where
+	// three of the thirteen are headings counts something nobody is looking at.
+	sessions, at := 0, 0
+	for i, item := range m.sessions.Items() {
+		if _, ok := item.(sessionItem); !ok {
+			continue
+		}
+		sessions++
+		if i == m.sessions.Index() {
+			at = sessions
+		}
+	}
+	if sessions == 0 {
 		return fmt.Sprintf(txt.sessionCountFmt, m.totalSessions)
 	}
-	at := m.sessions.Index() + 1
-	if m.totalSessions > loaded {
-		return fmt.Sprintf(txt.positionCapFmt, at, loaded, m.totalSessions)
+	// The cursor's number is padded to the width of the number it counts
+	// towards, so scrolling does not reflow the header. Unpadded, moving from
+	// row 9 to row 10 widened this by a cell and shoved the target chip and
+	// the scope along with it — the list moving under the cursor is the point,
+	// the chrome around it moving is not.
+	shown := padLeft(strconv.Itoa(at), len(strconv.Itoa(sessions)))
+	if m.totalSessions > sessions {
+		return fmt.Sprintf(txt.positionCapFmt, shown, sessions, m.totalSessions)
 	}
-	return fmt.Sprintf(txt.positionFmt, at, loaded)
+	return fmt.Sprintf(txt.positionFmt, shown, sessions)
 }
 
 func (m modelState) headerView() string {

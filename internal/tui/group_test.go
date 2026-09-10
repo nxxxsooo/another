@@ -204,21 +204,19 @@ func TestGroupToggleKeepsTheSelectedSession(t *testing.T) {
 		groupRow("d", groupRoot, 20),
 	})
 	m.sessions.Select(3) // "d", last by recency, first tree's second row once grouped
+	// Dates come first in the cycle; this is the tree case, one more along.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = updated.(modelState)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = updated.(modelState)
 
 	if m.groupMode != groupTree || !hasGroupHeaders(m.sessions.Items()) {
-		t.Fatal("g did not group the list")
+		t.Fatal("g did not group the list by tree")
 	}
 	if row, ok := m.sessions.SelectedItem().(sessionItem); !ok || row.summary.ID != "d" {
 		t.Fatalf("grouping moved the cursor off its session: %#v", m.sessions.SelectedItem())
 	}
 
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
-	m = updated.(modelState)
-	if m.groupMode != groupDate {
-		t.Fatalf("g did not move on to the date bands: mode %d", m.groupMode)
-	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = updated.(modelState)
 	if m.groupMode != groupNone || hasGroupHeaders(m.sessions.Items()) {

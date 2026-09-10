@@ -46,14 +46,14 @@ const (
 	overlayHelp
 )
 
-// The list is either flat, banded by the tree the work happened in, or banded
-// by when it happened. One key cycles them, in that order: off is where a new
-// user starts, trees are what a project scope is usually asking about, and
-// dates are what a list spanning months is.
+// The list is either flat, banded by when the work happened, or banded by the
+// tree it happened in. One key cycles them, in that order: off is where a new
+// user starts, and dates come first because "when" is the question a list
+// sorted by recency is already answering — the trees are the narrower one.
 const (
 	groupNone = iota
-	groupTree
 	groupDate
+	groupTree
 	groupModes
 )
 

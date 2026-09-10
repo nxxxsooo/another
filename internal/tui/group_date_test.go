@@ -109,7 +109,7 @@ func TestDateBandsKeepTheProjectColumn(t *testing.T) {
 func TestGroupKeyCyclesThroughEveryMode(t *testing.T) {
 	m := sampleModel(t, 132, 32)
 	m.ungrouped = sampleSessions()
-	for _, want := range []int{groupTree, groupDate, groupNone, groupTree} {
+	for _, want := range []int{groupDate, groupTree, groupNone, groupDate} {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 		m = updated.(modelState)
 		if m.groupMode != want {

@@ -307,6 +307,39 @@ func TestHeaderPositionFollowsTheCursor(t *testing.T) {
 	}
 }
 
+// Scrolling moves the list, not the chrome around it. Unpadded, the cursor's
+// number widened by a cell between row 9 and row 10 and shoved the target chip
+// and the scope along with it.
+func TestHeaderDoesNotReflowWhileScrolling(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		previous := applyLanguage(lang)
+		m := sampleModel(t, 132, 32)
+		want := ansi.StringWidth(ansi.Strip(m.headerView()))
+		for i := range m.sessions.Items() {
+			m.sessions.Select(i)
+			got := ansi.Strip(m.headerView())
+			if ansi.StringWidth(got) != want {
+				t.Fatalf("%s row %d: header is %d cells, was %d: %q",
+					lang, i+1, ansi.StringWidth(got), want, got)
+			}
+		}
+		applyLanguage(previous)
+	}
+}
+
+// Bands are rows in the list but not sessions, so a count that included them
+// would measure something nobody is looking at.
+func TestPositionCountsSessionsNotBands(t *testing.T) {
+	m := sampleModel(t, 132, 32)
+	flat := m.listPosition()
+	m.groupMode = groupDate
+	m.setSessionItems(sampleSessions())
+	banded := m.listPosition()
+	if strings.TrimSpace(flat) != strings.TrimSpace(banded) {
+		t.Fatalf("bands changed the count: %q became %q", flat, banded)
+	}
+}
+
 // One page is capped, so the header says both numbers when they differ. It
 // used to print the total alone, which promised a list that could not be
 // scrolled to.
