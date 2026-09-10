@@ -62,20 +62,17 @@ func TestCompactTimeAnswersWhatItsBandDoesNot(t *testing.T) {
 // The point of the bands is the width they hand back: the heading carries the
 // day, so the column stops carrying it too.
 func TestDateBandsShrinkTheTimeColumn(t *testing.T) {
-	now := time.Now()
-	items := []list.Item{
-		dateRow("a", now.Add(-7*time.Minute)),
-		dateRow("b", now.Add(-3*time.Hour)),
-		dateRow("c", now.AddDate(0, 0, -1)),
-		dateRow("d", now.AddDate(0, 0, -40)),
-	}
-	flat := timeColumnWidth(items, false)
-	banded := timeColumnWidth(items, true)
+	flat := sessionDelegate{}.columns(132).timeW
+	banded := sessionDelegate{dateBands: true}.columns(132).timeW
 	if banded >= flat {
 		t.Fatalf("date bands did not shrink the column: %d vs %d", banded, flat)
 	}
-	if banded > 5 {
-		t.Errorf("the banded column is %d cells, wider than any stamp it holds", banded)
+	now := time.Now()
+	for _, at := range []time.Time{now, now.Add(-7 * time.Minute), now.Add(-3 * time.Hour),
+		now.AddDate(0, 0, -1), now.AddDate(0, 0, -3), now.AddDate(0, 0, -40), now.AddDate(-1, 0, 0)} {
+		if w := ansi.StringWidth(compactTime(at, now)); w > banded {
+			t.Errorf("%q is %d cells, wider than the %d-cell column", compactTime(at, now), w, banded)
+		}
 	}
 }
 

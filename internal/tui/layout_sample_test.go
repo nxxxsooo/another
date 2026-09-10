@@ -136,11 +136,15 @@ func sessionRows(view string) []string {
 // A row still has padding, because columns line up and titles differ in
 // length; what it must not have is padding that scales with the screen.
 func TestBlankSpaceInsideARowStopsGrowingWithTheTerminal(t *testing.T) {
+	// The band stops growing at naturalRowWidth, so that is where the
+	// emptiness inside a row stops growing too. Below it the title column is
+	// still widening toward its cap, which is width the title can use.
+	full := naturalRowWidth()*100/contentBandPercent + 1
 	baseline := 0
-	for _, row := range sessionRows(sampleModel(t, contentBandFloor, 40).View()) {
+	for _, row := range sessionRows(sampleModel(t, full, 40).View()) {
 		baseline = max(baseline, widestBlankRun(row))
 	}
-	for _, width := range []int{160, 200, 231, 240, 320, 400} {
+	for _, width := range []int{200, 231, 240, 320, 400} {
 		widest := 0
 		var worst string
 		for _, row := range sessionRows(sampleModel(t, width, 40).View()) {
@@ -150,24 +154,7 @@ func TestBlankSpaceInsideARowStopsGrowingWithTheTerminal(t *testing.T) {
 		}
 		if widest > baseline {
 			t.Errorf("terminal %d: %d blank cells inside a row, worse than the %d at %d columns\n%s",
-				width, widest, baseline, contentBandFloor, worst)
-		}
-	}
-}
-
-// The columns are measured from the rows that are loaded, so a page of short
-// titles must not leave the hole a page of long ones fills. This is the case
-// the measurement exists for: one narrow page in a very wide terminal.
-func TestShortTitlesDoNotStretchTheTitleColumn(t *testing.T) {
-	m := sampleModel(t, 240, 40)
-	m.sessions.SetItems([]list.Item{
-		sessionItem{summary: model.Summary{ID: "a", Provider: "pi", Title: "Explore", ProjectPath: "/tmp/project", MessageCount: 2}},
-		sessionItem{summary: model.Summary{ID: "b", Provider: "pi", Title: "Test", ProjectPath: "/tmp/project", MessageCount: 3}},
-	})
-	m.layout()
-	for _, row := range sessionRows(m.View()) {
-		if got := widestBlankRun(row); got > 4*maxColumnGap {
-			t.Fatalf("short titles left %d blank cells in a row:\n%s", got, row)
+				width, widest, baseline, full, worst)
 		}
 	}
 }

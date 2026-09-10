@@ -101,27 +101,6 @@ type sessionDelegate struct {
 	// row's own, not something the heading already said.
 	dateBands  bool
 	groupRoots []string
-	// projectW is what the loaded rows actually need, chip included. The
-	// column is capped by the pane, but it is never wider than the longest
-	// thing it has to say: cells the paths do not use belong to the title.
-	// Zero means "unmeasured", which leaves the cap alone.
-	projectW int
-	// timeW is what the loaded rows need for the time column. A relative
-	// stamp fits in ten cells, but a session past the relative range falls
-	// back to an absolute date, and "Sep 30, 2026" is twelve — measured at
-	// ten it lost its last characters and printed the year as "202".
-	// Zero means "unmeasured", which keeps the relative width.
-	timeW int
-	// titleW is what the loaded titles actually need. Before it existed the
-	// title took every cell the other columns did not, then padded them: on a
-	// wide terminal that padding was the row, and the eye had to cross it to
-	// get from a title to the project it belonged to. Measured, the title is
-	// a column like the others and the cells it does not need become the
-	// spacing between all of them.
-	//
-	// Zero means "unmeasured", which gives the title everything left over —
-	// the behaviour every narrow terminal already had.
-	titleW int
 }
 
 func (sessionDelegate) Height() int { return 1 }
@@ -198,93 +177,58 @@ type rowColumns struct {
 const rowGutterWidth = 3
 
 func (d sessionDelegate) columns(width int) rowColumns {
+	// Every width here is a function of the pane and the mode, and of nothing
+	// on screen. The columns used to be measured from the loaded rows so that
+	// no cell was padded past its content — and every one of those
+	// measurements moved when the content did. Pressing `f` swapped a scope
+	// of short paths for one of long ones, and the message column, the path
+	// column and the right edge all walked sideways under the eye. A column
+	// that is where it was is worth more than a column with no air in it;
+	// what does not fit is cut with an ellipsis, and what is short is short.
 	const provW = agentChipWidth
-	// The ten-cell floor holds the widest relative stamp, so a list of recent
-	// sessions is laid out the same however few of them there are. Under date
-	// bands the stamps are short by design and the floor would be the column,
-	// so there it is measured and nothing else.
-	timeW := d.timeW
-	if !d.dateBands && timeW < relativeTimeWidth {
-		timeW = relativeTimeWidth
+	timeW := absoluteTimeWidth
+	if d.dateBands {
+		timeW = compactTimeWidth()
 	}
-	timeW = max(1, timeW)
 	// The message column is sized by the language rather than by a constant:
 	// "128条" and "128 msg" are not the same number of cells, and a column cut
 	// to the shorter of the two would truncate the count it exists to show.
 	msgW := txt.messageCountWidth
-	// The project column is what tells two similarly named sessions apart, but
-	// the title matters more; it only appears once the title still has room.
-	projW := 0
-	if d.showProject && width >= 92 {
-		projW = min(28, width/4)
-		if d.projectW > 0 {
-			projW = min(projW, d.projectW)
-		}
-	}
-	// Every column is measured first, and only what none of them wants becomes
-	// space. gaps are the spaces between columns: after the time, after the
-	// agent chip, after the title, and after the project when it is drawn.
+	// gaps are the spaces between columns: after the time, after the agent
+	// chip, after the title, and after the project when it is drawn.
 	gapCount := 3
-	fixed := rowGutterWidth + timeW + provW + msgW
-	if projW > 0 {
+	if d.showProject && width >= 92 {
 		gapCount++
-		fixed += projW
 	}
-	// The title takes what it needs rather than what is left; handed the
-	// leftover it padded it, and that padding was the row. titleColumnCap
-	// bounds the band rather than this: a title with more to say than the cap
-	// must still be allowed to say it when the cells are there, or the layout
-	// would truncate content to protect a number.
-	wanted := max(8, width-fixed-gapCount)
-	if d.titleW > 0 {
-		wanted = max(8, min(wanted, d.titleW))
+	fixed := rowGutterWidth + timeW + provW + msgW
+	// Spacing is bought before the text columns are, up to maxColumnGap, and
+	// is one width for every gap: columns spaced unevenly read as groups.
+	gapW := columnGap(max(0, width-fixed-gapCount-titleColumnCap/2), gapCount)
+	room := max(8, width-fixed-gapCount*gapW)
+	// The path gets the smaller share and the title the rest, up to the caps.
+	// A share rather than a measurement: the same pane lays out the same way
+	// whatever is loaded into it.
+	projW := 0
+	if gapCount == 4 {
+		projW = min(projectColumnCap, room*2/5)
+		room -= projW
 	}
-	// The spacing is measured against the cap, not against the widest title in
-	// the list. A title may pass the cap when the cells are there, but it may
-	// not take the air on its way past: measured against the widest title, one
-	// un-renamed session carrying 138 cells of its own first message set the
-	// spacing for every other row, so the same list breathed under one scope
-	// and was crammed under the next — a difference in the layout that said
-	// nothing about the sessions in it.
-	titleW := min(wanted, titleColumnCap)
-	spare := max(0, width-fixed-titleW-gapCount)
-	gapW := columnGap(spare, gapCount)
-	spare -= (gapW - 1) * gapCount
-	// Once the gaps are paid the title takes the rest of what it wanted, ahead
-	// of the path, which is the order they were already in.
-	if grow := min(spare, wanted-titleW); grow > 0 {
-		titleW += grow
-		spare -= grow
+	titleW := min(titleColumnCap, room)
+	room -= titleW
+	// What is over the caps goes to the path first, which has more to say
+	// whenever it is given the cells, and then becomes margin around the row.
+	if projW > 0 {
+		grow := min(room, projectColumnCap-projW)
+		projW += grow
+		room -= grow
 	}
-	// What is still over goes to the path, which is truncated on every ordinary
-	// terminal and has more to say whenever it is given the cells. A wider
-	// window should buy more of the session, not more air around it.
-	if projW > 0 && spare > 0 && d.projectW > projW {
-		grow := min(spare, min(d.projectW, projectColumnCap)-projW)
-		if grow > 0 {
-			projW += grow
-			spare -= grow
-		}
-	}
-	// Only now is the width genuinely unwanted, and it is put around the row so
-	// the columns sit centred inside the pane rather than hanging off one end.
-	//
-	// How much goes on the left is measured from the band, not from what the
-	// cells left over. Halving the leftover slid the whole row sideways every
-	// time the content changed width: a scope holding `~/Documents/sync/Docs`
-	// draws a column wide enough for it, the same scope narrowed to that
-	// project draws `Docs`, and the thirty cells between them arrived as
-	// fifteen cells of left margin — so pressing `f` moved every column on
-	// screen while someone was reading them. A row shorter than a full one now
-	// ends earlier instead of starting later.
-	leftInset := strings.Repeat(" ", min(spare, max(0, (width-naturalRowWidth())/2)))
-	rightInset := strings.Repeat(" ", spare-len(leftInset))
-	// One width for every gap. Columns spaced unevenly read as groups, and the
-	// groups would be an accident of which column happened to absorb a
-	// remainder rather than anything about the session.
+	// The row starts at the pane's left edge and whatever is over ends it. It
+	// is over only when the pane is wider than a full row, which the band's
+	// ceiling already prevents, so in practice this is nothing.
+	rightInset := strings.Repeat(" ", max(0, room))
 	gap := strings.Repeat(" ", gapW)
 	return rowColumns{
-		leftInset:  leftInset,
+		leftInset:  "",
 		rightInset: rightInset,
 		gap:        gap,
 		timeW:      timeW,
@@ -349,22 +293,6 @@ const absoluteTimeWidth = 12
 func naturalRowWidth() int {
 	return 3 + absoluteTimeWidth + agentChipWidth + txt.messageCountWidth +
 		titleColumnCap + projectColumnCap + 4*maxColumnGap
-}
-
-// titleColumnWidth is what the loaded titles need. It reads Items() for the
-// same reason the project and time columns do: a width that changed as a
-// filter narrowed the list would move every column beside it while it was
-// being read.
-func titleColumnWidth(items []list.Item) int {
-	widest := 0
-	for _, item := range items {
-		row, ok := item.(sessionItem)
-		if !ok {
-			continue
-		}
-		widest = max(widest, ansi.StringWidth(row.displayTitle()))
-	}
-	return widest
 }
 
 // projectChipPad is what a chip costs beyond the text it holds: one cell of
@@ -447,65 +375,14 @@ func projectChip(text string, ink, tint lipgloss.Color) string {
 	return lipgloss.NewStyle().Foreground(ink).Background(tint).Render(" " + text + " ")
 }
 
-// projectColumnWidth is what the column needs to say everything it has to say:
-// the widest chip among the rows that are loaded. Without it a list whose rows
-// all sit at the project root still spent a quarter of the pane on one repeated
-// name, and the title — the only thing that identifies a session — paid for it.
-//
-// It reads Items(), not VisibleItems(), for the same reason the column's own
-// visibility does: a width that changed as a filter narrowed the list would
-// move the title's right edge under the person reading it.
 // relativeTimeWidth holds the widest relative stamp — "just now" and "59m ago"
-// both fit — and is the floor the column keeps when no row needs more, so a
-// list of recent sessions is laid out exactly as it was before dates entered.
+// both fit.
 const relativeTimeWidth = 10
 
-// timeColumnWidth is what the loaded rows need for their stamps. Past thirty
-// days FormatRelative gives an absolute date instead, and that date is wider
-// than any relative stamp; measuring it here is the same contract the project
-// column keeps, so the column grows only for lists that actually reach back
-// that far and the cells it does not need stay with the title.
-//
-// It reads every loaded row rather than the visible ones, so filtering cannot
-// move the title's edge while it is being read.
-func timeColumnWidth(items []list.Item, dateBands bool) int {
-	widest := relativeTimeWidth
-	if dateBands {
-		widest = 0
-	}
-	now := time.Now()
-	for _, item := range items {
-		row, ok := item.(sessionItem)
-		if !ok {
-			continue
-		}
-		stamp := util.FormatRelative(row.summary.UpdatedAt)
-		if dateBands {
-			stamp = compactTime(row.summary.UpdatedAt, now)
-		}
-		widest = max(widest, ansi.StringWidth(stamp))
-	}
-	return widest
-}
-
-// projectColumnWidth measures the cells exactly as the rows will draw them,
-// bands included: under a heading most rows have nothing to say, and a column
-// sized for what they would have said without one is width the title never
-// gets back.
-func projectColumnWidth(items []list.Item, base string, bands bool, roots []string) int {
-	widest := 0
-	for _, item := range items {
-		row, ok := item.(sessionItem)
-		if !ok {
-			continue
-		}
-		text, shown := projectCellShown(row.summary.ProjectPath, base, bands, roots)
-		if !shown {
-			continue
-		}
-		widest = max(widest, ansi.StringWidth(text)+projectChipPad)
-	}
-	return widest
+// compactTimeWidth is the time column under date bands: "15:04", "Jan 06", and
+// whatever the language calls the current minute.
+func compactTimeWidth() int {
+	return max(6, max(ansi.StringWidth(txt.compactNow), ansi.StringWidth(txt.bandUnknown)))
 }
 
 // projectCellText is what the column says about a directory. Without a base
@@ -749,8 +626,5 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 		dateBands:   dateBands,
 		groupRoots:  roots,
 		spacing:     m.sessionSpacing,
-		projectW:    projectColumnWidth(items, base, bands, roots),
-		timeW:       timeColumnWidth(items, dateBands),
-		titleW:      titleColumnWidth(items),
 	}
 }

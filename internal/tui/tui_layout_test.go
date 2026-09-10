@@ -574,7 +574,7 @@ func TestWideHeaderKeepsTargetBesideSessionCount(t *testing.T) {
 	if got := ansi.StringWidth(header); got > m.width {
 		t.Fatalf("header width = %d, want <= %d: %q", got, m.width, header)
 	}
-	if !strings.Contains(header, "│    "+txt.targetArrow) {
+	if !strings.Contains(header, "│   "+txt.targetArrow) {
 		t.Fatalf("target action did not return beside the session count: %q", header)
 	}
 }
@@ -1386,37 +1386,48 @@ func TestProjectColumnShowsWorktreesApart(t *testing.T) {
 	}
 }
 
-// A column sized to its cap spent a quarter of the pane on one repeated name
-// while the title — the only thing that identifies a session — was cut. It is
-// sized to the longest path it actually has to show instead.
-func TestProjectColumnTakesOnlyTheWidthItsPathsNeed(t *testing.T) {
-	root := "/tmp/another-scope-fixture"
-	marked := map[string]bool{}
-	// A title long enough to be cut at either column width, so how much of it
-	// survives is the measure of what the column gave back.
-	title := strings.Repeat("x", 120)
-	items := []list.Item{
-		sessionItem{summary: model.Summary{ID: "a", Provider: "codex", Title: title, ProjectPath: root}},
-		sessionItem{summary: model.Summary{ID: "b", Provider: "codex", Title: title, ProjectPath: root + "/pkg"}},
-	}
-	want := ansi.StringWidth("another-scope-fixture") + projectChipPad
-	if got := projectColumnWidth(items, root, false, nil); got != want {
-		t.Fatalf("projectColumnWidth = %d, want %d", got, want)
-	}
-
-	render := func(projectW int) string {
-		d := sessionDelegate{marked: marked, showProject: true, projectBase: root, projectW: projectW}
-		l := newBareList(items, d, 120, 4)
+// The columns are where they were whatever is loaded. They used to be sized
+// to the widest thing on the page, so a scope of short paths and a scope of
+// long ones laid the same pane out two different ways, and pressing `f` walked
+// the path column, the message column and the right edge sideways under the
+// eye. Now only the pane decides; content that does not fit is cut.
+func TestColumnsDoNotMoveWithTheContent(t *testing.T) {
+	type edges struct{ title, project, msg int }
+	measure := func(width int, title, path string, base string) edges {
+		items := []list.Item{sessionItem{summary: model.Summary{
+			ID: "a", Provider: "codex", Title: title, ProjectPath: path, MessageCount: 12,
+		}}}
+		d := sessionDelegate{marked: map[string]bool{}, showProject: true, projectBase: base}
+		l := newBareList(items, d, width, 4)
 		var buf strings.Builder
 		d.Render(&buf, l, 0, items[0])
-		return ansi.Strip(buf.String())
+		row := ansi.Strip(buf.String())
+		col := func(needle string) int {
+			at := strings.LastIndex(row, needle)
+			if at < 0 {
+				t.Fatalf("%q not in %q", needle, row)
+			}
+			return ansi.StringWidth(row[:at])
+		}
+		c := d.columns(width)
+		return edges{col("CDX") + 3, col("CDX") + 3 + c.titleW + len(c.gap), col("12 msg")}
 	}
-	fitted, capped := render(want), render(0)
-	if strings.Count(fitted, "x") <= strings.Count(capped, "x") {
-		t.Fatalf("a fitted column did not give the title back any width:\n%q\n%q", fitted, capped)
-	}
-	if !strings.Contains(fitted, "another-scope-fixture") {
-		t.Fatalf("the fitted column lost the path it was sized for: %q", fitted)
+	long := "/Users/mingjian/Documents/sync/Work/huatu/projects/ai-pioneer"
+	for _, width := range []int{100, 132, 160} {
+		want := measure(width, "short", "/tmp/a", "")
+		if want.project >= want.msg || want.title >= want.project {
+			t.Fatalf("width %d: columns out of order %+v", width, want)
+		}
+		for _, tc := range []struct{ title, path, base string }{
+			{strings.Repeat("x", 120), long, ""},
+			{"0909｜探索｜两个Google账号领取免费Pro至明年9月", long + "/x", long},
+			{"short", "/tmp/a", "/tmp"},
+		} {
+			got := measure(width, tc.title, tc.path, tc.base)
+			if got != want {
+				t.Fatalf("width %d: columns moved from %+v to %+v for %q %q", width, want, got, tc.title, tc.path)
+			}
+		}
 	}
 }
 
@@ -1693,8 +1704,8 @@ func TestTimeColumnKeepsTheYearOfAnOldSession(t *testing.T) {
 	m.sessions.SetSize(m.width, m.height)
 
 	rendered := sessionDelegateFor(&m)
-	if got := rendered.timeW; got < ansi.StringWidth(stamp) {
-		t.Fatalf("time column measured %d cells for a %d-cell stamp %q", got, ansi.StringWidth(stamp), stamp)
+	if got := rendered.columns(m.sessions.Width()).timeW; got < ansi.StringWidth(stamp) {
+		t.Fatalf("time column is %d cells for a %d-cell stamp %q", got, ansi.StringWidth(stamp), stamp)
 	}
 
 	var buf strings.Builder
@@ -1722,7 +1733,7 @@ func TestOneLongTitleDoesNotCollapseTheSpacing(t *testing.T) {
 				ID: fmt.Sprintf("s%d", i), Provider: "codex", Title: title,
 			}})
 		}
-		d := sessionDelegate{marked: map[string]bool{}, titleW: titleColumnWidth(items)}
+		d := sessionDelegate{marked: map[string]bool{}}
 		l := newBareList(items, d, width, 8)
 		var buf strings.Builder
 		d.Render(&buf, l, 0, items[0])
@@ -1800,11 +1811,7 @@ func TestScopeToggleDoesNotSlideTheRow(t *testing.T) {
 				ID: fmt.Sprint(i), Provider: "codex", Title: title, ProjectPath: p,
 			}})
 		}
-		d := sessionDelegate{
-			marked: map[string]bool{}, showProject: true, projectBase: projectBase,
-			projectW: projectColumnWidth(items, projectBase, false, nil),
-			titleW:   titleColumnWidth(items),
-		}
+		d := sessionDelegate{marked: map[string]bool{}, showProject: true, projectBase: projectBase}
 		l := newBareList(items, d, width, 8)
 		var buf strings.Builder
 		d.Render(&buf, l, 0, items[0])
@@ -1824,5 +1831,54 @@ func TestScopeToggleDoesNotSlideTheRow(t *testing.T) {
 
 	if all != scoped {
 		t.Fatalf("scope moved the agent column: %d in the whole index, %d in one project", all, scoped)
+	}
+}
+
+// Nothing the header says about the list may move the chip that names a key:
+// not the scope, not the count, not the cursor, not the agent filter. The
+// count is drawn in a fixed slot and the agent name padded to the widest one.
+func TestTargetChipDoesNotMoveWithTheListItDescribes(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		t.Run(string(lang), func(t *testing.T) {
+			useLanguage(t, lang)
+			for _, width := range []int{100, 132, 160, 200} {
+				want := -1
+				// Below the band floor the slot is cut for hundreds, so a
+				// count in the thousands is allowed to push there.
+				totals := []int{1, 59, 361, 4000}
+				if width < contentBandFloor {
+					totals = []int{1, 59, 361}
+				}
+				for _, scoped := range []bool{true, false} {
+					for _, total := range totals {
+						for _, cursor := range []int{0, 4, 9} {
+							for _, source := range []int{0, 1} {
+								m := sampleModel(t, width, 24)
+								m.projectOnly = scoped
+								m.totalSessions = total
+								m.sources = []sourceChip{{id: "", name: "all"}, {id: "claude-code", name: "Claude Code"}}
+								m.sourceIdx = source
+								m.sessions.Select(cursor)
+								m.layout()
+								header := ansi.Strip(m.headerView())
+								chip := ansi.Strip(txt.targetArrow)
+								byteAt := strings.LastIndex(header, chip)
+								if byteAt < 0 {
+									t.Fatalf("%d: header lost the target chip: %q", width, header)
+								}
+								at := ansi.StringWidth(header[:byteAt])
+								if want < 0 {
+									want = at
+								}
+								if at != want {
+									t.Fatalf("%d: target chip moved to column %d, was %d (scope=%v total=%d cursor=%d source=%d): %q",
+										width, at, want, scoped, total, cursor, source, header)
+								}
+							}
+						}
+					}
+				}
+			}
+		})
 	}
 }

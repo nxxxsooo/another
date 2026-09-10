@@ -611,13 +611,42 @@ func (m modelState) listPosition() string {
 	return fmt.Sprintf(txt.positionFmt, shown, sessions)
 }
 
+// positionSlotWidth is the fixed width the position is drawn in. The position
+// is the most changeable thing in the header — `1/59` under one scope and
+// `12/200 of 361` under another — and everything after it, the target chip
+// first, moved with it. Drawn in a slot cut for the widest count the browser
+// will plausibly show, it changes inside its cell and moves nothing.
+//
+// The slot depends on the band and on nothing else. A narrow band gets a
+// narrower slot so the header can still name the project directory; a count
+// that outgrows it pushes the line, which at that width it always did.
+func positionSlotWidth(width int) int {
+	if width < contentBandFloor {
+		return ansi.StringWidth(fmt.Sprintf(txt.positionCapFmt, "99", 99, 999))
+	}
+	return ansi.StringWidth(fmt.Sprintf(txt.positionCapFmt, "999", 999, 9999))
+}
+
+// sourceLabel is the agent filter's name, padded to the widest name among the
+// agents on this machine so that stepping through them with ←/→ does not move
+// the rest of the header either.
+func (m modelState) sourceLabel() string {
+	name := func(chip sourceChip) string {
+		if chip.name == "all" {
+			return txt.sourceAll
+		}
+		return chip.name
+	}
+	widest := 0
+	for _, chip := range m.sources {
+		widest = max(widest, ansi.StringWidth(name(chip)))
+	}
+	return padRight(name(m.currentSource()), widest)
+}
+
 func (m modelState) headerView() string {
 	brand := accentStyle.Render(" another ")
-	source := m.currentSource()
-	sourceName := source.name
-	if sourceName == "all" {
-		sourceName = txt.sourceAll
-	}
+	sourceName := m.sourceLabel()
 	left := brand + "  " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
 	right := targetChipStyle.Render(txt.targetArrow)
 	width := m.bandWidth()
@@ -627,7 +656,10 @@ func (m modelState) headerView() string {
 	// the agent's name, the position, and the project path, so at some sizes
 	// it chose a layout that then had to be truncated — and what it cut was
 	// the target chip, the one thing in the header naming a key.
-	position := mutedStyle.Render(fmt.Sprintf(txt.headerCountFmt, m.listPosition()))
+	// The chips already carry a cell of padding on each side, so the format
+	// adds the rest of an equal three: `chip   │   count   │   chip`.
+	slot := padRight(m.listPosition(), positionSlotWidth(width))
+	position := mutedStyle.Render(fmt.Sprintf(txt.headerCountFmt, slot))
 	separator := mutedStyle.Render("   │   ")
 	// The brand goes before the count does. The window title already says
 	// which program this is, while the position is the only thing on screen
@@ -636,7 +668,7 @@ func (m modelState) headerView() string {
 	// Below that the padding goes before anything it separates does. The scope
 	// is worth more than the space around it: it decides which sessions are on
 	// screen at all, so it outlives the wide separators and the brand.
-	tight := mutedStyle.Render(" " + m.listPosition() + " ")
+	tight := mutedStyle.Render(" " + slot + " ")
 	first := ""
 	for _, candidate := range []string{
 		left + position + right + separator + m.scopeView(true),

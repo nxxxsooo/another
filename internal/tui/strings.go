@@ -328,7 +328,7 @@ var englishText = uiText{
 
 	sourceArrow:    "← source ",
 	targetArrow:    "target →",
-	headerCountFmt: "   │   %s   │   ",
+	headerCountFmt: "  │   %s   │  ",
 	scopeProject:   "this project",
 	scopeThis:      "this project",
 	scopeAll:       "all projects",
@@ -581,7 +581,7 @@ var chineseText = uiText{
 
 	sourceArrow:    "← 来源 ",
 	targetArrow:    "去向 →",
-	headerCountFmt: "   │   %s   │   ",
+	headerCountFmt: "  │   %s   │  ",
 	scopeProject:   "当前项目",
 	scopeThis:      "当前项目",
 	scopeAll:       "全部项目",

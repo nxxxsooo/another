@@ -279,11 +279,6 @@ func TestGroupedColumnSaysOnlyWhatTheBandDidNot(t *testing.T) {
 	if _, shown := projectCellShown(groupLayout, d.projectBase, d.bands, d.groupRoots); shown {
 		t.Fatal("a row at its tree repeats the band above it")
 	}
-	// The column is measured on what it will draw, so the tree name no row
-	// prints buys no width.
-	if got, want := d.projectW, ansi.StringWidth("internal/tui")+projectChipPad; got != want {
-		t.Fatalf("grouped column measured %d cells, want %d", got, want)
-	}
 }
 
 // The band has to read as a heading at every width the browser draws, in both
