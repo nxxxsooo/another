@@ -87,6 +87,14 @@ type sessionDelegate struct {
 	// project it is the project root, so a row shows the part of its path
 	// that differs from its neighbours' instead of the prefix they share.
 	projectBase string
+	// bands is set while the list is drawn in groups. Under a band a row's
+	// path is read against its own tree rather than against the project root,
+	// and a row sitting exactly at that tree says nothing at all: the band
+	// above it already did. groupRoots are the trees to read against, and are
+	// empty outside Git, where every directory is its own group and the column
+	// therefore falls silent entirely.
+	bands      bool
+	groupRoots []string
 	// projectW is what the loaded rows actually need, chip included. The
 	// column is capped by the pane, but it is never wider than the longest
 	// thing it has to say: cells the paths do not use belong to the title.
@@ -121,11 +129,15 @@ func (d sessionDelegate) Spacing() int { return d.spacing }
 func (sessionDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 
 func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	width := max(20, m.Width())
+	if header, ok := listItem.(groupHeader); ok {
+		fmt.Fprint(w, d.renderGroupHeader(header, width))
+		return
+	}
 	it, ok := listItem.(sessionItem)
 	if !ok {
 		return
 	}
-	width := max(20, m.Width())
 	cursor := " "
 	if index == m.Index() {
 		cursor = selectedRow.Render("›")
@@ -145,6 +157,38 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		msgs = fmt.Sprintf(txt.messageCountFmt, it.summary.MessageCount)
 	}
 
+	c := d.columns(width)
+	title := padRight(ansi.Truncate(it.displayTitle(), c.titleW, "…"), c.titleW)
+	if index == m.Index() {
+		title = selectedRow.Render(title)
+	}
+	provText := renderAgentChip(it.summary.Provider)
+
+	row := c.leftInset + gutter +
+		mutedStyle.Render(padRight(ansi.Truncate(rel, c.timeW, ""), c.timeW)) + c.gap +
+		provText + c.gap + title + c.gap
+	if c.projW > 0 {
+		text, shown := projectCellShown(it.summary.ProjectPath, d.projectBase, d.bands, d.groupRoots)
+		row += renderProjectChipCell(it.summary.ProjectPath, text, shown, c.projW, it.missingDir) + c.gap
+	}
+	row += mutedStyle.Render(padLeft(msgs, c.msgW)) + c.rightInset
+	fmt.Fprint(w, ansi.Truncate(row, width, ""))
+}
+
+// rowColumns is the layout of one row at one width. Nothing in it depends on
+// which row is being drawn: every column is measured once across the loaded
+// page, which is what lets a group band be laid out from the same numbers and
+// line up with the sessions under it.
+type rowColumns struct {
+	leftInset, rightInset, gap        string
+	timeW, provW, msgW, titleW, projW int
+}
+
+// rowGutterWidth is the cursor, the mark, and the space after them. It is the
+// indent everything on a row starts from, bands included.
+const rowGutterWidth = 3
+
+func (d sessionDelegate) columns(width int) rowColumns {
 	const provW = agentChipWidth
 	timeW := relativeTimeWidth
 	if d.timeW > relativeTimeWidth {
@@ -167,7 +211,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	// space. gaps are the spaces between columns: after the time, after the
 	// agent chip, after the title, and after the project when it is drawn.
 	gapCount := 3
-	fixed := 3 + timeW + provW + msgW
+	fixed := rowGutterWidth + timeW + provW + msgW
 	if projW > 0 {
 		gapCount++
 		fixed += projW
@@ -217,20 +261,16 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	// groups would be an accident of which column happened to absorb a
 	// remainder rather than anything about the session.
 	gap := strings.Repeat(" ", gapW)
-	title := padRight(ansi.Truncate(it.displayTitle(), titleW, "…"), titleW)
-	if index == m.Index() {
-		title = selectedRow.Render(title)
+	return rowColumns{
+		leftInset:  leftInset,
+		rightInset: rightInset,
+		gap:        gap,
+		timeW:      timeW,
+		provW:      provW,
+		msgW:       msgW,
+		titleW:     titleW,
+		projW:      projW,
 	}
-	provText := renderAgentChip(it.summary.Provider)
-
-	row := leftInset + gutter +
-		mutedStyle.Render(padRight(ansi.Truncate(rel, timeW, ""), timeW)) + gap +
-		provText + gap + title + gap
-	if projW > 0 {
-		row += renderProjectCellState(it.summary.ProjectPath, d.projectBase, projW, it.missingDir) + gap
-	}
-	row += mutedStyle.Render(padLeft(msgs, msgW)) + rightInset
-	fmt.Fprint(w, ansi.Truncate(row, width, ""))
 }
 
 // columnGap is how wide each space between columns is, given the cells left
@@ -323,14 +363,41 @@ func renderProjectCell(path string, width int) string {
 }
 
 func renderProjectCellState(path, base string, width int, missing bool) string {
+	text, shown := projectCellShown(path, base, false, nil)
+	return renderProjectChipCell(path, text, shown, width, missing)
+}
+
+// projectCellShown is what a row's project column says, and whether it says
+// anything at all.
+//
+// Under a band it says only what the band did not. A row sitting exactly at its
+// tree is already named by the heading above it, so its cell is blank rather
+// than a copy; a row below its tree keeps the part that differs, which is the
+// package the agent actually ran in. Outside Git every directory is its own
+// group, so every cell is blank and the column disappears — which is what
+// grouping by directory means.
+func projectCellShown(path, base string, bands bool, roots []string) (string, bool) {
+	if path == "" {
+		return "", false
+	}
+	if !bands {
+		return util.SanitizeDisplay(projectCellText(path, base)), true
+	}
+	key := groupKeyFor(path, roots)
+	if filepath.Clean(path) == key {
+		return "", false
+	}
+	return util.SanitizeDisplay(projectCellText(path, key)), true
+}
+
+func renderProjectChipCell(path, text string, shown bool, width int, missing bool) string {
 	if width <= 0 {
 		return ""
 	}
-	// A row with no directory recorded is the only blank cell in the column,
-	// which is what lets every other row be read as a chip on sight. A column
-	// too narrow to hold one is blank for the same reason: half a chip reads
-	// as damage.
-	if path == "" || width < projectChipPad+1 {
+	// A row with nothing to add is the only blank cell in the column, which is
+	// what lets every other row be read as a chip on sight. A column too narrow
+	// to hold one is blank for the same reason: half a chip reads as damage.
+	if !shown || width < projectChipPad+1 {
 		return strings.Repeat(" ", width)
 	}
 	// The chip hashes the absolute path, not the shown text, so a directory
@@ -339,8 +406,7 @@ func renderProjectCellState(path, base string, width int, missing bool) string {
 	if missing {
 		ink, tint = twinTheme.textSubtle, twinTheme.border
 	}
-	shown := truncateLeft(util.SanitizeDisplay(projectCellText(path, base)), width-projectChipPad)
-	return padRight(projectChip(shown, ink, tint), width)
+	return padRight(projectChip(truncateLeft(text, width-projectChipPad), ink, tint), width)
 }
 
 // projectChip is the chip body. It is not bold: the agent code is three
@@ -383,15 +449,22 @@ func timeColumnWidth(items []list.Item) int {
 	return widest
 }
 
-func projectColumnWidth(items []list.Item, base string) int {
+// projectColumnWidth measures the cells exactly as the rows will draw them,
+// bands included: under a heading most rows have nothing to say, and a column
+// sized for what they would have said without one is width the title never
+// gets back.
+func projectColumnWidth(items []list.Item, base string, bands bool, roots []string) int {
 	widest := 0
 	for _, item := range items {
 		row, ok := item.(sessionItem)
-		if !ok || row.summary.ProjectPath == "" {
+		if !ok {
 			continue
 		}
-		shown := util.SanitizeDisplay(projectCellText(row.summary.ProjectPath, base))
-		widest = max(widest, ansi.StringWidth(shown)+projectChipPad)
+		text, shown := projectCellShown(row.summary.ProjectPath, base, bands, roots)
+		if !shown {
+			continue
+		}
+		widest = max(widest, ansi.StringWidth(text)+projectChipPad)
 	}
 	return widest
 }
@@ -606,28 +679,34 @@ func (m *modelState) applySessionDelegate() {
 func sessionDelegateFor(m *modelState) sessionDelegate {
 	// Items(), not VisibleItems(): a column that appeared and vanished as a
 	// filter narrowed the list would move every row beside it.
+	items := m.sessions.Items()
 	// The scope's own count decides the column; the loaded rows are only a
 	// fallback for a page that arrived before the count did. Reading the rows
 	// alone let a source filter take the column away: two Antigravity sessions
 	// in one directory hid a column that the project's worktrees had earned.
 	spread := m.scopeProjects > 1
 	if m.scopeProjects == 0 {
-		spread = projectsSpreadOut(m.sessions.Items())
+		spread = projectsSpreadOut(items)
 	}
-	base := ""
-	if m.projectOnly {
-		base = m.projectScope.Root
-		if base == "" {
-			base = m.cwd
-		}
+	base := m.projectBase()
+	// Grouped, the band already names the tree, so most rows have nothing left
+	// to say and the column is only worth its width if some row sits below its
+	// own tree — Lark Base hides the field it groups by for the same reason.
+	bands := hasGroupHeaders(items)
+	roots := m.groupRoots()
+	showProject := !m.projectOnly || spread
+	if bands {
+		showProject = projectsBelowGroups(items, roots)
 	}
 	return sessionDelegate{
 		marked:      m.marked,
-		showProject: !m.projectOnly || spread,
+		showProject: showProject,
 		projectBase: base,
+		bands:       bands,
+		groupRoots:  roots,
 		spacing:     m.sessionSpacing,
-		projectW:    projectColumnWidth(m.sessions.Items(), base),
-		timeW:       timeColumnWidth(m.sessions.Items()),
-		titleW:      titleColumnWidth(m.sessions.Items()),
+		projectW:    projectColumnWidth(items, base, bands, roots),
+		timeW:       timeColumnWidth(items),
+		titleW:      titleColumnWidth(items),
 	}
 }

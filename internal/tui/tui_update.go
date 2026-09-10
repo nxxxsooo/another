@@ -88,7 +88,7 @@ func (m modelState) onSessionsPage(msg sessionsPageMsg) (tea.Model, tea.Cmd) {
 		m.err = msg.err.Error()
 		return m, nil
 	}
-	m.sessions.SetItems(msg.items)
+	m.setSessionItems(msg.items)
 	m.totalSessions = msg.total
 	m.scopeProjects = msg.scopeProjects
 	m.updateSourceCounts(msg.counts)
@@ -409,7 +409,7 @@ func (m modelState) onSearchResults(msg searchResultsMsg) (tea.Model, tea.Cmd) {
 		m.err = msg.err.Error()
 		return m, nil
 	}
-	m.sessions.SetItems(msg.items)
+	m.setSessionItems(msg.items)
 	m.searchQuery = msg.query
 	m.totalSessions = len(msg.items)
 	m.updateSourceCounts(msg.counts)
@@ -809,6 +809,16 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, m.searchQuery), providerCountOpts(m)))
 		}
 		return dispatchPageLoadModel(m)
+	case "g":
+		// Grouping is a view of the page already loaded, not another query:
+		// every session the list can show is in hand, so the bands appear
+		// without a round trip and the cursor keeps the session it was on.
+		m.grouped = !m.grouped
+		selected, _ := m.sessions.SelectedItem().(sessionItem)
+		m.sessions.SetItems(m.groupedItems())
+		m.selectSession(selected.summary.ID)
+		m.applySessionDelegate()
+		return m, nil
 	case "enter":
 		// Enter is the default action on the current object: resume it in its
 		// native agent. Crossing to another agent is spatially mapped to right.
@@ -1002,6 +1012,8 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.sessions, cmd = m.sessions.Update(msg)
+	// The list moved the cursor by rows and does not know a band is not one.
+	m.skipGroupHeader(!headerSkipUpward(msg.String()))
 	return m, cmd
 }
 

@@ -30,6 +30,10 @@ type uiText struct {
 	scopeProject   string
 	scopeThis      string
 	scopeAll       string
+	// groupNoProject names the band holding sessions with no directory on
+	// record. They are still sessions, and a band with no label would read as
+	// a rendering fault rather than as the one group that cannot be named.
+	groupNoProject string
 
 	// Empty states.
 	emptySearch  string
@@ -40,10 +44,15 @@ type uiText struct {
 	emptyAll          string
 
 	// Footer.
-	working         string
-	indexing        string
-	sessionCountFmt string
-	markedFmt       string
+	working  string
+	indexing string
+	// sessionCountFmt and sessionCountOneFmt are the same count in the plural
+	// and the singular. English needs both — a band reading "1 sessions" is
+	// the kind of seam that makes an interface look unfinished — while Chinese
+	// counts the same way either way and repeats the one string.
+	sessionCountFmt    string
+	sessionCountOneFmt string
+	markedFmt          string
 
 	// Status and errors.
 	cwdUnreadable        string
@@ -275,16 +284,18 @@ var englishText = uiText{
 	scopeProject:   "project",
 	scopeThis:      "this project",
 	scopeAll:       "all",
+	groupNoProject: "no directory",
 
 	emptySearch:       "\n  No session matches",
 	emptyProject:      "\n  No sessions in this project\n  Press f to see all",
 	emptyProjectMoved: "  Earlier sessions are still under %s\n  Run `another paths` to follow them here",
 	emptyAll:          "\n  No sessions",
 
-	working:         " working…",
-	indexing:        "indexing…",
-	sessionCountFmt: "%d sessions",
-	markedFmt:       "%d marked  ·  x mark · X all · ctrl+t batch",
+	working:            " working…",
+	indexing:           "indexing…",
+	sessionCountFmt:    "%d sessions",
+	sessionCountOneFmt: "%d session",
+	markedFmt:          "%d marked  ·  x mark · X all · ctrl+t batch",
 
 	cwdUnreadable:        "Could not read the current directory, showing every session: ",
 	archivedPrefix:       "Archived ",
@@ -403,7 +414,7 @@ var englishText = uiText{
 	helpResume:           " enter open that agent · c copy command · esc keep browsing · q quit",
 	helpArchived:         " a undo archive · esc keep it · ↑↓ keep browsing",
 	helpDeleted:          " u undo delete · esc keep it deleted · ↑↓ keep browsing",
-	helpListBase:         " ← source · ↑↓ session · enter open · → other agent · space preview · f scope",
+	helpListBase:         " ← source · ↑↓ session · enter open · → other agent · space preview · f scope · g group",
 	helpListRename:       " · ctrl+r rename",
 	helpListArchive:      " · a archive",
 	helpListRelocate:     " · m relocate",
@@ -493,16 +504,18 @@ var chineseText = uiText{
 	scopeProject:   "项目",
 	scopeThis:      "当前项目",
 	scopeAll:       "全部",
+	groupNoProject: "无目录",
 
 	emptySearch:       "\n  没有匹配的会话",
 	emptyProject:      "\n  当前项目没有会话\n  按 f 查看全部",
 	emptyProjectMoved: "  早期会话还留在 %s\n  运行 `another paths` 把它们接回来",
 	emptyAll:          "\n  没有会话",
 
-	working:         " 处理中…",
-	indexing:        "正在建立索引…",
-	sessionCountFmt: "%d 个会话",
-	markedFmt:       "已标记 %d 个会话  ·  x 标记 · X 全选 · ctrl+t 批量命名",
+	working:            " 处理中…",
+	indexing:           "正在建立索引…",
+	sessionCountFmt:    "%d 个会话",
+	sessionCountOneFmt: "%d 个会话",
+	markedFmt:          "已标记 %d 个会话  ·  x 标记 · X 全选 · ctrl+t 批量命名",
 
 	cwdUnreadable:        "无法读取当前目录，已显示全部会话：",
 	archivedPrefix:       "已归档 ",
@@ -621,7 +634,7 @@ var chineseText = uiText{
 	helpResume:           " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出",
 	helpArchived:         " a 撤销归档 · esc 放弃撤销 · ↑↓ 继续浏览",
 	helpDeleted:          " u 撤销删除 · esc 保持删除 · ↑↓ 继续浏览",
-	helpListBase:         " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围",
+	helpListBase:         " ← 来源 · ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · f 范围 · g 分组",
 	helpListRename:       " · ctrl+r 重命名",
 	helpListArchive:      " · a 归档",
 	helpListRelocate:     " · m 换目录",

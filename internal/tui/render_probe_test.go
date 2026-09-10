@@ -77,7 +77,7 @@ func TestRenderProbe(t *testing.T) {
 		projectScope:  project,
 		projectOnly:   true,
 	}
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: probeWidth(), Height: 20})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: probeWidth(), Height: probeHeight()})
 	shown := updated.(modelState)
 	fmt.Println("======== list (project scope)")
 	fmt.Println(shown.View())
@@ -88,6 +88,14 @@ func TestRenderProbe(t *testing.T) {
 	global.layout()
 	fmt.Println("======== list (all projects)")
 	fmt.Println(global.View())
+	// Grouping is what this repository's own sessions look like sorted into
+	// their worktrees, which is the case it was built for.
+	grouped := shown
+	grouped.grouped = true
+	grouped.setSessionItems(items)
+	grouped.layout()
+	fmt.Println("======== list (grouped by tree)")
+	fmt.Println(grouped.View())
 	shown.overlay = overlaySource
 	shown.layout()
 	fmt.Println("======== source picker")
@@ -113,4 +121,14 @@ func probeWidth() int {
 		return n
 	}
 	return 100
+}
+
+// probeHeight is the other half of that: a grouped list needs more rows than a
+// flat one to show a second heading at all, and a paging artefact is invisible
+// at a height that never pages. RENDER_PROBE_HEIGHT=40 asks for the taller look.
+func probeHeight() int {
+	if n, err := strconv.Atoi(os.Getenv("RENDER_PROBE_HEIGHT")); err == nil && n >= 12 {
+		return n
+	}
+	return 20
 }

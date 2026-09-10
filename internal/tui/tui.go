@@ -132,9 +132,15 @@ type modelState struct {
 	movedAway       []string
 	projectScope    util.ProjectScope
 	projectOnly     bool
-	pageGen         uint64
-	lastResume      string
-	lastArchived    *model.Summary
+	// grouped clusters the list by tree: one band per worktree, sessions under
+	// the band they started in. ungrouped is the page as the index returned it,
+	// in recency order, kept so turning grouping off restores that order rather
+	// than the order the bands left behind.
+	grouped      bool
+	ungrouped    []list.Item
+	pageGen      uint64
+	lastResume   string
+	lastArchived *model.Summary
 	// lastDeleted and restoreDeleted are the one-step undo for a delete. They
 	// live only as long as this list does, and only for providers that can put
 	// the very same session back.
@@ -237,7 +243,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	if initial != nil {
 		sel := sessionItem{summary: *initial}
 		m.selected = &sel
-		m.sessions.SetItems([]list.Item{sel})
+		m.setSessionItems([]list.Item{sel})
 		m.targets.SetItems(targetItems(reg, initial.Provider))
 		m.overlay = overlayTarget
 	}

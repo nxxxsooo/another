@@ -1161,7 +1161,7 @@ func TestProjectColumnTakesOnlyTheWidthItsPathsNeed(t *testing.T) {
 		sessionItem{summary: model.Summary{ID: "b", Provider: "codex", Title: title, ProjectPath: root + "/pkg"}},
 	}
 	want := ansi.StringWidth("another-scope-fixture") + projectChipPad
-	if got := projectColumnWidth(items, root); got != want {
+	if got := projectColumnWidth(items, root, false, nil); got != want {
 		t.Fatalf("projectColumnWidth = %d, want %d", got, want)
 	}
 
