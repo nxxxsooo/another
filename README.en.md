@@ -214,6 +214,8 @@ The session list marks each agent with a fixed-width color chip. Agent names dif
 
 A dash means that agent has no verified native contract for the operation. Rename, archive, relocate, and delete change the corresponding agent's native state rather than an another-only marker; `another` shows only operations the selected agent actually supports and does not keep private state that disappears on refresh.
 
+CodeM looks sessions up by a hash of the literal working directory. When a directory moves or an old path becomes a symlink, another uses CodeM's own `LINCO_SESSIONS_ROOT` to give it a resume bridge exposing only the original project-hash directory. No JSONL is copied or moved, and a same-ID session in another project is never exposed to CodeM.
+
 Per-agent behavior worth knowing before you rely on it — which deletes can be taken back, Codex's three title stores and its subagent threads, child sessions, and sessions whose directory is gone — is in [`docs/providers.md`](docs/providers.md).
 
 Check the local installation:

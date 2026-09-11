@@ -195,6 +195,8 @@ OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令�
 
 `—` 表示这个 agent 没有经过验证的原生操作契约。重命名、归档、换目录和删除都直接修改对应 agent 的原生状态，不是 Another 私有标记；Another 只展示当前 agent 真正支持的操作，不会维护一份刷新后消失的私有状态。
 
+CodeM 按工作目录字面路径的哈希查找会话。目录搬家或旧路径变成符号链接后，Another 会通过 CodeM 自己的 `LINCO_SESSIONS_ROOT` 给它一个只指向原项目哈希目录的恢复桥接：不复制、不移动 JSONL，也不会把另一个项目里的同名 ID 暴露给 CodeM。
+
 各 agent 值得先了解的具体行为——哪些删除可以撤销、Codex 的三处标题与子 agent 会话、子会话、目录已不存在的会话——见 [`docs/providers.zh.md`](docs/providers.zh.md)。
 
 检查本机安装状态：

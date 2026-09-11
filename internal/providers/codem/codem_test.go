@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/util"
@@ -561,35 +562,76 @@ func TestArchiveMovesOnlyTheTranscriptAndIsReversible(t *testing.T) {
 	}
 }
 
-func TestResumeRejectsAProjectWhosePhysicalPathHasADifferentHash(t *testing.T) {
+func TestResumeBridgesAProjectWhosePhysicalPathHasADifferentHash(t *testing.T) {
 	physical := t.TempDir()
 	alias := filepath.Join(t.TempDir(), "old-project")
 	if err := os.Symlink(physical, alias); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	p := New()
+	p := store(t, fixture{"session.jsonl", alias, demoID})
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	id := sessionKey(projectHash(alias), demoID)
 	result := provider.WriteResult{
 		SessionID:   id,
 		StoragePath: filepath.Join(p.sessionsRoot(), projectHash(alias), demoID+".jsonl"),
 		ProjectPath: alias,
 	}
-	if got := p.ResumeCommand(result); got != "" {
-		t.Fatalf("orphaned session got resume command %q", got)
-	}
-	if reason := p.ResumeUnavailableReason(result); !strings.Contains(reason, "original working directory") {
+	if reason := p.ResumeUnavailableReason(result); reason != "" {
 		t.Fatalf("resume reason = %q", reason)
 	}
-
 	physical, err := filepath.EvalSymlinks(physical)
 	if err != nil {
 		t.Fatal(err)
 	}
+	bridgeRoot := filepath.Join(config.CacheDir(), "codem-resume", projectHash(alias))
+	bridge := filepath.Join(bridgeRoot, projectHash(physical))
+	target, err := os.Readlink(bridge)
+	if err != nil {
+		t.Fatalf("resume bridge: %v", err)
+	}
+	if target != filepath.Join(p.sessionsRoot(), projectHash(alias)) {
+		t.Fatalf("resume bridge points to %q", target)
+	}
+	want := "cd '" + alias + "' && LINCO_SESSIONS_ROOT='" + bridgeRoot + "' codem --resume '" + demoID + "'"
+	if got := p.ResumeCommand(result); got != want {
+		t.Fatalf("bridged resume command = %q, want %q", got, want)
+	}
+
 	result.SessionID = sessionKey(projectHash(physical), demoID)
 	result.StoragePath = filepath.Join(p.sessionsRoot(), projectHash(physical), demoID+".jsonl")
-	want := "cd '" + alias + "' && codem --resume '" + demoID + "'"
+	want = "cd '" + alias + "' && codem --resume '" + demoID + "'"
 	if got := p.ResumeCommand(result); got != want {
 		t.Fatalf("resumable alias command = %q, want %q", got, want)
+	}
+}
+
+func TestResumeBridgeRefusesToReplaceAnUnexpectedPath(t *testing.T) {
+	physical := t.TempDir()
+	oldProject := filepath.Join(t.TempDir(), "old-project")
+	p := store(t, fixture{"session.jsonl", oldProject, demoID})
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	physical, err := filepath.EvalSymlinks(physical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(config.CacheDir(), "codem-resume", projectHash(oldProject))
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	occupied := filepath.Join(root, projectHash(physical))
+	if err := os.WriteFile(occupied, []byte("do not replace"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := provider.WriteResult{
+		SessionID: sessionKey(projectHash(oldProject), demoID), ProjectPath: physical,
+		StoragePath: p.transcriptPath(oldProject, demoID),
+	}
+	if reason := p.ResumeUnavailableReason(result); !strings.Contains(reason, "not a symlink") {
+		t.Fatalf("resume reason = %q", reason)
+	}
+	got, err := os.ReadFile(occupied)
+	if err != nil || string(got) != "do not replace" {
+		t.Fatalf("unexpected bridge path was replaced: %q, %v", got, err)
 	}
 }
 

@@ -353,29 +353,41 @@ func newSessionID() string {
 
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
-// ResumeCommand carries the directory because CodeM's sessions are keyed by it:
-// `--resume` only looks in the hash of the current working directory, and fails
-// outright when the id is not there. The directory hash another carries in the
-// id is dropped here — CodeM computes it from where the command runs.
+// ResumeCommand carries the directory because CodeM's sessions are keyed by it.
+// If that directory now resolves to a different hash, a narrow sessions-root
+// bridge lets CodeM itself open the original transcript without copying or
+// moving it. LINCO_SESSIONS_ROOT is CodeM's own store override; the bridge has
+// exactly one project-hash symlink and therefore cannot expose a same-id session
+// from another project.
 func (p *Provider) ResumeCommand(result provider.WriteResult) string {
 	if p.ResumeUnavailableReason(result) != "" {
 		return ""
 	}
 	_, id := splitSessionKey(result.SessionID)
 	cmd := "codem --resume " + util.ShellQuote(id)
+	if root, needed, _ := p.ensureResumeBridge(result); needed {
+		cmd = "LINCO_SESSIONS_ROOT=" + util.ShellQuote(root) + " " + cmd
+	}
 	if result.ProjectPath != "" {
 		return "cd " + util.ShellQuote(result.ProjectPath) + " && " + cmd
 	}
 	return cmd
 }
 
-// ResumeUnavailableReason catches sessions orphaned when their original cwd
-// was moved or became a symlink. CodeM hashes os.Getwd(), which resolves such a
-// link to its physical target, while the transcript remains under the old
-// literal cwd's hash.
+// ResumeUnavailableReason prepares the bridge needed by a moved directory and
+// reports only a real preparation failure. TUI and CLI callers surface this
+// before trying to launch an empty command.
 func (p *Provider) ResumeUnavailableReason(result provider.WriteResult) string {
+	_, _, err := p.ensureResumeBridge(result)
+	if err != nil {
+		return "CodeM cannot prepare this session for resume: " + err.Error()
+	}
+	return ""
+}
+
+func (p *Provider) ensureResumeBridge(result provider.WriteResult) (string, bool, error) {
 	if result.ProjectPath == "" {
-		return ""
+		return "", false, nil
 	}
 	hash, _ := splitSessionKey(result.SessionID)
 	if result.StoragePath != "" {
@@ -388,13 +400,51 @@ func (p *Provider) ResumeUnavailableReason(result provider.WriteResult) string {
 		}
 	}
 	if hash == "" {
-		return ""
+		return "", false, nil
 	}
 	physical, err := filepath.EvalSymlinks(result.ProjectPath)
-	if err != nil || projectHash(physical) != hash {
-		return "CodeM cannot resume this session because its original working directory moved or now resolves to a different path; migrate it to continue"
+	if err != nil {
+		return "", false, fmt.Errorf("resolve working directory: %w", err)
 	}
-	return ""
+	currentHash := projectHash(physical)
+	if currentHash == hash {
+		return "", false, nil
+	}
+	source := filepath.Join(p.sessionsRoot(), hash)
+	if st, err := os.Stat(source); err != nil || !st.IsDir() {
+		if err == nil {
+			err = fmt.Errorf("not a directory")
+		}
+		return "", false, fmt.Errorf("original session directory: %w", err)
+	}
+	root := filepath.Join(config.CacheDir(), "codem-resume", hash)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", false, fmt.Errorf("create resume bridge: %w", err)
+	}
+	link := filepath.Join(root, currentHash)
+	st, err := os.Lstat(link)
+	switch {
+	case os.IsNotExist(err):
+		if err := os.Symlink(source, link); err != nil {
+			return "", false, fmt.Errorf("link original session directory: %w", err)
+		}
+	case err != nil:
+		return "", false, fmt.Errorf("inspect resume bridge: %w", err)
+	case st.Mode()&os.ModeSymlink == 0:
+		return "", false, fmt.Errorf("resume bridge path is not a symlink: %s", link)
+	default:
+		target, err := os.Readlink(link)
+		if err != nil {
+			return "", false, fmt.Errorf("read resume bridge: %w", err)
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(link), target)
+		}
+		if filepath.Clean(target) != filepath.Clean(source) {
+			return "", false, fmt.Errorf("resume bridge points somewhere else: %s", link)
+		}
+	}
+	return root, true, nil
 }
 
 func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, title string) error {

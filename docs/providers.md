@@ -46,7 +46,7 @@ The offer lasts only as long as the list. `another` keeps no trash directory of 
 
 **Rename and archive are native.** Current CodeM transcripts persist `/rename` as a `session_renamed` record, and CodeM's archive operation moves the transcript into the project's `archived/` directory. Another writes and reads that same record and mirrors that reversible move; it does not keep private aliases or archive flags.
 
-If a recorded working directory has moved or become a symlink whose physical path hashes differently, CodeM itself can no longer find the old transcript from that directory. Another detects that orphaned state and withholds the broken resume command instead of printing a line guaranteed to fail; migrate the session to continue it.
+If a recorded working directory has moved or become a symlink whose physical path hashes differently, CodeM's default lookup can no longer find the old transcript from that directory. Another now gives CodeM a narrow `LINCO_SESSIONS_ROOT` bridge to that exact original project-hash directory. The transcript and scratchpad stay in place, CodeM remains the process reading and extending them, and a same-ID session under another project hash is never exposed.
 
 **Injected turns do not travel.** CodeM adds loaded skills and reminders to a session as whole user messages wrapped in `<system-reminder>`. Those are the CLI talking to its own model, not the person, and they are left behind when the conversation is migrated.
 
