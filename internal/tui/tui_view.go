@@ -658,7 +658,9 @@ func (m modelState) headerView() string {
 	// the target chip, the one thing in the header naming a key.
 	// The chips already carry a cell of padding on each side, so the format
 	// adds the rest of an equal three: `chip   │   count   │   chip`.
-	slot := padRight(m.listPosition(), positionSlotWidth(width))
+	count := strings.TrimSpace(m.listPosition())
+	countPadding := max(0, positionSlotWidth(width)-ansi.StringWidth(count))
+	slot := strings.Repeat(" ", countPadding/2) + count + strings.Repeat(" ", countPadding-countPadding/2)
 	position := mutedStyle.Render(fmt.Sprintf(txt.headerCountFmt, slot))
 	separator := mutedStyle.Render("   │   ")
 	// The brand goes before the count does. The window title already says
@@ -669,13 +671,21 @@ func (m modelState) headerView() string {
 	// is worth more than the space around it: it decides which sessions are on
 	// screen at all, so it outlives the wide separators and the brand.
 	tight := mutedStyle.Render(" " + slot + " ")
+	// Choose one layout for both scopes. The scope label changes when f is
+	// pressed, but must not decide whether the prefix loses its brand or gaps.
+	other := m
+	other.projectOnly = !m.projectOnly
+	scopeFits := func(showPath bool) string {
+		current, alternate := m.scopeView(showPath), other.scopeView(showPath)
+		return padRight(current, max(ansi.StringWidth(current), ansi.StringWidth(alternate)))
+	}
 	first := ""
 	for _, candidate := range []string{
-		left + position + right + separator + m.scopeView(true),
-		left + position + right + separator + m.scopeView(false),
-		bare + position + right + separator + m.scopeView(false),
-		bare + position + right + " " + m.scopeView(false),
-		bare + tight + right + " " + m.scopeView(false),
+		left + position + right + separator + scopeFits(true),
+		left + position + right + separator + scopeFits(false),
+		bare + position + right + separator + scopeFits(false),
+		bare + position + right + " " + scopeFits(false),
+		bare + tight + right + " " + scopeFits(false),
 		bare + position + right,
 	} {
 		if ansi.StringWidth(candidate) <= width {
