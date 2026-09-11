@@ -98,7 +98,12 @@ var launchers = map[string]launcher{
 		return append(args, p)
 	}},
 	"qwen": {"qwen", func(c Config, p string) []string {
-		args := []string{"--bare", "--safe-mode", "--chat-recording=false", "--output-format", "text"}
+		// --bare also drops the user's auth type and provider settings. That
+		// makes a configured Qwen work interactively but fail here, especially
+		// for remote/custom OpenAI-compatible providers. --safe-mode still keeps
+		// project instructions, hooks, extensions, skills, and MCP out of this
+		// one-shot run without discarding the connection settings it needs.
+		args := []string{"--safe-mode", "--chat-recording=false", "--output-format", "text"}
 		if c.Model != "" {
 			args = append(args, "--model", c.Model)
 		}

@@ -326,10 +326,13 @@ func TestSuggestRunsQwenWithoutRecordingAThrowawaySession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"--bare", "--safe-mode", "--chat-recording=false", "--output-format text", "--model qwen3-coder-plus"} {
+	for _, want := range []string{"--safe-mode", "--chat-recording=false", "--output-format text", "--model qwen3-coder-plus"} {
 		if !strings.Contains(string(recorded), want) {
 			t.Fatalf("args %q missing %q", recorded, want)
 		}
+	}
+	if strings.Contains(string(recorded), "--bare") {
+		t.Fatalf("args %q discard Qwen's auth/provider settings", recorded)
 	}
 }
 
