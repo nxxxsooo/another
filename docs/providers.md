@@ -44,7 +44,9 @@ The offer lasts only as long as the list. `another` keeps no trash directory of 
 
 **Relocate is absent for the same reason.** Moving a session to another directory would mean moving the file to a different hash and rewriting its header. CodeM has no operation that does that, so `another` does not invent one.
 
-**There is no title to rename.** CodeM stores no session title anywhere; `codem sessions list` derives one from the first user message every time it runs, and `another` does the same. A rename would have nowhere to land but `another`'s own state, so the cell is a dash.
+**Rename and archive are native.** Current CodeM transcripts persist `/rename` as a `session_renamed` record, and CodeM's archive operation moves the transcript into the project's `archived/` directory. Another writes and reads that same record and mirrors that reversible move; it does not keep private aliases or archive flags.
+
+If a recorded working directory has moved or become a symlink whose physical path hashes differently, CodeM itself can no longer find the old transcript from that directory. Another detects that orphaned state and withholds the broken resume command instead of printing a line guaranteed to fail; migrate the session to continue it.
 
 **Injected turns do not travel.** CodeM adds loaded skills and reminders to a session as whole user messages wrapped in `<system-reminder>`. Those are the CLI talking to its own model, not the person, and they are left behind when the conversation is migrated.
 

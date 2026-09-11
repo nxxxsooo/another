@@ -159,8 +159,8 @@ func TestOneCodeMIDInTwoDirectoriesStaysTwoSessions(t *testing.T) {
 		t.Errorf("loading by qualified id reached %q, want %q", conv.ProjectPath, demoProject)
 	}
 	// The hash is another's, not CodeM's: it must not reach the resume line.
-	got := p.ResumeCommand(provider.WriteResult{SessionID: demo.ID, ProjectPath: demoProject})
-	if got != "cd '"+demoProject+"' && codem --resume '"+feishuID+"'" {
+	got := p.ResumeCommand(provider.WriteResult{SessionID: demo.ID})
+	if got != "codem --resume '"+feishuID+"'" {
 		t.Fatalf("resume command = %q", got)
 	}
 }
@@ -335,9 +335,6 @@ func TestWriteLandsUnderTheDirectoryHash(t *testing.T) {
 	if header.Type != recordHeader || header.Version != schemaVersion || header.ID != id || header.CWD != demoProject {
 		t.Fatalf("header = %+v", header)
 	}
-	if got := p.ResumeCommand(*result); got != "cd '"+demoProject+"' && codem --resume '"+id+"'" {
-		t.Fatalf("resume command = %q", got)
-	}
 }
 
 func TestWriteRefusesAnEmptySessionAndHonorsDryRun(t *testing.T) {
@@ -445,19 +442,118 @@ func TestDeleteSessionRefusesALinkOutOfTheStore(t *testing.T) {
 	}
 }
 
-// CodeM keeps no title of its own and has no operation that moves a session
-// between directories, so another must not offer either. These are contracts,
-// not gaps waiting to be filled with another-only state.
-func TestUnsupportedLifecycleOperationsAreAbsent(t *testing.T) {
+func TestLifecycleCapabilitiesMatchCodeM(t *testing.T) {
 	var p any = New()
-	if _, ok := p.(provider.SessionRenamer); ok {
-		t.Error("codem claims a rename, but CodeM stores no title")
+	if _, ok := p.(provider.SessionRenamer); !ok {
+		t.Error("codem does not expose its native rename")
 	}
-	if _, ok := p.(provider.SessionArchiver); ok {
-		t.Error("codem claims an archive state CodeM does not have")
+	if _, ok := p.(provider.SessionArchiver); !ok {
+		t.Error("codem does not expose its native archive")
 	}
 	if _, ok := p.(provider.SessionRelocator); ok {
 		t.Error("codem claims a relocate, but the directory is a one-way hash")
+	}
+}
+
+func TestRenameUsesCodeMsNativeRecordAndDiscoveryReadsIt(t *testing.T) {
+	p := store(t, fixture{"session.jsonl", demoProject, demoID})
+	ref := provider.SessionRef{ID: key(demoProject, demoID), StoragePath: p.transcriptPath(demoProject, demoID)}
+	if err := p.RenameSession(context.Background(), ref, "  Native title  "); err != nil {
+		t.Fatal(err)
+	}
+	data, err := scan(context.Background(), ref.StoragePath, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.title != "Native title" {
+		t.Fatalf("title = %q", data.title)
+	}
+	lines, err := os.ReadFile(ref.StoragePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := strings.TrimSpace(strings.Split(strings.TrimSpace(string(lines)), "\n")[len(strings.Split(strings.TrimSpace(string(lines)), "\n"))-1])
+	var row record
+	if err := json.Unmarshal([]byte(last), &row); err != nil {
+		t.Fatal(err)
+	}
+	if row.Type != recordSessionRenamed || row.NewTitle != "Native title" || row.RecordSeq == 0 {
+		t.Fatalf("rename record = %+v", row)
+	}
+	if err := p.RenameSession(context.Background(), ref, " "); err == nil {
+		t.Fatal("empty rename succeeded")
+	}
+}
+
+func TestArchiveMovesOnlyTheTranscriptAndIsReversible(t *testing.T) {
+	p := store(t, fixture{"session.jsonl", demoProject, demoID})
+	path := p.transcriptPath(demoProject, demoID)
+	scratch := filepath.Join(filepath.Dir(path), demoID, "scratchpad")
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ref := provider.SessionRef{ID: key(demoProject, demoID), StoragePath: path, ProjectPath: demoProject}
+	if err := p.ArchiveSession(context.Background(), ref, true); err != nil {
+		t.Fatal(err)
+	}
+	archived := filepath.Join(filepath.Dir(path), archiveDirName, filepath.Base(path))
+	if _, err := os.Stat(archived); err != nil {
+		t.Fatalf("archived transcript: %v", err)
+	}
+	if _, err := os.Stat(scratch); err != nil {
+		t.Fatalf("CodeM scratchpad moved unexpectedly: %v", err)
+	}
+	if found := summaries(t, p, provider.DiscoverOpts{}); len(found) != 0 {
+		t.Fatalf("archived session remained in discovery: %+v", found)
+	}
+	ref.StoragePath = archived
+	if err := p.ArchiveSession(context.Background(), ref, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("unarchived transcript: %v", err)
+	}
+	ref.StoragePath = path
+	if err := p.ArchiveSession(context.Background(), ref, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.DeleteSession(context.Background(), ref); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(scratch); !os.IsNotExist(err) {
+		t.Fatalf("deleting an archived session left its scratchpad: %v", err)
+	}
+}
+
+func TestResumeRejectsAProjectWhosePhysicalPathHasADifferentHash(t *testing.T) {
+	physical := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "old-project")
+	if err := os.Symlink(physical, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	p := New()
+	id := sessionKey(projectHash(alias), demoID)
+	result := provider.WriteResult{
+		SessionID:   id,
+		StoragePath: filepath.Join(p.sessionsRoot(), projectHash(alias), demoID+".jsonl"),
+		ProjectPath: alias,
+	}
+	if got := p.ResumeCommand(result); got != "" {
+		t.Fatalf("orphaned session got resume command %q", got)
+	}
+	if reason := p.ResumeUnavailableReason(result); !strings.Contains(reason, "original working directory") {
+		t.Fatalf("resume reason = %q", reason)
+	}
+
+	physical, err := filepath.EvalSymlinks(physical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.SessionID = sessionKey(projectHash(physical), demoID)
+	result.StoragePath = filepath.Join(p.sessionsRoot(), projectHash(physical), demoID+".jsonl")
+	want := "cd '" + alias + "' && codem --resume '" + demoID + "'"
+	if got := p.ResumeCommand(result); got != want {
+		t.Fatalf("resumable alias command = %q, want %q", got, want)
 	}
 }
 
@@ -483,10 +579,6 @@ func TestWriteFailureLeavesNothingBehind(t *testing.T) {
 
 func TestResumeCommandQuotesHostileValues(t *testing.T) {
 	p := New()
-	got := p.ResumeCommand(provider.WriteResult{SessionID: "id; rm -rf /", ProjectPath: "/tmp/a b"})
-	if got != "cd '/tmp/a b' && codem --resume 'id; rm -rf /'" {
-		t.Fatalf("resume command = %q", got)
-	}
 	if got := p.ResumeCommand(provider.WriteResult{SessionID: "abc"}); got != "codem --resume 'abc'" {
 		t.Fatalf("resume command without a project = %q", got)
 	}

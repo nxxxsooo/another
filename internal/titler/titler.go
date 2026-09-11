@@ -104,6 +104,16 @@ var launchers = map[string]launcher{
 		}
 		return append(args, p)
 	}},
+	// CodeM can run a headless prompt without recording the generated title as
+	// another user session. Its model selector accepts the same managed IDs as
+	// the interactive client.
+	"codem": {"codem", func(c Config, p string) []string {
+		args := []string{"--no-session"}
+		if c.Model != "" {
+			args = append(args, "--model", c.Model)
+		}
+		return append(args, "-p", p)
+	}},
 	// agy is the one CLI here that will not take the prompt as a trailing
 	// argument: --print consumes the next token as its value, so a separate
 	// prompt argument is silently ignored. It must be attached to the flag.

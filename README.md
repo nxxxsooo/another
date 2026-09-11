@@ -188,7 +188,7 @@ OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令�
 | OpenCode | `opencode` | `OPC` | `opencode --session <id>` | ✓ | ✓ | — | ✓ |
 | OpenCode 2 | `opencode2` | `OC2` | `opencode2 --session <id>` | ✓ | — | ✓ | ✓ |
 | CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | — | ✓ |
-| CodeM | `codem` | `CDM` | `codem --resume <id>` | — | — | — | ✓ |
+| CodeM | `codem` | `CDM` | `codem --resume <id>` | ✓ | ✓ | — | ✓ |
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
 | Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | ✓ | — | ✓ |
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | ✓ |
@@ -220,7 +220,7 @@ setup 第二页用 `←→` 选标题语言（与第一页的界面语言互不�
 
 批量页顶部标明这次用的 agent、模型和语言。生成结束或取消后按 `m` 打开和 setup 同一个模型选择器（同样是 CLI 自己给出的列表，输入过滤，最后一行可手输），`Enter` 用新模型重跑当前这批会话。这个模型不会写回配置：给几十条旧会话选一个便宜的模型，不该变成下次单条重命名的默认。
 
-生成标题时，Codex、Antigravity、OpenCode 这些 CLI 会为每次无头调用留下一条自己的会话，而且没有关掉的开关。Claude Code 有开关，another 就用它：`--no-session-persistence` 让这次运行根本不落盘，比事后认出来再清掉更干净（这一路同时带上 `--disable-slash-commands`，会话内容是不可信输入，不该由它触发命令或 Skill）。另一侧 another 会认出剩下这些残留并挡在索引之外，旧版本 Claude Code 留下的也一并清掉：提示词第一行是固定标记，运行目录是 `another-titler-*` 临时目录，两者任一命中即不入库。Antigravity 两条都躲得掉——它按模型答案给这次运行命名，于是残留顶着一个符合命名规则的标题，而且根本不记录运行目录——所以短到只可能是残留的会话会被打开，直接比对里面的提示词本身；长会话不会被读取。之前版本已经入库的残留会在下次刷新时清掉。清的只是 another 自己的索引，agent 自己的会话文件仍在它自己的目录里。
+生成标题时，Codex、Antigravity、OpenCode 这些 CLI 会为每次无头调用留下一条自己的会话，而且没有关掉的开关。Claude Code 和 CodeM 有开关，another 就用它们：`--no-session-persistence` 和 `--no-session` 让这次运行根本不落盘，比事后认出来再清掉更干净（Claude Code 这一路同时带上 `--disable-slash-commands`，会话内容是不可信输入，不该由它触发命令或 Skill）。另一侧 another 会认出剩下这些残留并挡在索引之外，旧版本 Claude Code 留下的也一并清掉：提示词第一行是固定标记，运行目录是 `another-titler-*` 临时目录，两者任一命中即不入库。Antigravity 两条都躲得掉——它按模型答案给这次运行命名，于是残留顶着一个符合命名规则的标题，而且根本不记录运行目录——所以短到只可能是残留的会话会被打开，直接比对里面的提示词本身；长会话不会被读取。之前版本已经入库的残留会在下次刷新时清掉。清的只是 another 自己的索引，agent 自己的会话文件仍在它自己的目录里。
 
 <img src="docs/assets/tui-batch.svg" width="100%" alt="another 批量命名确认页：原名到新名的对照表与折叠计数">
 

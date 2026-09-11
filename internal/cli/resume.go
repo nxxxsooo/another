@@ -42,6 +42,11 @@ func (a *App) resumeCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("not migrated to %s yet — run: another migrate %s --to %s -y", to, args[0], to)
 			}
+			if blocker, ok := dst.(provider.ResumeBlocker); ok {
+				if reason := blocker.ResumeUnavailableReason(*dup); reason != "" {
+					return fmt.Errorf("%s", reason)
+				}
+			}
 			fmt.Println(dst.ResumeCommand(*dup))
 			return nil
 		},

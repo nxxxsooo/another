@@ -87,6 +87,14 @@ type ResumeEnsurer interface {
 	EnsureResumable(conv *model.Conversation, ref WriteResult) error
 }
 
+// ResumeBlocker explains why an otherwise resumable provider cannot resume one
+// particular session. This is distinct from SupportsResume: some native stores
+// bind a session to state that can later become invalid, such as a working
+// directory hash.
+type ResumeBlocker interface {
+	ResumeUnavailableReason(WriteResult) string
+}
+
 // WriteCleaner removes only the exact artifact returned by Write. Engines use
 // it when post-write verification fails; providers must not perform broad scans.
 type WriteCleaner interface {

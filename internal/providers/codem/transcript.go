@@ -34,6 +34,8 @@ type record struct {
 	CWD       string `json:"cwd"`
 	Content   string `json:"content"`
 	Text      string `json:"text"`
+	NewTitle  string `json:"new_title"`
+	RecordSeq uint64 `json:"record_seq"`
 }
 
 type transcript struct {
@@ -45,6 +47,7 @@ type transcript struct {
 	lastAt    time.Time
 	messages  []model.Message
 	migration *model.MigrationMeta
+	recordSeq uint64
 }
 
 // created prefers the header's own start over the first message that survived
@@ -91,6 +94,9 @@ func scan(ctx context.Context, path string, keepLast int) (transcript, error) {
 		if json.Unmarshal(line, &row) != nil {
 			return nil
 		}
+		if row.RecordSeq > out.recordSeq {
+			out.recordSeq = row.RecordSeq
+		}
 		switch row.Type {
 		case recordHeader:
 			// The id comes from the file name rather than from this record:
@@ -121,6 +127,10 @@ func scan(ctx context.Context, path string, keepLast int) (transcript, error) {
 				return nil
 			}
 			out.append(model.RoleAssistant, text, util.ParseTime(row.At), keepLast)
+		case recordSessionRenamed:
+			if title := strings.TrimSpace(row.NewTitle); title != "" {
+				out.title = title
+			}
 		}
 		return nil
 	})
@@ -128,7 +138,9 @@ func scan(ctx context.Context, path string, keepLast int) (transcript, error) {
 		return transcript{}, err
 	}
 	out.project = origin.Path()
-	out.title = picker.TitleOr("(codem session)")
+	if out.title == "" {
+		out.title = picker.TitleOr("(codem session)")
+	}
 	return out, nil
 }
 
@@ -153,15 +165,14 @@ func skipUserMessage(text string) bool {
 	return util.SkipUserMessage(text) || strings.HasPrefix(text, "<system-reminder>")
 }
 
-// Rename, archive, and relocate are absent by contract, not by omission. CodeM
-// stores no title at all — `codem sessions list` derives one from the first user
-// message every time it runs — so a rename would have nowhere to land but
-// another's own state. Relocating is the same problem in path form: the
+// Relocation is absent by contract, not by omission. The
 // directory a session belongs to is the hash its transcript sits under, and
 // CodeM has no operation that moves a session between them.
 var (
-	_ provider.Provider       = (*Provider)(nil)
-	_ provider.PreviewLoader  = (*Provider)(nil)
-	_ provider.WriteCleaner   = (*Provider)(nil)
-	_ provider.SessionDeleter = (*Provider)(nil)
+	_ provider.Provider        = (*Provider)(nil)
+	_ provider.PreviewLoader   = (*Provider)(nil)
+	_ provider.WriteCleaner    = (*Provider)(nil)
+	_ provider.SessionDeleter  = (*Provider)(nil)
+	_ provider.SessionRenamer  = (*Provider)(nil)
+	_ provider.SessionArchiver = (*Provider)(nil)
 )

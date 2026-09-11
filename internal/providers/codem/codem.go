@@ -41,6 +41,11 @@ const schemaVersion = 10
 // run resolves its real model from the active profile.
 const defaultModel = "codem-router/auto"
 
+const (
+	recordSessionRenamed = "session_renamed"
+	archiveDirName       = "archived"
+)
+
 type Provider struct {
 	root string
 }
@@ -241,8 +246,10 @@ func (p *Provider) locate(ref provider.SessionRef) (string, error) {
 		}
 	}
 	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
+		for _, candidate := range p.activeAndArchived(path) {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
 		}
 	}
 	dirs, err := os.ReadDir(p.sessionsRoot())
@@ -255,12 +262,18 @@ func (p *Provider) locate(ref provider.SessionRef) (string, error) {
 		}
 		for _, candidate := range ids {
 			path := filepath.Join(p.sessionsRoot(), dir.Name(), candidate+".jsonl")
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
+			for _, candidatePath := range p.activeAndArchived(path) {
+				if _, err := os.Stat(candidatePath); err == nil {
+					return candidatePath, nil
+				}
 			}
 		}
 	}
 	return "", provider.ErrNotFound
+}
+
+func (p *Provider) activeAndArchived(path string) []string {
+	return []string{path, filepath.Join(filepath.Dir(path), archiveDirName, filepath.Base(path))}
 }
 
 func (p *Provider) Write(_ context.Context, conv *model.Conversation, opts provider.WriteOpts) (*provider.WriteResult, error) {
@@ -347,12 +360,118 @@ func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 // outright when the id is not there. The directory hash another carries in the
 // id is dropped here — CodeM computes it from where the command runs.
 func (p *Provider) ResumeCommand(result provider.WriteResult) string {
+	if p.ResumeUnavailableReason(result) != "" {
+		return ""
+	}
 	_, id := splitSessionKey(result.SessionID)
 	cmd := "codem --resume " + util.ShellQuote(id)
 	if result.ProjectPath != "" {
 		return "cd " + util.ShellQuote(result.ProjectPath) + " && " + cmd
 	}
 	return cmd
+}
+
+// ResumeUnavailableReason catches sessions orphaned when their original cwd
+// was moved or became a symlink. CodeM hashes os.Getwd(), which resolves such a
+// link to its physical target, while the transcript remains under the old
+// literal cwd's hash.
+func (p *Provider) ResumeUnavailableReason(result provider.WriteResult) string {
+	if result.ProjectPath == "" {
+		return ""
+	}
+	hash, _ := splitSessionKey(result.SessionID)
+	if result.StoragePath != "" {
+		dir := filepath.Dir(result.StoragePath)
+		if filepath.Base(dir) == archiveDirName {
+			dir = filepath.Dir(dir)
+		}
+		if candidate := filepath.Base(dir); len(candidate) == projectHashLen && isHex(candidate) {
+			hash = candidate
+		}
+	}
+	if hash == "" {
+		return ""
+	}
+	physical, err := filepath.EvalSymlinks(result.ProjectPath)
+	if err != nil || projectHash(physical) != hash {
+		return "CodeM cannot resume this session because its original working directory moved or now resolves to a different path; migrate it to continue"
+	}
+	return ""
+}
+
+func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("codem: title must not be empty")
+	}
+	path, err := p.locate(ref)
+	if err != nil {
+		return err
+	}
+	if !p.insideStore(path) {
+		return fmt.Errorf("codem: refusing rename outside session store: %s", path)
+	}
+	if err := refuseSymlink(path); err != nil {
+		return err
+	}
+	data, err := scan(ctx, path, 0)
+	if err != nil {
+		return err
+	}
+	row, err := json.Marshal(map[string]any{
+		"type": recordSessionRenamed, "at": stamp(time.Now()),
+		"new_title": title, "record_seq": data.recordSeq + 1,
+	})
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.Write(append(row, '\n')); err != nil {
+		return err
+	}
+	return f.Sync()
+}
+
+// ArchiveSession mirrors CodeM's native archive operation: the transcript is
+// moved into or out of the project's archived directory. CodeM leaves the
+// session scratchpad beside that directory in both states.
+func (p *Provider) ArchiveSession(_ context.Context, ref provider.SessionRef, archived bool) error {
+	path, err := p.locate(ref)
+	if err != nil {
+		return err
+	}
+	if !p.insideStore(path) {
+		return fmt.Errorf("codem: refusing archive outside session store: %s", path)
+	}
+	if err := refuseSymlink(path); err != nil {
+		return err
+	}
+	isArchived := filepath.Base(filepath.Dir(path)) == archiveDirName
+	if isArchived == archived {
+		return nil
+	}
+	hashDir := filepath.Dir(path)
+	if isArchived {
+		hashDir = filepath.Dir(hashDir)
+	}
+	targetDir := hashDir
+	if archived {
+		targetDir = filepath.Join(hashDir, archiveDirName)
+	}
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		return err
+	}
+	target := filepath.Join(targetDir, filepath.Base(path))
+	if _, err := os.Lstat(target); err == nil {
+		return fmt.Errorf("codem: archive target already exists: %s", target)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(path, target)
 }
 
 func (p *Provider) CleanupWrite(_ context.Context, result provider.WriteResult) error {
@@ -389,7 +508,11 @@ func (p *Provider) DeleteSession(_ context.Context, ref provider.SessionRef) err
 	// and a failure halfway would otherwise leave a session whose scratchpad had
 	// already been taken from under it.
 	errs := []error{remove(path)}
-	sidecar := filepath.Join(filepath.Dir(path), id)
+	hashDir := filepath.Dir(path)
+	if filepath.Base(hashDir) == archiveDirName {
+		hashDir = filepath.Dir(hashDir)
+	}
+	sidecar := filepath.Join(hashDir, id)
 	if st, err := os.Lstat(sidecar); err == nil && st.IsDir() {
 		errs = append(errs, os.RemoveAll(sidecar))
 	}

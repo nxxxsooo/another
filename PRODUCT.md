@@ -24,7 +24,7 @@ Success is two-fold: a developer who switches agents mid-task keeps the actual c
 
 Migration writes native sessions, not handoff summaries. The target agent resumes its own file or database as if it had always owned the session. Every write is reloaded, digest-compared against the source content, and rolled back on mismatch.
 
-Management is native on the same terms: rename, archive, and delete land in the provider's real state (Codex threads DB and `session_index.jsonl`, Claude `custom-title`, Pi `session_info`, OpenCode native rows, OpenCode 2 official API). A provider without a verified native contract reports the action as unsupported rather than faking it in a private index.
+Management is native on the same terms: rename, archive, and delete land in the provider's real state (Codex threads DB and `session_index.jsonl`, Claude `custom-title`, Pi `session_info`, OpenCode native rows, OpenCode 2 official API, CodeM `session_renamed` records and archive directory). A provider without a verified native contract reports the action as unsupported rather than faking it in a private index.
 
 A neighboring tool could copy the browser. It could not truthfully copy "the other agent resumes it natively, and we proved the write survived."
 

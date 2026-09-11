@@ -704,9 +704,16 @@ func (m modelState) openCurrentSession() (tea.Model, tea.Cmd) {
 		m.err = fmt.Sprintf(txt.resumeUnsupportedFmt, p.DisplayName())
 		return m, nil
 	}
-	command := p.ResumeCommand(provider.WriteResult{
+	result := provider.WriteResult{
 		SessionID: it.summary.ID, StoragePath: it.summary.StoragePath, ProjectPath: it.summary.ProjectPath,
-	})
+	}
+	if blocker, ok := p.(provider.ResumeBlocker); ok {
+		if reason := blocker.ResumeUnavailableReason(result); reason != "" {
+			m.err = reason
+			return m, nil
+		}
+	}
+	command := p.ResumeCommand(result)
 	if command == "" {
 		m.err = fmt.Sprintf(txt.noResumeCommandFmt, p.DisplayName())
 		return m, nil
