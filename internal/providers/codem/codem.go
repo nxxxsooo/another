@@ -213,37 +213,37 @@ func (p *Provider) load(ctx context.Context, ref provider.SessionRef, keepLast i
 	}, nil
 }
 
-// locate resolves a ref to a transcript for reading. A recorded storage path is
-// used when it still exists, because the index holds the exact file; otherwise
-// the path is rebuilt from the hash the id carries, then from the directory the
-// caller named, and only then looked for under every project.
+// locate resolves a ref to a transcript for reading. A qualified id is an exact
+// address: CodeM reuses ids between projects, so falling back to another hash
+// after that transcript disappears could read or mutate an unrelated session.
+// Only an unqualified id may use a stored path, project hint, then global scan.
 func (p *Provider) locate(ref provider.SessionRef) (string, error) {
+	hash, id := splitSessionKey(ref.ID)
+	if hash != "" {
+		if !validSessionID(id) {
+			return "", provider.ErrNotFound
+		}
+		path := filepath.Join(p.sessionsRoot(), hash, id+".jsonl")
+		for _, candidate := range p.activeAndArchived(path) {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+		}
+		return "", provider.ErrNotFound
+	}
+
 	if path := ref.StoragePath; path != "" && strings.HasSuffix(path, ".jsonl") {
 		if st, err := os.Stat(path); err == nil && !st.IsDir() {
 			return path, nil
 		}
 	}
-	hash, id := splitSessionKey(ref.ID)
-	// A CodeM id could in principle look like a qualified one. Both readings
-	// are tried, so an id that happens to start with sixteen hex characters
-	// and an underscore is still found.
-	var ids []string
-	for _, candidate := range []string{id, ref.ID} {
-		if validSessionID(candidate) && (len(ids) == 0 || ids[0] != candidate) {
-			ids = append(ids, candidate)
-		}
-	}
-	if len(ids) == 0 {
+	id = ref.ID
+	if !validSessionID(id) {
 		return "", provider.ErrNotFound
 	}
 	var candidates []string
-	for _, candidate := range ids {
-		if hash != "" {
-			candidates = append(candidates, filepath.Join(p.sessionsRoot(), hash, candidate+".jsonl"))
-		}
-		if ref.ProjectPath != "" {
-			candidates = append(candidates, p.transcriptPath(ref.ProjectPath, candidate))
-		}
+	if ref.ProjectPath != "" {
+		candidates = append(candidates, p.transcriptPath(ref.ProjectPath, id))
 	}
 	for _, path := range candidates {
 		for _, candidate := range p.activeAndArchived(path) {
@@ -260,12 +260,10 @@ func (p *Provider) locate(ref provider.SessionRef) (string, error) {
 		if !dir.IsDir() {
 			continue
 		}
-		for _, candidate := range ids {
-			path := filepath.Join(p.sessionsRoot(), dir.Name(), candidate+".jsonl")
-			for _, candidatePath := range p.activeAndArchived(path) {
-				if _, err := os.Stat(candidatePath); err == nil {
-					return candidatePath, nil
-				}
+		path := filepath.Join(p.sessionsRoot(), dir.Name(), id+".jsonl")
+		for _, candidatePath := range p.activeAndArchived(path) {
+			if _, err := os.Stat(candidatePath); err == nil {
+				return candidatePath, nil
 			}
 		}
 	}

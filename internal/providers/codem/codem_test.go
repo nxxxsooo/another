@@ -165,6 +165,42 @@ func TestOneCodeMIDInTwoDirectoriesStaysTwoSessions(t *testing.T) {
 	}
 }
 
+func TestQualifiedMissingSessionNeverMutatesSameIDInAnotherProject(t *testing.T) {
+	p := store(t,
+		fixture{"feishu.jsonl", notesProject, feishuID},
+		fixture{"session.jsonl", demoProject, feishuID},
+	)
+	missing := p.transcriptPath(demoProject, feishuID)
+	other := p.transcriptPath(notesProject, feishuID)
+	if err := os.Remove(missing); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := provider.SessionRef{
+		ID: key(demoProject, feishuID), StoragePath: missing, ProjectPath: demoProject,
+	}
+	if err := p.RenameSession(context.Background(), ref, "must not land elsewhere"); !errors.Is(err, provider.ErrNotFound) {
+		t.Fatalf("rename missing qualified session = %v, want not found", err)
+	}
+	if err := p.ArchiveSession(context.Background(), ref, true); !errors.Is(err, provider.ErrNotFound) {
+		t.Fatalf("archive missing qualified session = %v, want not found", err)
+	}
+	after, err := os.ReadFile(other)
+	if err != nil {
+		t.Fatalf("other project's transcript moved or removed: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("other project's same-id transcript was modified")
+	}
+	archivedOther := filepath.Join(filepath.Dir(other), archiveDirName, filepath.Base(other))
+	if _, err := os.Stat(archivedOther); !os.IsNotExist(err) {
+		t.Fatalf("other project's same-id transcript was archived: %v", err)
+	}
+}
+
 func TestDiscoverHonorsSkipAndFilter(t *testing.T) {
 	p := store(t,
 		fixture{"session.jsonl", demoProject, demoID},
