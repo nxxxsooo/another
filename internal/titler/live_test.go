@@ -13,7 +13,7 @@ import (
 func TestLiveSuggest(t *testing.T) {
 	provider := os.Getenv("LIVE_PROVIDER")
 	if provider == "" {
-		t.Skip("set LIVE_PROVIDER=claude|codex|pi to call a real agent CLI")
+		t.Skip("set LIVE_PROVIDER=claude|codex|pi|qwen to call a real agent CLI")
 	}
 	start := time.Now()
 	got, err := titler.Suggest(context.Background(), titler.Config{Provider: provider, Model: os.Getenv("LIVE_MODEL")}, titler.Request{
@@ -32,5 +32,23 @@ func TestLiveSuggest(t *testing.T) {
 	}
 	if got == "" {
 		t.Fatal("live run produced no usable suggestion")
+	}
+}
+
+func TestLiveListModels(t *testing.T) {
+	provider := os.Getenv("LIVE_PROVIDER")
+	if provider == "" {
+		t.Skip("set LIVE_PROVIDER to call a real agent CLI")
+	}
+	if !titler.CanListModels(provider) {
+		t.Skipf("%s has no model-listing interface", provider)
+	}
+	models, err := titler.ListModels(context.Background(), provider)
+	t.Logf("provider=%s models=%v err=%v", provider, models, err)
+	if err != nil {
+		t.Fatalf("live model listing failed: %v", err)
+	}
+	if len(models) == 0 {
+		t.Fatal("live model listing returned no models")
 	}
 }

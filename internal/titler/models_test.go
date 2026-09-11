@@ -58,6 +58,21 @@ func TestModelParsersKeepOnlyUsableIdentifiers(t *testing.T) {
 				`{"type":"result","subtype":"success","result":"hi"}` + "\n",
 			nil,
 		},
+		{
+			"qwen keeps model ids from its catalog response",
+			parseQwenModels,
+			`{"type":"control_response","response":{"subtype":"success","request_id":"another-init","response":{"subtype":"initialize"}}}` + "\n" +
+				`{"type":"control_response","response":{"subtype":"success","request_id":"another-list-models","response":{"subtype":"get_available_models","models":[` +
+				`{"id":"qwen3.7-plus","label":"Qwen 3.7 Plus"},{"id":"glm-5","label":"GLM-5"}]}}}` + "\n",
+			[]string{"qwen3.7-plus", "glm-5"},
+		},
+		{
+			"qwen ignores errors and unrelated responses",
+			parseQwenModels,
+			`{"type":"control_response","response":{"subtype":"error","request_id":"another-list-models","error":"not configured"}}` + "\n" +
+				`{"type":"control_response","response":{"subtype":"success","request_id":"other","response":{"subtype":"get_available_models","models":[{"id":"wrong"}]}}}` + "\n",
+			nil,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -86,12 +101,12 @@ func TestDedupeCapsAndPreservesOrder(t *testing.T) {
 // A picker is only offered for CLIs that can really list; the rest must fall
 // back to typing rather than showing IDs their --model flag would reject.
 func TestCanListModelsMatchesTheListers(t *testing.T) {
-	for _, id := range []string{"pi", "agy", "opencode", "opencode2", "OPENCODE", "claude-code", "claude"} {
+	for _, id := range []string{"pi", "agy", "opencode", "opencode2", "OPENCODE", "claude-code", "claude", "qwen"} {
 		if !CanListModels(id) {
 			t.Fatalf("%s should support listing", id)
 		}
 	}
-	for _, id := range []string{"codex", "qwen", "cursor", ""} {
+	for _, id := range []string{"codex", "cursor", ""} {
 		if CanListModels(id) {
 			t.Fatalf("%s must not claim listing support", id)
 		}

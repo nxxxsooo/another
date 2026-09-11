@@ -42,6 +42,15 @@ var modelListers = map[string]modelLister{
 	// Both OpenCode generations print one "provider/model" per line.
 	"opencode":  {args: []string{"models"}, parse: parsePlainModels},
 	"opencode2": {args: []string{"models"}, parse: parsePlainModels},
+	// Qwen Code exposes its current auth type's catalog through the headless
+	// control protocol. The first request enables that protocol; the second
+	// returns the exact IDs accepted by --model. Do not use --bare here: it
+	// would discard the auth/provider settings that determine the catalog.
+	"qwen": {
+		args:  []string{"--safe-mode", "--chat-recording=false", "--input-format", "stream-json", "--output-format", "stream-json"},
+		stdin: qwenListRequest,
+		parse: parseQwenModels,
+	},
 	// Claude Code has no listing subcommand, but its headless control
 	// protocol answers list_models from the same catalog its own /model
 	// picker shows: no prompt, no model call, and it exits as soon as stdin
@@ -58,6 +67,9 @@ var modelListers = map[string]modelLister{
 // with its catalog. The id is only echoed back, so it names another rather
 // than pretending to be a counter.
 const claudeListRequest = `{"type":"control_request","request_id":"another-list-models","request":{"subtype":"list_models"}}` + "\n"
+
+const qwenListRequest = `{"type":"control_request","request_id":"another-init","request":{"subtype":"initialize"}}` + "\n" +
+	`{"type":"control_request","request_id":"another-list-models","request":{"subtype":"get_available_models"}}` + "\n"
 
 // ListFailure names why a listing did not produce models. Like a freeze
 // reason, it is an identifier rather than a sentence: the screen that shows it
@@ -248,6 +260,44 @@ func parseClaudeModels(raw string) []string {
 		for _, model := range msg.Response.Response.Models {
 			if value := strings.TrimSpace(model.Value); value != "" && value != "default" {
 				out = append(out, value)
+			}
+		}
+	}
+	return out
+}
+
+// parseQwenModels reads only the successful response to another's catalog
+// request. The initialize response and any stream noise are deliberately
+// ignored; model.id is the value Qwen Code's --model flag accepts.
+func parseQwenModels(raw string) []string {
+	var out []string
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var msg struct {
+			Type     string `json:"type"`
+			Response struct {
+				Subtype   string `json:"subtype"`
+				RequestID string `json:"request_id"`
+				Response  struct {
+					Subtype string `json:"subtype"`
+					Models  []struct {
+						ID string `json:"id"`
+					} `json:"models"`
+				} `json:"response"`
+			} `json:"response"`
+		}
+		if err := json.Unmarshal([]byte(line), &msg); err != nil ||
+			msg.Type != "control_response" || msg.Response.Subtype != "success" ||
+			msg.Response.RequestID != "another-list-models" ||
+			msg.Response.Response.Subtype != "get_available_models" {
+			continue
+		}
+		for _, model := range msg.Response.Response.Models {
+			if id := strings.TrimSpace(model.ID); id != "" {
+				out = append(out, id)
 			}
 		}
 	}
