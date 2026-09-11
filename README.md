@@ -44,10 +44,12 @@ brew trust nxxxsooo/tap
 brew install nxxxsooo/tap/another
 
 # 安装脚本
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Homebrew 6 要求先信任第三方 tap，否则会拒绝安装。旧版 Homebrew 不认识 `brew trust`，可跳过这一行，直接安装。
+
+安装脚本会在默认目录不在 `PATH` 时，把它持久化到当前 shell 的启动文件（zsh 为 `~/.zshrc`）。命令末尾的 `export` 让当前终端也立即生效；这一步必须由启动安装脚本的 shell 执行，脚本的子进程无法修改父 shell，SSH 与本机终端在这里没有区别。
 
 <details>
 <summary><strong>安装报 <code>undefined method 'run'</code></strong></summary>
@@ -108,7 +110,7 @@ another
 
 ```bash
 brew upgrade another                     # Homebrew
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash   # 安装脚本
+curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # 安装脚本
 go install github.com/nxxxsooo/another/cmd/another@latest                                      # 源码安装
 ```
 

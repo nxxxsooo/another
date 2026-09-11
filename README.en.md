@@ -48,12 +48,18 @@ brew trust nxxxsooo/tap
 brew install nxxxsooo/tap/another
 
 # Install script
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Homebrew 6 requires third-party taps to be trusted before it will load them, and
 refuses the install otherwise. Older versions load the tap directly and treat
 `brew trust` as an unknown command; skip that line on those.
+
+When the default directory is missing from `PATH`, the install script persists
+it in the current shell's startup file (`~/.zshrc` for zsh). The trailing
+`export` also makes it available in the current terminal; that part must run in
+the shell which launched the installer because a child process cannot change
+its parent, whether the terminal is local or reached over SSH.
 
 <details>
 <summary><strong>Install fails with <code>undefined method 'run'</code></strong></summary>
@@ -121,7 +127,7 @@ The first run opens a Charmtone setup screen. The top of the first page picks th
 
 ```bash
 brew upgrade another                     # Homebrew
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash   # script
+curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # script
 go install github.com/nxxxsooo/another/cmd/another@latest                                      # source
 ```
 

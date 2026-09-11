@@ -88,7 +88,7 @@ func runSelfUpdate(cmd *cobra.Command, checkOnly bool) error {
 	default:
 		fmt.Fprintf(out, "\nCould not tell how %s was installed. Use whichever applies:\n", exe)
 		fmt.Fprintln(out, "  brew upgrade --cask another")
-		fmt.Fprintln(out, "  curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash")
+		fmt.Fprintln(out, `  curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"`)
 		fmt.Fprintln(out, "  go install github.com/nxxxsooo/another/cmd/another@latest")
 		return nil
 	}
