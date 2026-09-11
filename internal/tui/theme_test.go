@@ -10,6 +10,34 @@ import (
 	"github.com/muesli/termenv"
 )
 
+type terminalEnvironment map[string]string
+
+func (e terminalEnvironment) Environ() []string { return nil }
+func (e terminalEnvironment) Getenv(key string) string {
+	return e[key]
+}
+
+// Ghostty sends TERM over SSH, but COLORTERM is normally not forwarded. The
+// color detector must still recognize the remote terminal instead of reducing
+// the entire TUI to ASCII styling.
+func TestGhosttyOverSSHKeepsColor(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		env  terminalEnvironment
+		want termenv.Profile
+	}{
+		{name: "TERM alone identifies Ghostty", env: terminalEnvironment{"TERM": "xterm-ghostty"}, want: termenv.TrueColor},
+		{name: "NO_COLOR still wins", env: terminalEnvironment{"TERM": "xterm-ghostty", "NO_COLOR": "1"}, want: termenv.Ascii},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			out := termenv.NewOutput(&strings.Builder{}, termenv.WithEnvironment(tt.env), termenv.WithTTY(true))
+			if got := out.EnvColorProfile(); got != tt.want {
+				t.Fatalf("profile = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTwinThemeAssignsDistinctInteractionRoles(t *testing.T) {
 	tests := []struct {
 		name string
