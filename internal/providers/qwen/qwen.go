@@ -451,9 +451,9 @@ func (p *Provider) Write(_ context.Context, conv *model.Conversation, opts provi
 }
 
 func (p *Provider) ResumeCommand(result provider.WriteResult) string {
-	cmd := "qwen --resume " + util.ShellQuote(result.SessionID)
+	cmd := "qwen --resume " + util.QuoteArg(result.SessionID)
 	if result.ProjectPath != "" {
-		return "cd " + util.ShellQuote(result.ProjectPath) + " && " + cmd
+		return util.CdAnd(result.ProjectPath, cmd)
 	}
 	return cmd
 }

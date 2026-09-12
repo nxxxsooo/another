@@ -3,6 +3,7 @@ package util
 import (
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 )
 
@@ -17,23 +18,40 @@ func TestUnsetLivenessIsUnknownRatherThanGone(t *testing.T) {
 	}
 }
 
-func TestOwnProcessIsRunning(t *testing.T) {
-	if got := ProcessLiveness(os.Getpid()); got != ProcessRunning {
-		t.Fatalf("this test's own pid reads as %v", got)
+// Signal 0 is unimplemented on Windows — os.Process.Signal answers EWINDOWS
+// for everything but Kill — so even this test's own pid reads as unknown
+// there. That is the contract working, not a gap: unknown is what keeps
+// callers from acting on a check that cannot be made.
+func TestOwnProcessLivenessMatchesPlatformCapability(t *testing.T) {
+	want := ProcessRunning
+	if runtime.GOOS == "windows" {
+		want = ProcessUnknown
+	}
+	if got := ProcessLiveness(os.Getpid()); got != want {
+		t.Fatalf("this test's own pid reads as %v, want %v", got, want)
 	}
 }
 
-// pid 1 exists on every machine this runs on and belongs to root, so the check
-// comes back EPERM rather than success. Existing but untouchable is still
-// existing, and reading it as gone would let another write under a live agent
-// started by a different user.
-func TestProcessThisUserMayNotSignalIsStillRunning(t *testing.T) {
-	if got := ProcessLiveness(1); got != ProcessRunning {
-		t.Fatalf("pid 1 reads as %v", got)
+// pid 1 exists on every Unix machine this runs on and belongs to root, so the
+// check comes back EPERM rather than success. Existing but untouchable is
+// still existing, and reading it as gone would let another write under a live
+// agent started by a different user. On Windows every pid check is
+// unanswerable, so the same pid reads as unknown — which refuses rather than
+// proceeds, the whole point of the third state.
+func TestUnsignalableProcessIsNeverGone(t *testing.T) {
+	got := ProcessLiveness(1)
+	if got == ProcessGone {
+		t.Fatal("pid 1 reads as gone; an unanswerable check must never grant permission")
+	}
+	if runtime.GOOS != "windows" && got != ProcessRunning {
+		t.Fatalf("pid 1 reads as %v, want running", got)
 	}
 }
 
 func TestReapedProcessIsGone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("signal 0 is unimplemented on Windows, so even a reaped pid reads as unknown")
+	}
 	cmd := exec.Command("sh", "-c", "exit 0")
 	if err := cmd.Run(); err != nil {
 		t.Fatal(err)

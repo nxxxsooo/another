@@ -560,9 +560,9 @@ func buildV2RolloutLines(conv *model.Conversation, sessionID, project string, no
 // cwd it was written for, so resuming from elsewhere lands the agent in the
 // wrong project.
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	cmd := "codex resume " + util.ShellQuote(r.SessionID)
+	cmd := "codex resume " + util.QuoteArg(r.SessionID)
 	if r.ProjectPath != "" {
-		return "cd " + util.ShellQuote(r.ProjectPath) + " && " + cmd
+		return util.CdAnd(r.ProjectPath, cmd)
 	}
 	return cmd
 }

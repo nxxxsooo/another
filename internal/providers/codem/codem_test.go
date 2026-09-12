@@ -161,8 +161,9 @@ func TestOneCodeMIDInTwoDirectoriesStaysTwoSessions(t *testing.T) {
 	}
 	// The hash is another's, not CodeM's: it must not reach the resume line.
 	got := p.ResumeCommand(provider.WriteResult{SessionID: demo.ID})
-	if got != "codem --resume '"+feishuID+"'" {
-		t.Fatalf("resume command = %q", got)
+	want := "codem --resume " + util.QuoteArg(feishuID)
+	if got != want {
+		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
 
@@ -592,14 +593,14 @@ func TestResumeBridgesAProjectWhosePhysicalPathHasADifferentHash(t *testing.T) {
 	if target != filepath.Join(p.sessionsRoot(), projectHash(alias)) {
 		t.Fatalf("resume bridge points to %q", target)
 	}
-	want := "cd '" + alias + "' && LINCO_SESSIONS_ROOT='" + bridgeRoot + "' codem --resume '" + demoID + "'"
+	want := util.CdAnd(alias, util.EnvAnd("LINCO_SESSIONS_ROOT", bridgeRoot, "codem --resume "+util.QuoteArg(demoID)))
 	if got := p.ResumeCommand(result); got != want {
 		t.Fatalf("bridged resume command = %q, want %q", got, want)
 	}
 
 	result.SessionID = sessionKey(projectHash(physical), demoID)
 	result.StoragePath = filepath.Join(p.sessionsRoot(), projectHash(physical), demoID+".jsonl")
-	want = "cd '" + alias + "' && codem --resume '" + demoID + "'"
+	want = util.CdAnd(alias, "codem --resume "+util.QuoteArg(demoID))
 	if got := p.ResumeCommand(result); got != want {
 		t.Fatalf("resumable alias command = %q, want %q", got, want)
 	}
@@ -657,7 +658,7 @@ func TestWriteFailureLeavesNothingBehind(t *testing.T) {
 
 func TestResumeCommandQuotesHostileValues(t *testing.T) {
 	p := New()
-	if got := p.ResumeCommand(provider.WriteResult{SessionID: "abc"}); got != "codem --resume 'abc'" {
+	if got := p.ResumeCommand(provider.WriteResult{SessionID: "abc"}); got != "codem --resume "+util.QuoteArg("abc") {
 		t.Fatalf("resume command without a project = %q", got)
 	}
 }

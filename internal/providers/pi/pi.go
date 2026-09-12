@@ -616,9 +616,9 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 // ResumeCommand points at the exact session file. pi -r would also work but
 // requires the user to pick the right entry from a list.
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	cmd := "pi --session " + util.ShellQuote(r.StoragePath)
+	cmd := "pi --session " + util.QuoteArg(r.StoragePath)
 	if r.ProjectPath != "" {
-		return "cd " + util.ShellQuote(r.ProjectPath) + " && " + cmd
+		return util.CdAnd(r.ProjectPath, cmd)
 	}
 	return cmd
 }

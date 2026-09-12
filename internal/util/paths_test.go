@@ -3,6 +3,7 @@ package util_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -112,7 +113,9 @@ func TestWriteFileAtomicIsSecureAndCleansFailedTemp(t *testing.T) {
 	}
 	if info, err := os.Stat(dst); err != nil {
 		t.Fatal(err)
-	} else if info.Mode().Perm() != 0o640 {
+	} else if runtime.GOOS != "windows" && info.Mode().Perm() != 0o640 {
+		// Windows has no Unix permission bits: Chmod accepts the mode and the
+		// write stays atomic, but there is nothing to read back.
 		t.Fatalf("target mode = %v", info.Mode().Perm())
 	}
 	if err := util.WriteFileAtomic(dir, []byte("cannot replace directory"), 0o600); err == nil {

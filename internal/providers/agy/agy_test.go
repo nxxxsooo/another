@@ -14,6 +14,7 @@ import (
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/providers/agy"
+	"github.com/nxxxsooo/another/internal/util"
 	_ "modernc.org/sqlite"
 )
 
@@ -42,16 +43,18 @@ func TestProviderBasics(t *testing.T) {
 		ProjectPath: "/some/project",
 	}
 	cmd := p.ResumeCommand(res)
-	if cmd != "cd '/some/project' && agy --conversation 'session-123'" {
-		t.Fatalf("unexpected ResumeCommand: %q", cmd)
+	want := util.CdAnd("/some/project", "agy --conversation "+util.QuoteArg("session-123"))
+	if cmd != want {
+		t.Fatalf("unexpected ResumeCommand: %q, want %q", cmd, want)
 	}
 
 	resNoProj := provider.WriteResult{
 		SessionID: "session-456",
 	}
 	cmdNoProj := p.ResumeCommand(resNoProj)
-	if cmdNoProj != "agy --conversation 'session-456'" {
-		t.Fatalf("unexpected ResumeCommand without project: %q", cmdNoProj)
+	wantNoProj := "agy --conversation " + util.QuoteArg("session-456")
+	if cmdNoProj != wantNoProj {
+		t.Fatalf("unexpected ResumeCommand without project: %q, want %q", cmdNoProj, wantNoProj)
 	}
 }
 
