@@ -99,7 +99,17 @@ check are Unix-only.
 ## What the Windows CI leg has already caught
 
 The `windows-latest` leg earns its keep: the first run failed ~60 tests in
-patterns that fall into three buckets.
+patterns that fell into three buckets, and the leg is green now.
+
+**Real product bugs, fixed.** SQL `LIKE` child-prefixes hardcoded `/`
+(`internal/index/store.go`), so project scoping, search filters, and titler
+pruning matched nothing on Windows. `NestedRepoRoots` had the same hardcoded
+separator, silently disabling worktree subtraction. pi's project-directory
+encoding kept the drive-letter colon, which is illegal in a Windows file name;
+it now matches pi upstream (`/[/\\:]/g` → `-`), verified against pi's
+`session-manager.ts`. `NormalizeProjectPath` returned the `\\?\`-prefixed
+form `EvalSymlinks` produces for existing directories while deleted ones kept
+the plain form, so stored and queried paths diverged.
 
 **Real product bugs, fixed.** SQL `LIKE` child-prefixes hardcoded `/`
 (`internal/index/store.go`), so project scoping, search filters, and titler
