@@ -21,8 +21,7 @@ import (
 // drive letters.
 func writeSession(t *testing.T, root, cwd, name string, lines []string) string {
 	t.Helper()
-	trimmed := strings.Trim(strings.ReplaceAll(cwd, "\\", "/"), "/")
-	dir := filepath.Join(root, "sessions", "--"+strings.NewReplacer("/", "-", ":", "-").Replace(trimmed)+"--")
+	dir := filepath.Join(root, "sessions", piTestEncodeDir(cwd))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -31,6 +30,14 @@ func writeSession(t *testing.T, root, cwd, name string, lines []string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// piTestEncodeDir is the test-side copy of pi's directory naming, shared by
+// every fixture that lays out or locates a session directory, so the scheme
+// lives in exactly two places: encodeProjectDir and here.
+func piTestEncodeDir(cwd string) string {
+	trimmed := strings.Trim(strings.ReplaceAll(cwd, "\\", "/"), "/")
+	return "--" + strings.NewReplacer("/", "-", ":", "-").Replace(trimmed) + "--"
 }
 
 // Pi reads PI_CODING_AGENT_DIR — it builds that name from its own application

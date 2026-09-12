@@ -863,7 +863,7 @@ func TestUpdateIncrementalRereadsRowsIndexedUnderAnOlderAttributionRule(t *testi
 	if err != nil || len(items) != 1 {
 		t.Fatalf("second update list: items=%d err=%v", len(items), err)
 	}
-	if items[0].ProjectPath != "/private/tmp" {
+	if items[0].ProjectPath != util.NormalizeProjectPath("/private/tmp") {
 		t.Fatalf("ProjectPath = %q, want the unchanged file to stay skipped", items[0].ProjectPath)
 	}
 }
