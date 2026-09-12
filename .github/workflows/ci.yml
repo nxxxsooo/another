@@ -38,4 +38,11 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go test -race ./...
-      - run: pwsh -NoProfile -Command "$errors = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('scripts/install.ps1', [ref]$null, [ref]$errors); if ($errors) { $errors | ForEach-Object { $_.Message }; exit 1 }"
+      # The step already runs under pwsh: nesting another pwsh -Command would
+      # expand the $variables in the outer shell before the check ever sees
+      # them.
+      - run: |
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile('scripts/install.ps1', [ref]$null, [ref]$errors)
+          if ($errors) { $errors | ForEach-Object { $_.Message }; exit 1 }
+        shell: pwsh
