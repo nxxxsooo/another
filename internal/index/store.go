@@ -518,7 +518,7 @@ func (s *Store) listWhere(opts ListOpts) (string, []any) {
 				q += ` OR `
 			}
 			q += `(project_path = ? OR project_path LIKE ? ESCAPE '\')`
-			args = append(args, root, util.EscapeLike(root)+`/%`)
+			args = append(args, root, util.EscapeLikeChildPrefix(root))
 			seen[root] = true
 			added++
 		}
@@ -536,7 +536,7 @@ func (s *Store) listWhere(opts ListOpts) (string, []any) {
 				continue
 			}
 			q += ` AND NOT (project_path = ? OR project_path LIKE ? ESCAPE '\')`
-			args = append(args, root, util.EscapeLike(root)+`/%`)
+			args = append(args, root, util.EscapeLikeChildPrefix(root))
 			seenExcluded[root] = true
 		}
 	} else if opts.ProjectCWD != "" {
@@ -544,7 +544,7 @@ func (s *Store) listWhere(opts ListOpts) (string, []any) {
 		home := util.HomeDir()
 		if home != "" && norm == home {
 			q += ` AND project_path LIKE ? ESCAPE '\'`
-			args = append(args, util.EscapeLike(norm)+`/%`)
+			args = append(args, util.EscapeLikeChildPrefix(norm))
 		} else {
 			q += ` AND project_path = ?`
 			args = append(args, norm)
@@ -739,7 +739,7 @@ func (s *Store) ProjectPathsUnder(root string) ([]string, error) {
 	rows, err := s.db.Query(
 		`SELECT DISTINCT project_path FROM sessions
 		 WHERE project_path <> '' AND (project_path = ? OR project_path LIKE ? ESCAPE '\')`,
-		root, util.EscapeLike(root)+`/%`)
+		root, util.EscapeLikeChildPrefix(root))
 	if err != nil {
 		return nil, err
 	}
@@ -1298,8 +1298,8 @@ func (s *Store) PruneTitlerSessions() (int, error) {
 		clauses = append(clauses, "title LIKE ?")
 		args = append(args, marker+"%")
 	}
-	clauses = append(clauses, "project_path LIKE ?")
-	args = append(args, "%/"+titler.TempDirPrefix+"%")
+	clauses = append(clauses, "project_path LIKE ? ESCAPE '\\'")
+	args = append(args, "%"+util.EscapeLike(string(filepath.Separator)+titler.TempDirPrefix)+"%")
 	rows, err := s.db.Query(
 		`SELECT provider, storage_path FROM session_sources WHERE `+strings.Join(clauses, " OR "),
 		args...)

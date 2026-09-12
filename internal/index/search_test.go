@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -78,6 +79,11 @@ func TestOpenPreservesExistingCustomParentPermissions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if runtime.GOOS == "windows" {
+			// Windows has no Unix permission bits: Chmod accepts the mode and
+			// the database stays usable, but there is nothing to read back.
+			continue
+		}
 		if got := info.Mode().Perm(); got != item.perm {
 			t.Fatalf("%s permissions = %o, want %o", item.path, got, item.perm)
 		}
@@ -117,6 +123,11 @@ func TestOpenSecuresOwnedAndCreatedDirectories(t *testing.T) {
 
 func assertMode(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		// Same as above: the ownership and creation behavior under test works,
+		// only the Unix mode assertion has nothing to read.
+		return
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)

@@ -27,6 +27,11 @@ func ExpandPath(p string) string {
 }
 
 func CacheDir() string {
+	// An explicit override wins everywhere, including on Windows where git-bash
+	// environments set XDG variables.
+	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
+		return filepath.Join(xdg, "another")
+	}
 	// A Windows user looks for application state under %LOCALAPPDATA%, not in
 	// dot-directories: os.UserCacheDir resolves exactly there, while the
 	// fallback below keeps the long-standing ~/.cache/another everywhere else.
@@ -37,20 +42,17 @@ func CacheDir() string {
 			return filepath.Join(dir, "another")
 		}
 	}
-	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "another")
-	}
 	return filepath.Join(HomeDir(), ".cache", "another")
 }
 
 func ConfigDir() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "another")
+	}
 	if runtime.GOOS == "windows" {
 		if dir, err := os.UserConfigDir(); err == nil && dir != "" {
 			return filepath.Join(dir, "another")
 		}
-	}
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "another")
 	}
 	return filepath.Join(HomeDir(), ".config", "another")
 }

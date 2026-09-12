@@ -84,12 +84,41 @@ check are Unix-only.
    tested ones): does the PowerShell line land, and does the agent resume?
 3. Confirm where OpenCode, Codex Desktop, and CodeM actually keep state on
    Windows; adjust `AgentDataRoot` / `desktopStateDir` if the probe guesses
-   wrong.
+   wrong. Same for the Claude project-directory encoding: the mapping matches
+   Claude's rule, but the on-disk ground truth for a drive-letter path is
+   unverified.
 4. `another update` from a ps1 install.
 5. TUI feel in Windows Terminal (and conhost, if that matters): colors,
    clipboard copy, farewell screen, window title.
 6. Claude Code's project-trust path: `~/.claude.json` location and the
    re-run flow on Windows.
+7. Whether AGY on Windows takes a presence lock another could share. Until
+   that is established, agy rename/delete of existing conversations refuse
+   there (`lock_other.go`), and the delete tests skip on Windows.
+
+## What the Windows CI leg has already caught
+
+The `windows-latest` leg earns its keep: the first run failed ~60 tests in
+patterns that fall into three buckets.
+
+**Real product bugs, fixed.** SQL `LIKE` child-prefixes hardcoded `/`
+(`internal/index/store.go`), so project scoping, search filters, and titler
+pruning matched nothing on Windows. `NestedRepoRoots` had the same hardcoded
+separator, silently disabling worktree subtraction. pi's project-directory
+encoding kept the drive-letter colon, which is illegal in a Windows file name;
+it now matches pi upstream (`/[/\\:]/g` → `-`), verified against pi's
+`session-manager.ts`. `NormalizeProjectPath` returned the `\\?\`-prefixed
+form `EvalSymlinks` produces for existing directories while deleted ones kept
+the plain form, so stored and queried paths diverged.
+
+**Test fixtures that only occur on Unix.** Drive-less `/repo` literals,
+`/tmp`-style resume strings, permission-bit assertions (no Unix mode bits on
+Windows), a JSON fixture that embedded a raw backslash path, `sh`-based fake
+agent CLIs (unexecutable on Windows — those CLI-contract tests run on Unix),
+and agy delete tests (refused without the presence lock, see above).
+
+**One test bug of mine.** `process_other.go` returned unknown even for
+non-positive pids; a pid no OS can have is gone everywhere.
 
 ## Cheaper option, still true
 

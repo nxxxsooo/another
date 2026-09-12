@@ -95,7 +95,7 @@ func TestMetadataWriteJoinsCleanupFailure(t *testing.T) {
 		return os.WriteFile(filepath.Join(path, "keep"), []byte("x"), 0o600)
 	}
 	_, err := p.Write(context.Background(), &model.Conversation{ID: "origin", Provider: "codex", ProjectPath: "/project", Messages: []model.Message{{Role: model.RoleUser, Content: "hello"}}}, provider.WriteOpts{})
-	if err == nil || !strings.Contains(err.Error(), "metadata failed") || !strings.Contains(err.Error(), "directory not empty") {
+	if err == nil || !strings.Contains(err.Error(), "metadata failed") || !strings.Contains(err.Error(), "not empty") {
 		t.Fatalf("joined metadata error = %v", err)
 	}
 }

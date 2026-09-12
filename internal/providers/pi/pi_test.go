@@ -16,10 +16,13 @@ import (
 )
 
 // writeSession lays out a pi session exactly as pi does: one directory per
-// working directory, named by replacing separators with dashes.
+// working directory, named by replacing separators with dashes. It mirrors
+// encodeProjectDir, including the colon handling pi itself applies to Windows
+// drive letters.
 func writeSession(t *testing.T, root, cwd, name string, lines []string) string {
 	t.Helper()
-	dir := filepath.Join(root, "sessions", "--"+strings.ReplaceAll(strings.TrimPrefix(cwd, "/"), "/", "-")+"--")
+	trimmed := strings.Trim(strings.ReplaceAll(cwd, "\\", "/"), "/")
+	dir := filepath.Join(root, "sessions", "--"+strings.NewReplacer("/", "-", ":", "-").Replace(trimmed)+"--")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

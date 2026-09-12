@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -1078,8 +1079,17 @@ func TestClaudeProjectTrustedReadsExactProject(t *testing.T) {
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	data := `{"projects":{"` + project + `":{"hasTrustDialogAccepted":true},"/other":{"hasTrustDialogAccepted":false}}}`
-	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+	// Built with Marshal rather than string concatenation: a Windows project
+	// path carries backslashes, which are JSON escapes when written raw and
+	// would make the whole fixture unparseable.
+	data, err := json.Marshal(map[string]any{"projects": map[string]any{
+		project:  map[string]any{"hasTrustDialogAccepted": true},
+		"/other": map[string]any{"hasTrustDialogAccepted": false},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if !claudeProjectTrusted(path, project) {

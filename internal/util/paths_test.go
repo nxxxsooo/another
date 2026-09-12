@@ -29,6 +29,15 @@ func TestReadJSONLLinesAcceptsLargeProviderRecord(t *testing.T) {
 }
 
 func TestEncodeClaudeProjectPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The drive colon maps like every other non-alphanumeric rune; what
+		// this pins on top of the shared rule is the Windows shape: the drive
+		// letter stays bare and no separator survives.
+		if got, want := util.EncodeClaudeProjectPath(`D:\home\user\web_root`), "D--home-user-web-root"; got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+		return
+	}
 	got := util.EncodeClaudeProjectPath("/home/user/web_root/a.b c")
 	want := "-home-user-web-root-a-b-c"
 	if got != want {
@@ -44,7 +53,10 @@ func TestShellQuote(t *testing.T) {
 
 func TestDecodeCursorProjectPath(t *testing.T) {
 	got := util.DecodeCursorProjectPath("home-cyrus-Documents-test-miggrate")
-	want := "/home/cyrus/Documents/test/miggrate"
+	// Dashes become the local separator because the decoded value is compared
+	// against real project paths; the leading slash stays literal, matching
+	// what the decoder produces on every platform.
+	want := "/" + strings.ReplaceAll("home/cyrus/Documents/test/miggrate", "/", string(filepath.Separator))
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}

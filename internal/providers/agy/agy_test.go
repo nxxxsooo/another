@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,18 @@ import (
 	"github.com/nxxxsooo/another/internal/util"
 	_ "modernc.org/sqlite"
 )
+
+// requireLifecycleLock skips tests that mutate an existing conversation where
+// the presence lock does not exist. lock_other.go refuses those mutations
+// rather than performing them unserialized — the agy rename/delete contract
+// on top of it — so on such platforms there is nothing to exercise. Windows
+// is the one in the matrix; the condition is really !darwin && !linux.
+func requireLifecycleLock(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("agy lifecycle mutations are refused without the presence lock")
+	}
+}
 
 func TestProviderBasics(t *testing.T) {
 	root := t.TempDir()
@@ -127,7 +140,7 @@ func TestDiscoverFromSummariesDB(t *testing.T) {
 	if len(sums) != 1 {
 		t.Fatalf("expected 1 session discovered, got %d", len(sums))
 	}
-	if sums[0].ID != "s1" || sums[0].Title != "My Session" || sums[0].ProjectPath != "/workspace/demo" {
+	if sums[0].ID != "s1" || sums[0].Title != "My Session" || sums[0].ProjectPath != filepath.FromSlash("/workspace/demo") {
 		t.Fatalf("unexpected summary: %+v", sums[0])
 	}
 }
@@ -871,6 +884,7 @@ func writeFullConversation(t *testing.T, root, id, title string) string {
 // store still names the conversation, so it cannot come back in a later listing
 // through whichever store that listing happens to read.
 func TestDeleteSessionClearsEveryStore(t *testing.T) {
+	requireLifecycleLock(t)
 	root := t.TempDir()
 	t.Setenv("AGY_HOME", root)
 	const id = "00000000-0000-4000-8000-0000000000b1"
@@ -907,6 +921,7 @@ func TestDeleteSessionClearsEveryStore(t *testing.T) {
 // owns only what the migration wrote; a delete is the person removing their own
 // session, and the uploads and scratch inside it go too.
 func TestDeleteSessionRemovesWholeBrainDirectory(t *testing.T) {
+	requireLifecycleLock(t)
 	root := t.TempDir()
 	t.Setenv("AGY_HOME", root)
 	const id = "00000000-0000-4000-8000-0000000000b2"
@@ -929,6 +944,7 @@ func TestDeleteSessionRemovesWholeBrainDirectory(t *testing.T) {
 // TestDeleteSessionWithoutSummaryRow is the shape a current Antigravity build
 // creates: no row in the legacy table. Its absence is not a missing session.
 func TestDeleteSessionWithoutSummaryRow(t *testing.T) {
+	requireLifecycleLock(t)
 	root := t.TempDir()
 	t.Setenv("AGY_HOME", root)
 	const id = "00000000-0000-4000-8000-0000000000b3"
@@ -944,6 +960,7 @@ func TestDeleteSessionWithoutSummaryRow(t *testing.T) {
 // TestDeleteMissingSession keeps a delete of something already gone
 // distinguishable from a delete that failed.
 func TestDeleteMissingSession(t *testing.T) {
+	requireLifecycleLock(t)
 	root := t.TempDir()
 	t.Setenv("AGY_HOME", root)
 	const id = "00000000-0000-4000-8000-0000000000b4"

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,17 @@ import (
 	"github.com/nxxxsooo/another/internal/provider"
 	_ "modernc.org/sqlite"
 )
+
+// requireShellStub skips tests whose fake agent CLI is a shell script on
+// Windows: Go cannot execute an extensionless script there, so the CLI
+// contract these tests pin is covered on Unix while the Windows leg covers
+// everything around it.
+func requireShellStub(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake agent CLIs are shell scripts that Windows cannot execute")
+	}
+}
 
 func TestDiscoverSeesWALOnlyDatabaseChange(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "opencode.db")
@@ -62,6 +74,7 @@ PRAGMA wal_checkpoint(TRUNCATE);`); err != nil {
 }
 
 func TestWriteUsesOfficialImportWithNativeFields(t *testing.T) {
+	requireShellStub(t)
 	dbPath := filepath.Join(t.TempDir(), "opencode.db")
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {

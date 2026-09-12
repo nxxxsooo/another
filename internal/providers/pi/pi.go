@@ -135,9 +135,13 @@ func (p *Provider) DefaultPaths() []provider.PathSpec {
 func (p *Provider) sessionsRoot() string { return filepath.Join(p.root, "sessions") }
 
 // encodeProjectDir mirrors pi's directory naming: "/a/b c" becomes "--a-b c--".
+// pi replaces /, \, and : with dashes (upstream getDefaultSessionDirPath);
+// the colon is what a Windows drive letter leaves behind, and it is illegal
+// in a Windows file name, so without this every pi write fails there.
 func encodeProjectDir(absPath string) string {
 	trimmed := strings.Trim(filepath.ToSlash(absPath), "/")
-	return "--" + strings.ReplaceAll(trimmed, "/", "-") + "--"
+	trimmed = strings.NewReplacer("/", "-", ":", "-").Replace(trimmed)
+	return "--" + trimmed + "--"
 }
 
 // decodeProjectDir is a best-effort inverse used only when a session file has

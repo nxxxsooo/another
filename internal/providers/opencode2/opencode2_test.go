@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,17 @@ import (
 	"github.com/nxxxsooo/another/internal/providers/opencode2"
 	_ "modernc.org/sqlite"
 )
+
+// requireShellStub skips tests whose fake agent CLI is a shell script on
+// Windows: Go cannot execute an extensionless script there, so the CLI
+// contract these tests pin is covered on Unix while the Windows leg covers
+// everything around it.
+func requireShellStub(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake agent CLIs are shell scripts that Windows cannot execute")
+	}
+}
 
 func fixtureDB(t *testing.T) string {
 	t.Helper()
@@ -186,6 +198,7 @@ func recordedCalls(t *testing.T, calls string) []string {
 }
 
 func TestWriteUsesOfficialImportContract(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	dir := t.TempDir()
 	capture, calls := filepath.Join(dir, "payload.json"), filepath.Join(dir, "calls")
@@ -232,6 +245,7 @@ func TestWriteUsesOfficialImportContract(t *testing.T) {
 // form by printing its own help, which never reaches the server, so retrying
 // the older command cannot import the conversation twice.
 func TestWriteFallsBackToTheLegacyImportCommand(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	dir := t.TempDir()
 	capture, calls := filepath.Join(dir, "payload.json"), filepath.Join(dir, "calls")
@@ -252,6 +266,7 @@ func TestWriteFallsBackToTheLegacyImportCommand(t *testing.T) {
 // it is reported rather than retried, and it is reported in words that fit the
 // one line the person actually sees.
 func TestWriteDoesNotRetryARefusalTheServerCouldHaveSeen(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	dir := t.TempDir()
 	capture, calls := filepath.Join(dir, "payload.json"), filepath.Join(dir, "calls")
@@ -274,6 +289,7 @@ func TestWriteDoesNotRetryARefusalTheServerCouldHaveSeen(t *testing.T) {
 // not evidence. Without this the person is handed a resume line for a session
 // that does not exist.
 func TestWriteReportsAnImportThatNeverLanded(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	dir := t.TempDir()
 	importStub(t, filepath.Join(dir, "payload.json"), filepath.Join(dir, "calls"))
@@ -301,6 +317,7 @@ func storeTitle(t *testing.T, path, title string) {
 }
 
 func TestRenameUsesOfficialAPI(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	capture := filepath.Join(t.TempDir(), "args")
 	script := filepath.Join(t.TempDir(), "opencode2")
@@ -332,6 +349,7 @@ func TestRenameUsesOfficialAPI(t *testing.T) {
 // refuses sessions whose directory has been deleted, so this is reachable
 // through ordinary use: an old worktree, a temporary checkout.
 func TestRenameReportsARefusalTheCLIHides(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	script := filepath.Join(t.TempDir(), "opencode2")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
@@ -351,6 +369,7 @@ func TestRenameReportsARefusalTheCLIHides(t *testing.T) {
 }
 
 func TestDeleteUsesOfficialAPI(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	capture := filepath.Join(t.TempDir(), "args")
 	script := filepath.Join(t.TempDir(), "opencode2")
@@ -405,6 +424,7 @@ func TestDeleteReportsARefusalTheCLIHides(t *testing.T) {
 // a session left behind by a merged worktree could not be removed at all.
 // another restores the directory for the call and withdraws it afterwards.
 func TestDeleteRestoresAMissingDirectoryAndWithdrawsItAgain(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	root := t.TempDir()
 	parent := filepath.Join(root, "gone")
@@ -455,6 +475,7 @@ func TestDeleteRestoresAMissingDirectoryAndWithdrawsItAgain(t *testing.T) {
 // survive the call untouched, and so must anything the operation left in a
 // directory another did create.
 func TestDeleteLeavesDirectoriesItDidNotCreate(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	dir := filepath.Join(t.TempDir(), "live")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
