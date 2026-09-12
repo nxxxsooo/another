@@ -1,96 +1,98 @@
-# Windows support — feasibility
+# Windows support
 
-Research note, not a commitment. Branch `research/windows-support`.
-Verified on macOS with cross-compilation; nothing here was run on Windows.
+Implementation branch `research/windows-support`, rebased onto `2fcc9af`.
+Cross-compiled and unit-tested on macOS; the Windows CI leg runs the suite on
+`windows-latest`. Nothing here has been run by a human on a real Windows
+machine yet — that is the remaining verification, listed at the bottom.
 
-Rebased onto `3748bb5`; the cross-builds below were re-run there and are still clean.
-Part of section 3 has since been fixed on `main` — see the note in that section.
+## What changed and why
 
-## The compile barrier is already zero
+### 1. Resume commands render for the local shell (`internal/util/shell.go`)
 
-```
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...   # clean
-GOOS=windows GOARCH=arm64 CGO_ENABLED=0 go build ./...   # clean
-GOOS=windows go vet ./...                                # clean
-```
+Every provider used to compose `cd '<path>' && <agent> …` with POSIX quoting.
+That line is invalid in `cmd.exe` (single quotes are literal) and unreliable
+in the default PowerShell 5.1 (no `&&`), so both the TUI handoff and the
+copied command were dead on Windows.
 
-A 25 MB `another.exe` falls out of the tree today with no source change. SQLite is
-`modernc` (pure Go), and bubbletea, lipgloss, and the clipboard all carry Windows
-implementations. The one darwin-only file, `internal/tui/input_source_darwin.go`, is
-already tagged, and `internal/providers/agy/lock_other.go` already refuses under
-`!darwin && !linux` rather than pretending the lock was taken.
+`QuoteArg` / `CdAnd` / `EnvAnd` branch on `runtime.GOOS`: POSIX syntax on
+Unix, PowerShell on Windows (`Set-Location -LiteralPath '…'; …`,
+`$env:K='…'; …`). The `For` variants take an explicit `ShellKind` so both
+syntaxes are pinned by tests on every platform — the Windows CI leg cannot
+execute much, but it can still prove what another would have handed
+PowerShell. All eleven providers plus the `another paths link` suggestion go
+through the seam; `ShellQuote` stays as the documented POSIX quoter.
 
-So "can it build" is the wrong question. Everything below compiles and then behaves
-wrongly at runtime.
+### 2. The handoff executes on Windows (`internal/tui/launch_*.go`)
 
-## 1. The handoff, which is the product, does not work
+`syscall.Exec` is a stub returning `EWINDOWS`, so process replacement was
+never an option. The exec surface is split by build tag: Unix keeps
+`syscall.Exec` exactly, Windows runs `powershell.exe -NoLogo -NoProfile
+-Command <command>` as a child on the same console with stdio inherited. A
+nonzero agent exit comes back as the error instead of silently dropping to a
+prompt. powershell.exe (5.1) is chosen over pwsh and sh because it is the one
+interpreter guaranteed to be there; the rendered syntax avoids everything 5.1
+lacks.
 
-`internal/tui/tui.go:266-287`:
+### 3. State and store locations follow Windows conventions
 
-- `os.Getenv("SHELL")` is empty on Windows, so it falls back to `/bin/sh`.
-- `syscall.Exec` on Windows is a stub that returns `EWINDOWS`. Nothing is executed.
+- another's own index and config move from `~/.cache` / `~/.config` to
+  `%LOCALAPPDATA%\another` / `%APPDATA%\another` (`internal/config/paths.go`).
+  Unix paths are deliberately untouched — moving an existing index orphans
+  it, and there is no Windows state to orphan.
+- OpenCode / OpenCode 2 probe `%LOCALAPPDATA%` first and fall back to
+  `~/.local/share` (`config.AgentDataRoot`), because the upstream layout on
+  Windows is unverified and an agent that keeps one layout everywhere must
+  still be found. `XDG_DATA_HOME` still wins everywhere.
+- Everything else (`~/.codex`, `~/.claude`, `~/.qwen`, `~/.pi`,
+  `~/.gemini`, `~/.codem`, `~/.commandcode`, `~/.hermes`) is already
+  home-relative in the agents themselves; Cursor already branched to
+  `%APPDATA%`. Codex Desktop has no established location off macOS, so
+  another keeps refusing rather than guessing (`desktop_dir_other.go` from
+  #23).
 
-`internal/util/paths.go:110` quotes POSIX-style, and every provider composes
-`cd '<path>' && <agent> …` — 20 call sites across 10 providers. That line is invalid in
-`cmd.exe` (single quotes are literal) and unreliable in the default PowerShell 5.1
-(no `&&`). So the copy-command path hands the user a line that does not run either.
+### 4. The liveness refusal already covered Windows (#23, `9090e3e`)
 
-This is the largest piece of real work and also the most contained: one shell seam that
-picks a target shell and renders `cd` plus quoting for it, and one Windows launch path
-built on `exec.Command` + exit code instead of process replacement.
+Codex and Qwen read a failed `Signal(0)` check as "not running", which on
+Windows — where signal 0 always fails — meant mutating a live agent's store.
+`util.Liveness` now refuses on unknown. The qwen and util tests carry
+Windows expectations: unknown refuses, and the branches that need a real
+check are Unix-only.
 
-## 2. Session-store discovery needs a real Windows machine
+### 5. Distribution: zips, a PowerShell installer, and `another update`
 
-Probably fine, because the agents use `~/.<name>` on every platform: Codex, Claude Code,
-Qwen, Antigravity, CommandCode, Hermes.
+- `.goreleaser.yaml` builds `windows/amd64,arm64` and ships zips (tar.gz
+  needs a third-party unpacker on stock Windows; `Expand-Archive` handles
+  zips). Verified with `goreleaser release --snapshot`: the zips contain a
+  real PE32+ `another.exe` at the root, and the names match the
+  `another_<version>_windows_<arch>.zip` pattern `install.ps1` constructs.
+- `scripts/install.ps1` mirrors `install.sh` (`INSTALL_DIR` default
+  `%LOCALAPPDATA%\another`, `VERSION` default `latest`, user-PATH
+  persistence for the default only). Syntax-checked with the PowerShell
+  parser, locally and in CI — never executed on Windows yet.
+- `another update` classifies `another.exe`, re-runs the ps1 installer with
+  `INSTALL_DIR` set, and prints Windows-appropriate fallback instructions.
+  No Scoop/WinGet: that would be a new release surface for an unproven
+  user base. The release matrix stays at seven; the GitHub Release surface
+  just gains two zips to verify against `checksums.txt`.
+- CI gains a `windows-latest` leg: build, vet, full test suite with `-race`,
+  plus the ps1 parser check.
 
-Known wrong today:
+## Still needs a real Windows machine
 
-| Site | Assumes | Windows reality |
-|---|---|---|
-| `providers/opencode2/opencode2.go:34`, `providers/opencode/opencode.go:30` | `~/.local/share` | `%LOCALAPPDATA%` |
-| `providers/codex/gui_state.go:209` | `~/Library/Application Support/Codex` | different path and singleton mechanism |
-| `config/paths.go:29-39` | `~/.cache`, `~/.config` for another's own state | works, but not where a Windows user looks |
+1. Run the installer, then `another` end to end: setup, list, preview.
+2. The handoff into each installed agent (at least the six continuously
+   tested ones): does the PowerShell line land, and does the agent resume?
+3. Confirm where OpenCode, Codex Desktop, and CodeM actually keep state on
+   Windows; adjust `AgentDataRoot` / `desktopStateDir` if the probe guesses
+   wrong.
+4. `another update` from a ps1 install.
+5. TUI feel in Windows Terminal (and conhost, if that matters): colors,
+   clipboard copy, farewell screen, window title.
+6. Claude Code's project-trust path: `~/.claude.json` location and the
+   re-run flow on Windows.
 
-`providers/cursor/cursor.go:270` already branches to `%APPDATA%` correctly, so this was
-considered once before. None of the rest can be desk-checked; each provider has to be
-confirmed against an installed agent.
+## Cheaper option, still true
 
-## 3. Safety checks degrade silently, which is worse than failing
-
-- ~~Codex and Qwen decide "is this agent running" with `proc.Signal(syscall.Signal(0))`
-  behind a bool, and read a failed check as *not running*.~~ **Fixed in #23** (`9090e3e`).
-  `util.Liveness` now carries a third state whose zero value is unknown, and both
-  providers refuse on it. This was worth doing on its own account: the bug was never
-  specific to Windows, only guaranteed there.
-- `os.Rename` over a file another process holds open fails on Windows with a sharing
-  violation. Six write paths depend on it, including `util/paths.go:169` and
-  `config/settings.go:143`. **Still open**, and the largest remaining item in this section.
-- `providers/agy/lock_other.go` was the precedent the fix followed: refuse the operation
-  and say so. Any further check added here should do the same rather than guess.
-
-## 4. Distribution does not exist yet
-
-`.goreleaser.yaml` builds `linux` and `darwin` only, ships `tar.gz` only, and installs
-through a Homebrew cask or `scripts/install.sh`. `internal/cli/update.go` offers `brew`,
-`sh -c curl | bash`, or `go install` — none of which is a Windows answer.
-
-Windows needs `goos: windows`, zip archives, and a package manager (Scoop or WinGet).
-Per `AGENTS.md` that is a seventh release surface to verify on every tag. CI is
-`ubuntu-latest` only, so without a `windows-latest` job there is no regression signal at all.
-
-## What it costs
-
-| Step | Effort |
-|---|---|
-| Windows binaries in releases, TUI opens, sessions list | hours |
-| Handoff and copied command actually run | 1–2 days, contained to the shell seam |
-| Path discovery, liveness, and locking trustworthy across the six tested providers | the bulk, and only doable on real Windows |
-| Forever after | +1 CI leg, +1 release surface, +1 provider regression pass per release |
-
-## Cheaper option
-
-WSL runs the existing Linux build unchanged today. It sees WSL-side agent stores only,
-not Windows-native ones, so it serves a developer who already lives in WSL and does
-nothing for a user running Codex or Claude Code natively. Worth naming in the README
-either way, since it is free.
+WSL runs the existing Linux build unchanged today. It sees WSL-side agent
+stores only, not Windows-native ones — fine for a developer who already lives
+in WSL, nothing for a user running agents natively.

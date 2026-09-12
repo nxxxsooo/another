@@ -23,3 +23,19 @@ jobs:
         with:
           version: v2.13.2
       - run: go build -buildvcs=false -o another ./cmd/another
+  # Windows is a supported release platform, so it gets its own leg rather
+  # than a cross-compile line in the Unix job: only a Windows runner proves
+  # the suite actually passes where signal 0, symlinks, and permission bits
+  # behave differently.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go test -race ./...
+      - run: pwsh -NoProfile -Command "$errors = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('scripts/install.ps1', [ref]$null, [ref]$errors); if ($errors) { $errors | ForEach-Object { $_.Message }; exit 1 }"
