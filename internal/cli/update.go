@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 // installSource is where the running binary came from, which decides how it is
@@ -76,6 +78,13 @@ func runSelfUpdate(cmd *cobra.Command, checkOnly bool) error {
 		return runUpdateCommand(cmd, "brew", "upgrade", "--cask", "another")
 	case sourceScript:
 		fmt.Fprintf(out, "\nInstalled at %s; re-running the install script.\n", exe)
+		if runtime.GOOS == "windows" {
+			// The PowerShell installer reads its destination from INSTALL_DIR,
+			// mirroring the install.sh contract on Unix.
+			script := "$env:INSTALL_DIR=" + util.QuoteArg(filepath.Dir(exe)) +
+				"; irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+			return runUpdateCommand(cmd, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
+		}
 		script := "curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | INSTALL_DIR=" +
 			shellQuote(filepath.Dir(exe)) + " bash"
 		return runUpdateCommand(cmd, "sh", "-c", script)
@@ -87,6 +96,11 @@ func runSelfUpdate(cmd *cobra.Command, checkOnly bool) error {
 		return nil
 	default:
 		fmt.Fprintf(out, "\nCould not tell how %s was installed. Use whichever applies:\n", exe)
+		if runtime.GOOS == "windows" {
+			fmt.Fprintln(out, `  powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"`)
+			fmt.Fprintln(out, "  go install github.com/nxxxsooo/another/cmd/another@latest")
+			return nil
+		}
 		fmt.Fprintln(out, "  brew upgrade --cask another")
 		fmt.Fprintln(out, `  curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"`)
 		fmt.Fprintln(out, "  go install github.com/nxxxsooo/another/cmd/another@latest")
@@ -155,16 +169,23 @@ func classifyExecutable(exe string) installSource {
 	case strings.Contains(exe, "/Caskroom/"), strings.Contains(exe, "/Cellar/"),
 		strings.HasPrefix(exe, "/opt/homebrew/"), strings.HasPrefix(exe, "/home/linuxbrew/"):
 		return sourceHomebrew
-	case exe == filepath.Join(goBinDir(), "another"):
+	case exe == filepath.Join(goBinDir(), goBinaryName()):
 		return sourceGoInstall
-	case filepath.Base(exe) == "another":
-		// The install script's default is ~/.local/bin, but it honors
-		// INSTALL_DIR, so the directory is not what identifies it — anything
-		// still named `another` outside a package manager is replaceable by
-		// re-running the script into its own directory.
+	case isAnotherBinary(filepath.Base(exe)):
+		// The install scripts' defaults are ~/.local/bin and %LOCALAPPDATA%,
+		// but both honor an override, so the directory is not what identifies
+		// them — anything still named `another` outside a package manager is
+		// replaceable by re-running the script into its own directory.
 		return sourceScript
 	}
 	return sourceUnknown
+}
+
+// isAnotherBinary matches the installed file name on every platform: another
+// on Unix, another.exe on Windows (where the filesystem itself is
+// case-insensitive, so the comparison is too).
+func isAnotherBinary(base string) bool {
+	return base == "another" || strings.EqualFold(base, "another.exe")
 }
 
 func goBinDir() string {
@@ -181,12 +202,18 @@ func goBinDir() string {
 	return filepath.Join(home, "go", "bin")
 }
 
+// goBinaryName is the file name `go install` produces: go appends .exe on
+// Windows, so the go-install comparison has to expect it there.
+func goBinaryName() string {
+	if runtime.GOOS == "windows" {
+		return "another.exe"
+	}
+	return "another"
+}
+
 // runUpdateCommand hands the terminal to the installer so its own progress and
 // prompts reach the user unchanged.
 func runUpdateCommand(cmd *cobra.Command, name string, args ...string) error {
-	if runtime.GOOS == "windows" {
-		return fmt.Errorf("another update is not supported on this platform yet")
-	}
 	if _, err := exec.LookPath(name); err != nil {
 		return fmt.Errorf("%s is not on PATH: %w", name, err)
 	}

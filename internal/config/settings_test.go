@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -28,15 +29,21 @@ func TestSettingsRoundTripAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("config mode = %o, want 600", info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		// Windows has no Unix permission bits: the save succeeds and the
+		// round trip above proves it, but there is no mode to read back.
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("config mode = %o, want 600", info.Mode().Perm())
+		}
 	}
 	dir, err := os.Stat(filepath.Dir(config.SettingsPath()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir.Mode().Perm() != 0o700 {
-		t.Fatalf("config directory mode = %o, want 700", dir.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		if dir.Mode().Perm() != 0o700 {
+			t.Fatalf("config directory mode = %o, want 700", dir.Mode().Perm())
+		}
 	}
 }
 

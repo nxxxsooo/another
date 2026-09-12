@@ -88,9 +88,9 @@ func (p *Provider) Installed() bool {
 }
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	cmd := "agy --conversation " + util.ShellQuote(r.SessionID)
+	cmd := "agy --conversation " + util.QuoteArg(r.SessionID)
 	if r.ProjectPath != "" {
-		return "cd " + util.ShellQuote(r.ProjectPath) + " && " + cmd
+		return util.CdAnd(r.ProjectPath, cmd)
 	}
 	return cmd
 }

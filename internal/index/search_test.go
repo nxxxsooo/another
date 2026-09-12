@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -78,6 +79,11 @@ func TestOpenPreservesExistingCustomParentPermissions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if runtime.GOOS == "windows" {
+			// Windows has no Unix permission bits: Chmod accepts the mode and
+			// the database stays usable, but there is nothing to read back.
+			continue
+		}
 		if got := info.Mode().Perm(); got != item.perm {
 			t.Fatalf("%s permissions = %o, want %o", item.path, got, item.perm)
 		}
@@ -117,6 +123,11 @@ func TestOpenSecuresOwnedAndCreatedDirectories(t *testing.T) {
 
 func assertMode(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		// Same as above: the ownership and creation behavior under test works,
+		// only the Unix mode assertion has nothing to read.
+		return
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -175,26 +186,29 @@ func TestSearchFiltersBeforePagination(t *testing.T) {
 		}
 	}
 	base := time.Unix(1000, 0)
+	// Roots and filters are built from the same platform path: a Unix-literal
+	// filter never occurs inside a drive-qualified stored path on Windows.
+	other, wanted := filepath.FromSlash("/other"), filepath.FromSlash("/wanted")
 	for i := 0; i < 25; i++ {
 		indexBody(model.Summary{
-			ID: fmt.Sprintf("distractor-%02d", i), Provider: "cursor", ProjectPath: "/other",
+			ID: fmt.Sprintf("distractor-%02d", i), Provider: "cursor", ProjectPath: other,
 			Title: "plain", UpdatedAt: base.Add(time.Duration(100-i) * time.Second),
 			StoragePath: fmt.Sprintf("/other/%02d", i), SourceMtime: int64(i + 1),
 		})
 	}
 	for i := 0; i < 3; i++ {
 		indexBody(model.Summary{
-			ID: fmt.Sprintf("wanted-%d", i), Provider: "codex", ProjectPath: "/wanted/project",
+			ID: fmt.Sprintf("wanted-%d", i), Provider: "codex", ProjectPath: filepath.Join(wanted, "project"),
 			Title: "plain", UpdatedAt: base.Add(time.Duration(3-i) * time.Second),
 			StoragePath: fmt.Sprintf("/wanted/%d", i), SourceMtime: int64(i + 1),
 		})
 	}
 	indexBody(model.Summary{
-		ID: "wanted-child", Provider: "codex", ProjectPath: "/wanted/project", Kind: model.SessionKindSubagent,
+		ID: "wanted-child", Provider: "codex", ProjectPath: filepath.Join(wanted, "project"), Kind: model.SessionKindSubagent,
 		UpdatedAt: base.Add(10 * time.Second), StoragePath: "/wanted/child", SourceMtime: 10,
 	})
 
-	opts := index.SearchOpts{Query: "paginationneedle", Provider: "codex", ProjectFilter: "/wanted", Limit: 1, Offset: 1}
+	opts := index.SearchOpts{Query: "paginationneedle", Provider: "codex", ProjectFilter: wanted, Limit: 1, Offset: 1}
 	hits, err := store.Search(opts)
 	if err != nil || len(hits) != 1 || hits[0].Session.ID != "wanted-1" {
 		t.Fatalf("filtered later page: hits=%+v err=%v", hits, err)

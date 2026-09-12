@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,11 +17,14 @@ import (
 	"github.com/nxxxsooo/another/internal/util"
 )
 
-const (
-	groupRoot     = "/repo"
-	groupLayout   = "/repo/.worktrees/list-layout"
-	groupBugfix   = "/repo/.worktrees/bugfix"
-	groupOutsider = "/tmp/another-hotfix"
+// The fixtures are written with forward slashes and converted because
+// groupKeyFor cleans both sides with the local separator: literals would only
+// match on Unix.
+var (
+	groupRoot     = filepath.FromSlash("/repo")
+	groupLayout   = filepath.Join(groupRoot, ".worktrees", "list-layout")
+	groupBugfix   = filepath.Join(groupRoot, ".worktrees", "bugfix")
+	groupOutsider = filepath.FromSlash("/tmp/another-hotfix")
 )
 
 func groupWorktrees() []string {
@@ -80,11 +84,11 @@ func sessionIDs(items []list.Item) []string {
 func TestGroupKeyFollowsTheWorktreeItRanIn(t *testing.T) {
 	cases := []struct{ name, path, want string }{
 		{"the tree root itself", groupLayout, groupLayout},
-		{"a package inside a tree", groupLayout + "/internal/tui", groupLayout},
+		{"a package inside a tree", filepath.Join(groupLayout, "internal", "tui"), groupLayout},
 		{"the main checkout", groupRoot, groupRoot},
-		{"a package in the main checkout", groupRoot + "/cmd/another", groupRoot},
-		{"a tree registered outside the root", groupOutsider + "/pkg", groupOutsider},
-		{"a directory in no tree", "/elsewhere/notes", "/elsewhere/notes"},
+		{"a package in the main checkout", filepath.Join(groupRoot, "cmd", "another"), groupRoot},
+		{"a tree registered outside the root", filepath.Join(groupOutsider, "pkg"), groupOutsider},
+		{"a directory in no tree", filepath.FromSlash("/elsewhere/notes"), filepath.FromSlash("/elsewhere/notes")},
 		{"nothing recorded", "", ""},
 	}
 	for _, tc := range cases {
@@ -102,7 +106,7 @@ func TestGroupSessionsOrdersTreesByTheirNewestSession(t *testing.T) {
 	rows := []list.Item{
 		groupRow("a", groupLayout, 1),
 		groupRow("b", groupRoot, 5),
-		groupRow("c", groupLayout+"/internal/tui", 9),
+		groupRow("c", filepath.Join(groupLayout, "internal", "tui"), 9),
 		groupRow("d", groupBugfix, 20),
 		groupRow("e", groupRoot, 30),
 	}
@@ -126,7 +130,7 @@ func TestGroupSessionsOrdersTreesByTheirNewestSession(t *testing.T) {
 func TestGroupSessionsLeavesASingleTreeAlone(t *testing.T) {
 	rows := []list.Item{
 		groupRow("a", groupLayout, 1),
-		groupRow("b", groupLayout+"/internal/tui", 4),
+		groupRow("b", filepath.Join(groupLayout, "internal", "tui"), 4),
 	}
 	got := groupSessions(rows, groupWorktrees(), groupRoot)
 	if hasGroupHeaders(got) || len(got) != len(rows) {
@@ -242,7 +246,7 @@ func TestGroupedRowsDropTheColumnTheBandReplaces(t *testing.T) {
 	}
 
 	belowRoots := groupModel(
-		groupRow("a", groupLayout+"/internal/tui", 1),
+		groupRow("a", filepath.Join(groupLayout, "internal", "tui"), 1),
 		groupRow("b", groupRoot, 5),
 	)
 	if !sessionDelegateFor(&belowRoots).showProject {
@@ -264,7 +268,7 @@ func TestGroupedRowsDropTheColumnTheBandReplaces(t *testing.T) {
 // said it all: the package the agent ran in, not the tree it ran in.
 func TestGroupedColumnSaysOnlyWhatTheBandDidNot(t *testing.T) {
 	m := groupModel(
-		groupRow("a", groupLayout+"/internal/tui", 1),
+		groupRow("a", filepath.Join(groupLayout, "internal", "tui"), 1),
 		groupRow("b", groupLayout, 5),
 		groupRow("c", groupRoot, 8),
 	)
@@ -272,7 +276,7 @@ func TestGroupedColumnSaysOnlyWhatTheBandDidNot(t *testing.T) {
 	m = updated.(modelState)
 	d := sessionDelegateFor(&m)
 
-	below, shown := projectCellShown(groupLayout+"/internal/tui", d.projectBase, d.bands, d.groupRoots)
+	below, shown := projectCellShown(filepath.Join(groupLayout, "internal", "tui"), d.projectBase, d.bands, d.groupRoots)
 	if !shown || below != "internal/tui" {
 		t.Fatalf("a row below its tree says %q (shown %v), want the package alone", below, shown)
 	}
@@ -407,17 +411,18 @@ func sampleWorktreeSessions() []list.Item {
 // Outside a Git project there is no repository whose worktrees the rows could
 // be read against, so "by tree" can only mean "by directory".
 func TestGroupingOutsideGitFallsBackToDirectories(t *testing.T) {
+	notes := filepath.FromSlash("/notes")
 	m := layoutTestModel()
-	m.cwd = "/notes"
+	m.cwd = notes
 	m.projectOnly = true
-	m.projectScope = util.ProjectScope{CWD: "/notes", Root: "/notes"}
+	m.projectScope = util.ProjectScope{CWD: notes, Root: notes}
 	m.groupMode = groupTree
 	m.setSessionItems([]list.Item{
-		groupRow("a", "/notes/one", 1),
-		groupRow("b", "/notes/two", 5),
-		groupRow("c", "/notes/one", 8),
+		groupRow("a", filepath.Join(notes, "one"), 1),
+		groupRow("b", filepath.Join(notes, "two"), 5),
+		groupRow("c", filepath.Join(notes, "one"), 8),
 	})
-	wantBands := []string{"/notes/one:2", "/notes/two:1"}
+	wantBands := []string{filepath.Join(notes, "one") + ":2", filepath.Join(notes, "two") + ":1"}
 	if labels := groupLabels(m.sessions.Items()); strings.Join(labels, " ") != strings.Join(wantBands, " ") {
 		t.Fatalf("bands = %v, want %v", labels, wantBands)
 	}

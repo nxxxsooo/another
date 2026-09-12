@@ -490,7 +490,10 @@ func TestDiscoverEnrichesStoreFromMatchingTranscript(t *testing.T) {
 	}
 	for _, sm := range summaries {
 		if sm.StoragePath == write.StoragePath {
-			if sm.ProjectPath != conv.ProjectPath || sm.Title != "Real transcript title" {
+			// The provider resolves the transcript directory against the real
+			// filesystem, which drive-qualifies a Unix-absolute fixture on
+			// Windows — the same normalization production paths go through.
+			if sm.ProjectPath != util.NormalizeProjectPath(conv.ProjectPath) || sm.Title != "Real transcript title" {
 				t.Fatalf("store was not enriched: %+v", sm)
 			}
 			return
@@ -637,7 +640,7 @@ func TestWriteJoinsNativeStoreAndCleanupFailures(t *testing.T) {
 		return errors.New("native store failed")
 	}
 	_, err := p.Write(context.Background(), &model.Conversation{ID: "origin", Provider: "codex", ProjectPath: "/project", Messages: []model.Message{{Role: model.RoleUser, Content: "hello"}}}, provider.WriteOpts{})
-	if err == nil || !strings.Contains(err.Error(), "native store failed") || !strings.Contains(err.Error(), "directory not empty") {
+	if err == nil || !strings.Contains(err.Error(), "native store failed") || !strings.Contains(err.Error(), "not empty") {
 		t.Fatalf("joined write error = %v", err)
 	}
 }

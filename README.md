@@ -32,7 +32,7 @@
 - **项目聚合**：默认只看当前 Git 项目，并把主工作区与所有已登记 worktree 的会话放在一起；按 `f` 可切换到全部项目，按 `g` 可按日期或 worktree 分组。
 - **迁移后校验**：重新读取每次写入，比较内容摘要；不一致时回滚，来源会话始终保持原样。
 - **中英双语界面**：默认跟随终端 locale，也可以在 setup 里固定为 English 或中文；与标题语言各自独立。
-- **本地运行**：读取各 agent 的本地原生存储；`~/.cache/another/` 下的私有 SQLite 索引会在重新扫描时跳过未变会话。
+- **本地运行**：读取各 agent 的本地原生存储；私有 SQLite 索引（`~/.cache/another/`，Windows 下为 `%LOCALAPPDATA%\another`）会在重新扫描时跳过未变会话。
 
 ## 安装
 
@@ -46,6 +46,14 @@ brew install nxxxsooo/tap/another
 # 安装脚本
 curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
 ```
+
+Windows（PowerShell）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+```
+
+Windows 脚本把 `another.exe` 装到 `%LOCALAPPDATA%\another`，并加入用户 `PATH`；装完重开一个终端即可。
 
 Homebrew 6 要求先信任第三方 tap，否则会拒绝安装。旧版 Homebrew 不认识 `brew trust`，可跳过这一行，直接安装。
 
@@ -88,7 +96,15 @@ go install github.com/nxxxsooo/another/cmd/another@latest
 <details>
 <summary><strong>手动下载</strong></summary>
 
-从 [Releases](https://github.com/nxxxsooo/another/releases) 下载对应 `darwin`／`linux`、`amd64`／`arm64` 的压缩包，用 `checksums.txt` 校验后，把二进制文件放到 `PATH`：
+从 [Releases](https://github.com/nxxxsooo/another/releases) 下载对应 `darwin`／`linux`、`amd64`／`arm64` 的压缩包（Windows 为 `windows` 的 zip 包），用 `checksums.txt` 校验后，把二进制文件放到 `PATH`：
+
+```bash
+shasum -a 256 -c checksums.txt --ignore-missing
+tar -xzf another_*_darwin_arm64.tar.gz
+install -m 755 another ~/.local/bin/another
+```
+
+Windows 上解压 `another_*_windows_amd64.zip`，把 `another.exe` 放到 `PATH` 中的目录（安装脚本默认用 `%LOCALAPPDATA%\another`）。
 
 ```bash
 shasum -a 256 -c checksums.txt --ignore-missing
@@ -115,6 +131,11 @@ brew upgrade another                     # Homebrew
 curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # 安装脚本
 go install github.com/nxxxsooo/another/cmd/another@latest                                      # 源码安装
 ```
+
+Windows 下安装脚本的等价命令（`another update` 能判断出安装来源时会替你执行）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
 
 Homebrew 之外的安装方式需要手动更新；已安装的二进制不会自动跟随仓库变化。
 

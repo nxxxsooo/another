@@ -1210,7 +1210,7 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 }
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	return "cursor-agent --resume " + util.ShellQuote(r.SessionID)
+	return "cursor-agent --resume " + util.QuoteArg(r.SessionID)
 }
 
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {

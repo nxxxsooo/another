@@ -12,6 +12,7 @@ import (
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/providers/claude"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 // Load must drop isMeta rows and tool_result-only rows (empty text), matching
@@ -179,7 +180,7 @@ func TestWriteMatchesClaudeResumeContract(t *testing.T) {
 	if len(summaries) != 1 || summaries[0].Migration == nil || summaries[0].Migration.OriginDigest != model.SnapshotDigest(conv) {
 		t.Fatalf("migration marker not preserved for indexing: %+v", summaries)
 	}
-	if got := p.ResumeCommand(*write); !strings.Contains(got, "cd '") || !strings.Contains(got, "claude --resume '") {
+	if got := p.ResumeCommand(*write); !strings.Contains(got, util.QuoteArg(write.SessionID)) || !strings.Contains(got, "claude --resume ") {
 		t.Fatalf("resume command is not shell quoted: %s", got)
 	}
 }

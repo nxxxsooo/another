@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/titler"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 func TestKeepProvidersPrunesDisabledIndexWithoutNativeDeletion(t *testing.T) {
@@ -521,13 +523,14 @@ func TestListProjectRootsIncludeWorktreeDescendantsOnly(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 	now := time.Now()
+	repo, worktree := filepath.FromSlash("/repo"), filepath.FromSlash("/worktrees/feature")
 	rows := []struct{ id, provider, path string }{
-		{"main", "codex", "/repo"},
-		{"main-sub", "codex", "/repo/src"},
-		{"linked", "pi", "/worktrees/feature"},
-		{"linked-sub", "pi", "/worktrees/feature/pkg"},
-		{"similar", "codex", "/repo-old"},
-		{"sibling", "pi", "/worktrees/other"},
+		{"main", "codex", repo},
+		{"main-sub", "codex", filepath.Join(repo, "src")},
+		{"linked", "pi", worktree},
+		{"linked-sub", "pi", filepath.Join(worktree, "pkg")},
+		{"similar", "codex", filepath.FromSlash("/repo-old")},
+		{"sibling", "pi", filepath.FromSlash("/worktrees/other")},
 	}
 	for _, row := range rows {
 		if err := store.Upsert(model.Summary{ID: row.id, Provider: row.provider, ProjectPath: row.path,
@@ -535,7 +538,7 @@ func TestListProjectRootsIncludeWorktreeDescendantsOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	opts := index.ListOpts{ProjectRoots: []string{"/repo", "/worktrees/feature"}}
+	opts := index.ListOpts{ProjectRoots: []string{repo, worktree}}
 	items, err := store.List(opts)
 	if err != nil || len(items) != 4 {
 		t.Fatalf("items=%v err=%v", items, err)
@@ -554,13 +557,16 @@ func TestListProjectRootsEscapeLikeWildcards(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 	now := time.Now()
-	for _, row := range []struct{ id, path string }{{"wanted", "/repo%_x/sub"}, {"other", "/repoABx/sub"}} {
+	// The wildcard characters are the point; the separators around them follow
+	// the platform because both stored and queried paths do.
+	root := filepath.FromSlash("/repo%_x")
+	for _, row := range []struct{ id, path string }{{"wanted", filepath.Join(root, "sub")}, {"other", filepath.FromSlash("/repoABx/sub")}} {
 		if err := store.Upsert(model.Summary{ID: row.id, Provider: "codex", ProjectPath: row.path,
 			UpdatedAt: now, StoragePath: "/tmp/" + row.id, SourceMtime: now.Unix()}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	items, err := store.List(index.ListOpts{ProjectRoots: []string{"/repo%_x"}})
+	items, err := store.List(index.ListOpts{ProjectRoots: []string{root}})
 	if err != nil || len(items) != 1 || items[0].ID != "wanted" {
 		t.Fatalf("items=%v err=%v", items, err)
 	}
@@ -737,8 +743,12 @@ func TestOpenRefusesDefaultCacheSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o755 {
-		t.Fatalf("symlink target permissions = %o, want 755", got)
+	if runtime.GOOS != "windows" {
+		// Windows has no Unix permission bits to read back; the refusal
+		// above is the portable assertion.
+		if got := info.Mode().Perm(); got != 0o755 {
+			t.Fatalf("symlink target permissions = %o, want 755", got)
+		}
 	}
 }
 
@@ -773,8 +783,10 @@ func TestOpenRefusesSymlinkDatabaseFilesWithoutTouchingTargets(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := info.Mode().Perm(); got != 0o644 {
-				t.Fatalf("external target permissions = %o, want 644", got)
+			if runtime.GOOS != "windows" {
+				if got := info.Mode().Perm(); got != 0o644 {
+					t.Fatalf("external target permissions = %o, want 644", got)
+				}
 			}
 		})
 	}
@@ -833,7 +845,7 @@ func TestUpdateIncrementalRereadsRowsIndexedUnderAnOlderAttributionRule(t *testi
 	if err != nil || len(items) != 1 {
 		t.Fatalf("list after update: items=%d err=%v", len(items), err)
 	}
-	if items[0].ProjectPath != "/home/user/proj" {
+	if items[0].ProjectPath != util.NormalizeProjectPath("/home/user/proj") {
 		t.Fatalf("ProjectPath = %q, want the re-read directory /home/user/proj", items[0].ProjectPath)
 	}
 	if store.AttributionRuleStale("claude-code") {
@@ -851,7 +863,7 @@ func TestUpdateIncrementalRereadsRowsIndexedUnderAnOlderAttributionRule(t *testi
 	if err != nil || len(items) != 1 {
 		t.Fatalf("second update list: items=%d err=%v", len(items), err)
 	}
-	if items[0].ProjectPath != "/private/tmp" {
+	if items[0].ProjectPath != util.NormalizeProjectPath("/private/tmp") {
 		t.Fatalf("ProjectPath = %q, want the unchanged file to stay skipped", items[0].ProjectPath)
 	}
 }

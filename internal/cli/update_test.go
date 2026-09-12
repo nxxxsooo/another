@@ -24,7 +24,9 @@ func TestClassifyExecutableRoutesEachInstaller(t *testing.T) {
 		{"a homebrew cellar build", "/usr/local/Cellar/another/0.9.1/bin/another", sourceHomebrew},
 		{"linuxbrew", "/home/linuxbrew/.linuxbrew/bin/another", sourceHomebrew},
 		{"the install script's default directory", filepath.Join(home, ".local", "bin", "another"), sourceScript},
-		{"a go install build", filepath.Join(goBinDir(), "another"), sourceGoInstall},
+		{"the powershell installer's binary", filepath.Join(home, "bin", "another.exe"), sourceScript},
+		{"an all-caps exe on a case-insensitive filesystem", filepath.Join(home, "bin", "ANOTHER.EXE"), sourceScript},
+		{"a go install build", filepath.Join(goBinDir(), goBinaryName()), sourceGoInstall},
 		{"something else entirely", "/tmp/scratch/renamed-binary", sourceUnknown},
 	}
 	for _, tc := range cases {

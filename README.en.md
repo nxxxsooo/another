@@ -36,7 +36,7 @@ store, so you open it there and keep going.
 - **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects, or `g` to group the list by date or by worktree.
 - **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
-- **Local and fast:** reads native local stores; the private SQLite index under `~/.cache/another/` skips unchanged sessions on re-scan.
+- **Local and fast:** reads native local stores; the private SQLite index (under `~/.cache/another/`, `%LOCALAPPDATA%\another` on Windows) skips unchanged sessions on re-scan.
 
 ## Install
 
@@ -50,6 +50,14 @@ brew install nxxxsooo/tap/another
 # Install script
 curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
 ```
+
+Windows (PowerShell):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+```
+
+The Windows script installs `another.exe` to `%LOCALAPPDATA%\another` and adds it to the user `PATH`; restart the terminal afterwards.
 
 Homebrew 6 requires third-party taps to be trusted before it will load them, and
 refuses the install otherwise. Older versions load the tap directly and treat
@@ -105,13 +113,15 @@ go install github.com/nxxxsooo/another/cmd/another@latest
 <details>
 <summary><strong>Manual download</strong></summary>
 
-Grab a `darwin`/`linux` `amd64`/`arm64` tarball from [Releases](https://github.com/nxxxsooo/another/releases), verify it against `checksums.txt`, and put the binary on your `PATH`:
+Grab a `darwin`/`linux` `amd64`/`arm64` tarball — or a `windows` `amd64`/`arm64` zip — from [Releases](https://github.com/nxxxsooo/another/releases), verify it against `checksums.txt`, and put the binary on your `PATH`:
 
 ```bash
 shasum -a 256 -c checksums.txt --ignore-missing
 tar -xzf another_*_darwin_arm64.tar.gz
 install -m 755 another ~/.local/bin/another
 ```
+
+On Windows, extract `another_*_windows_amd64.zip` and place `another.exe` somewhere on `PATH` (the install script uses `%LOCALAPPDATA%\another`).
 
 </details>
 
@@ -133,6 +143,12 @@ keeps the full-color interface while continuing to honor `NO_COLOR`.
 brew upgrade another                     # Homebrew
 curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # script
 go install github.com/nxxxsooo/another/cmd/another@latest                                      # source
+```
+
+On Windows the installer equivalent is (`another update` runs it for you when it can tell how you installed):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
 ```
 
 Outside Homebrew, updates are manual; installed binaries do not follow the repository.

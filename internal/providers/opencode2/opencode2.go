@@ -31,7 +31,7 @@ type Provider struct {
 }
 
 func New() *Provider {
-	root := config.EnvOrDefault("XDG_DATA_HOME", filepath.Join(config.HomeDir(), ".local", "share"))
+	root := config.AgentDataRoot("opencode")
 	dbPath := config.EnvOrDefault("OPENCODE2_DB_PATH", filepath.Join(root, "opencode", "opencode2.db"))
 	command := config.EnvOrDefault("OPENCODE2_COMMAND", "opencode2")
 	return &Provider{dbPath: dbPath, command: command}
@@ -463,9 +463,9 @@ func oc2ID(prefix string) string {
 }
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	cmd := "opencode2 --session " + util.ShellQuote(r.SessionID)
+	cmd := "opencode2 --session " + util.QuoteArg(r.SessionID)
 	if r.ProjectPath != "" {
-		return "cd " + util.ShellQuote(r.ProjectPath) + " && " + cmd
+		return util.CdAnd(r.ProjectPath, cmd)
 	}
 	return cmd
 }
