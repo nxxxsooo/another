@@ -8,7 +8,7 @@ web
 
 ## Users
 
-Primary: developers who run two or more coding-agent CLIs on the same machine and the same projects — Pi, Codex, Claude Code, Cursor, OpenCode, OpenCode 2, CommandCode, CodeM, Hermes, Qwen Code, and Antigravity. They reach for `another` when they hit a rate limit, want a different model mid-task, or an agent is stuck and they do not want to lose the conversation. They also accumulate hundreds to thousands of past sessions across those tools with no single place to find, rename, or clean them up.
+Primary: developers who run two or more coding-agent CLIs on the same machine and the same projects — Pi, Codex, Claude Code, Cursor, OpenCode, CommandCode, CodeM, Hermes, Qwen Code, and Antigravity. They reach for `another` when they hit a rate limit, want a different model mid-task, or an agent is stuck and they do not want to lose the conversation. They also accumulate hundreds to thousands of past sessions across those tools with no single place to find, rename, or clean them up.
 
 Secondary: the maintainer, who uses it daily. This is a real user, not a persona.
 
@@ -24,7 +24,7 @@ Success is two-fold: a developer who switches agents mid-task keeps the actual c
 
 Migration writes native sessions, not handoff summaries. The target agent resumes its own file or database as if it had always owned the session. Every write is reloaded, digest-compared against the source content, and rolled back on mismatch.
 
-Management is native on the same terms: rename, archive, and delete land in the provider's real state (Codex threads DB and `session_index.jsonl`, Claude `custom-title`, Pi `session_info`, OpenCode native rows, OpenCode 2 official API, CodeM `session_renamed` records and archive directory). A provider without a verified native contract reports the action as unsupported rather than faking it in a private index.
+Management is native on the same terms: rename, archive, and delete land in the provider's real state (Codex threads DB and `session_index.jsonl`, Claude `custom-title`, Pi `session_info`, OpenCode V1 native rows or V2 official API, CodeM `session_renamed` records and archive directory). A provider without a verified native contract reports the action as unsupported rather than faking it in a private index.
 
 A neighboring tool could copy the browser. It could not truthfully copy "the other agent resumes it natively, and we proved the write survived."
 
@@ -39,14 +39,14 @@ A neighboring tool could copy the browser. It could not truthfully copy "the oth
 
 ## Capabilities and Constraints
 
-- Eleven providers: `pi`, `codex`, `claude-code`, `cursor`, `opencode`, `opencode2`, `commandcode`, `codem`, `hermes`, `qwen`, `agy`. OpenCode V1 and OpenCode 2 are parallel providers, not versions of one — isolated databases, CLIs, and schemas.
+- Ten providers: `pi`, `codex`, `claude-code`, `cursor`, `opencode`, `commandcode`, `codem`, `hermes`, `qwen`, `agy`. OpenCode is one composite provider: V2 is the write target, while V1 history and early isolated V2 stores remain readable and dispatch native actions through their own contracts. The former `opencode2` ID is a compatibility alias.
 - Actions: browse, search (FTS5 over titles and normalized message text), preview, native resume, cross-agent migrate, rename, archive and unarchive, delete, JSON export and import.
 - The TUI opens scoped to the current Git project, combining its main worktree and all registered linked worktrees; `f` switches visibly between that project and all projects. Non-Git directories use an exact current-directory scope.
 - Capability is per provider and deliberately unequal. Unsupported actions are reported, never simulated.
 - Migration carries real user and assistant text. It does not compress into a summary; reasoning and tool noise are dropped.
 - A migration never mutates the source session.
 - Delete shows provider, title, directory, and full session ID, and defaults to cancel. Sessions identifiable as running are blocked from rename, archive, and delete.
-- Delete is undoable only where the provider owns the session's bytes and the same session comes back — currently Claude Code and Pi, whose session is a single file. The offer lives in memory for the life of the list; there is no trash directory. A server-owned delete such as OpenCode 2's has no undo, because recreating the conversation through the API is a new session, and the confirmation says which of the two the person is about to do.
+- Delete is undoable only where the provider owns the session's bytes and the same session comes back — currently Claude Code and Pi, whose session is a single file. The offer lives in memory for the life of the list; there is no trash directory. A server-owned delete such as OpenCode V2's has no undo, because recreating the conversation through the API is a new session, and the confirmation says which of the two the person is about to do.
 - Disabling a provider in setup prunes it from the index and registry but never deletes native sessions.
 - Archived sessions are excluded from the default list. There is no archive-browsing view yet — a deliberate omission so roughly ten thousand archived Codex rollouts do not flood the list.
 - The TUI renders in English or Chinese. The preference lives in `ui.language` (`auto`, `en`, `zh`); `auto` resolves the terminal locale and falls back to English. It is deliberately separate from the title language, whose `auto` follows the session's own content. The CLI's help, flags, and errors stay English.

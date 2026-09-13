@@ -27,7 +27,7 @@
 ## 功能
 
 - **原生会话**：在目标 agent 中按其原生格式恢复，不是粘贴一份摘要。
-- **十一个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、OpenCode 2、CommandCode、CodeM、Hermes、Qwen Code 和 Antigravity。
+- **十个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、CommandCode、CodeM、Hermes、Qwen Code 和 Antigravity。
 - **一个界面**：直接浏览、搜索、预览、重命名、归档、删除、换目录或迁移会话。
 - **项目聚合**：默认只看当前 Git 项目，并把主工作区与所有已登记 worktree 的会话放在一起；按 `f` 可切换到全部项目，按 `g` 可按日期或 worktree 分组。
 - **迁移后校验**：重新读取每次写入，比较内容摘要；不一致时回滚，来源会话始终保持原样。
@@ -104,7 +104,7 @@ install -m 755 another ~/.local/bin/another
 another
 ```
 
-首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。页面默认只列持续实测的六个 agent，五个兼容适配折在末尾一行里，光标移到那行按 `Space` 展开；如果配置里已经启用了其中某个，这行开局就是展开的——看不见的设置没法关掉。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。启用了 OpenCode 2 时，这一页还有一行 `OpenCode 2 标题插件`：按 `t` 打开，another 才会把插件写进 OpenCode 2 的配置目录，那行同时写明将写到哪个目录、目录里现在是什么。之后可随时运行 `another setup` 修改配置。
+首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。页面默认只列持续实测的六个 agent，四个兼容适配折在末尾一行里，光标移到那行按 `Space` 展开；如果配置里已经启用了其中某个，这行开局就是展开的——看不见的设置没法关掉。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。启用了 OpenCode 时，这一页还有一行 `OpenCode 标题插件`：按 `t` 打开，another 才会把插件写进 OpenCode 的配置目录，那行同时写明将写到哪个目录、目录里现在是什么。之后可随时运行 `another setup` 修改配置。
 
 通过 SSH 使用 Ghostty 时，终端通常只转发 `TERM=xterm-ghostty`，不会转发 `COLORTERM`。`v0.13.3` 起 another 会直接识别这种环境并保留完整配色，同时仍遵守 `NO_COLOR`。
 
@@ -167,15 +167,15 @@ TUI 默认按当前项目过滤。Git 仓库的主工作区、所有已登记 wo
 - **复制**（默认）：原会话留在原地，目标目录里多出一份可以继续的会话；
 - **移动**：会话本身换目录，原目录不再有它。
 
-这不是迁移。迁移会把对话经可移植格式重写一遍，工具调用和 reasoning 会在这一步丢掉；换目录走的是各 agent 自己的原生操作，内容原样保留：OpenCode 2 调用官方的 `fork` 和 `move` 接口，Pi 逐行复制自己的会话文件、只改写文件头里的 `id` 和 `cwd`。没有经过验证的原生契约的 agent 会如实报告不支持，而不是用重写冒充搬家。
+这不是迁移。迁移会把对话经可移植格式重写一遍，工具调用和 reasoning 会在这一步丢掉；换目录走的是各 agent 自己的原生操作，内容原样保留：OpenCode V2 调用官方的 `fork` 和 `move` 接口，Pi 逐行复制自己的会话文件、只改写文件头里的 `id` 和 `cwd`。没有经过验证的原生契约的 agent 会如实报告不支持，而不是用重写冒充搬家。
 
-每次换目录都会回读校验后才报告成功：OpenCode 2 比对会话行里的目录，Pi 比对内容摘要。移动模式只有在新文件校验通过之后才删除原文件；复制模式如果目标建不起来，不会在源目录留下半个副本。目标目录必须真实存在——写错一个路径应该当场失败，而不是生成一个指向空处的会话。
+每次换目录都会回读校验后才报告成功：OpenCode V2 比对会话行里的目录，Pi 比对内容摘要。移动模式只有在新文件校验通过之后才删除原文件；复制模式如果目标建不起来，不会在源目录留下半个副本。目标目录必须真实存在——写错一个路径应该当场失败，而不是生成一个指向空处的会话。
 
 ## 支持的 agent
 
-OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令、数据库、schema 和服务生命周期。
+OpenCode V2 正式版与 V1 历史会话共用一个 `opencode` provider。another 默认向正式 V2 写入，同时继续读取 V1 的 `session` schema 和早期并行安装留下的 `opencode2.db`；列表、筛选和 setup 只出现一个 OpenCode，但恢复、重命名、归档、换目录和删除会按每条会话的真实存储与能力分派。旧配置中的 `opencode2`、`open-code-2` 和 `o2` 会自动映射到 `opencode`，不会移动或改写 agent 自己的数据库。
 
-持续实测范围是 **Pi、OpenCode 2、Claude Code、Codex、Antigravity 和 Qwen Code**；这六个进入每次发布的回归检查。Cursor、OpenCode、CommandCode、CodeM 和 Hermes 保留兼容适配，但不承诺每个版本都在维护者环境完成端到端实测。首次 setup 不会根据本机残留数据自动全选，必须由用户手动选择要索引和展示的 agent。
+持续实测范围是 **Pi、OpenCode、Claude Code、Codex、Antigravity 和 Qwen Code**；这六个进入每次发布的回归检查。Cursor、CommandCode、CodeM 和 Hermes 保留兼容适配，但不承诺每个版本都在维护者环境完成端到端实测。首次 setup 不会根据本机残留数据自动全选，必须由用户手动选择要索引和展示的 agent。
 
 会话列表用等宽色块标记 agent：名字长短差着九个字符，排成文字会让短名字看起来是个更小的 agent，也会把标题挤到每行不同的位置。来源和去向选择器里色块和全名同时出现，那里就是这张对照表。
 
@@ -185,8 +185,7 @@ OpenCode 与 OpenCode 2 是两个独立 provider。它们使用不同的命令�
 | Codex | `codex` | `CDX` | `codex resume <id>` | ✓ | ✓ | — | ✓ |
 | Claude Code | `claude-code` | `CLA` | `claude --resume <id>` | ✓ | — | — | ✓ |
 | Cursor | `cursor` | `CUR` | `cursor-agent --resume <id>` | — | — | — | ✓ |
-| OpenCode | `opencode` | `OPC` | `opencode --session <id>` | ✓ | ✓ | — | ✓ |
-| OpenCode 2 | `opencode2` | `OC2` | `opencode2 --session <id>` | ✓ | — | ✓ | ✓ |
+| OpenCode | `opencode` | `OPC` | `opencode --session <id>`；旧隔离库沿用 `opencode2` | ✓ | V1 历史会话 | V2 会话 | ✓ |
 | CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | — | ✓ |
 | CodeM | `codem` | `CDM` | `codem --resume <id>` | ✓ | ✓ | — | ✓ |
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
@@ -210,7 +209,7 @@ another providers doctor
 
 如果 setup 中指定了 agent，按 `Ctrl+R` 会以原始标题打开重命名框，同时在后台请求该 agent 生成标题。规则由 another 自己执行，不依赖任何 Skill：中文为 `MMDD｜类型｜主题`，英文为 `MMDD｜Type｜Topic`；日期取自索引中的创建时间并转换到 `Asia/Shanghai`，不会交给模型猜测。
 
-setup 第二页选 agent 和语言，按 `Enter` 进第三页选模型：模型列表由该 agent 的 CLI 自己给出（`pi --list-models`、`agy models`、`opencode models`、`opencode2 models`），输入任意字符即时过滤，第一行「默认模型」表示交给 CLI 自己决定，最后一行可以手输一个列表里还没有的模型名。Claude Code 和 Qwen Code 没有列模型的子命令，但各自的 headless 控制协议能返回当前配置可用的模型目录；another 只发控制请求，不发提示词，也不产生模型调用。Codex 没有可问的接口，直接进手输，页面会说明原因——列一份猜出来的模型 ID 只会让 `--model` 在重命名时才报错。
+setup 第二页选 agent 和语言，按 `Enter` 进第三页选模型：模型列表由该 agent 的 CLI 自己给出（`pi --list-models`、`agy models`、`opencode models`），输入任意字符即时过滤，第一行「默认模型」表示交给 CLI 自己决定，最后一行可以手输一个列表里还没有的模型名。Claude Code 和 Qwen Code 没有列模型的子命令，但各自的 headless 控制协议能返回当前配置可用的模型目录；another 只发控制请求，不发提示词，也不产生模型调用。Codex 没有可问的接口，直接进手输，页面会说明原因——列一份猜出来的模型 ID 只会让 `--model` 在重命名时才报错。
 
 setup 第二页用 `←→` 选标题语言（与第一页的界面语言互不影响）：**Auto**（默认）、**English**、**中文**。Auto 看第一条有效用户消息：含汉字就用中文，否则用英文。日期和 `｜` 分隔符在三种语言下都不变；八类语义一一对应：功能／Feature、设计／Design、修复／Fix、优化／Optimize、发布／Release、探索／Explore、文档／Docs、研究／Research。
 
@@ -226,7 +225,7 @@ setup 第二页用 `←→` 选标题语言（与第一页的界面语言互不�
 
 <img src="docs/assets/tui-batch.svg" width="100%" alt="another 批量命名确认页：原名到新名的对照表与折叠计数">
 
-OpenCode 2 可以在首次自动命名时直接执行同一规则，而不额外调用一次模型。这个适配器随 another 二进制分发：在 `another setup` 第二页把 `OpenCode 2 标题插件` 那行打开，或运行 `another integrations install`，another 会把插件写进 OpenCode 2 的 `plugins/another-title-policy/` 并记下自己写了什么。它只写这一个目录，从不改你的 `opencode.json(c)`——OpenCode 2 自己就会发现该目录。升级 another 之后 `another integrations status` 会说明插件是否落后，`another setup` 再跑一次即可对齐；被你手工改过的文件不会被覆盖。源码与细节见 [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/)。Pi 走同一条路：another 自带一个扩展，在 `another setup` 第二页打开 `Pi 标题扩展` 那行，或运行 `another integrations install pi`，它会被写进 Pi 的 `extensions/another-title-policy/`——Pi 自己会发现该目录，another 不改你的 `settings.json`。扩展本身不生成标题：一轮结束（`agent_settled`）时调用 `another rename --auto`，策略、语言、标题 agent 都留在二进制里。源码见 [`integrations/pi-title-policy/`](integrations/pi-title-policy/)。Claude Code 没有可覆盖的标题 agent，也没有"会话已命名"事件，只能在会话结束之后改名：[`integrations/claude-code-title-hook/`](integrations/claude-code-title-hook/) 里的 SessionEnd 钩子调用 `another rename --auto`，写的是 Claude Code 自己的 `custom-title` 记录，所以它自己的列表里也认。已经手工命名过的会话会跳过，手动标题不会被覆盖；需要手工装。Codex 暂无稳定的原生标题策略接口，仍由 another 整理。
+OpenCode V2 可以在首次自动命名时直接执行同一规则，而不额外调用一次模型。这个适配器随 another 二进制分发：在 `another setup` 第二页把 `OpenCode 标题插件` 那行打开，或运行 `another integrations install`，another 会把插件写进 OpenCode V2 的 `plugins/another-title-policy/` 并记下自己写了什么。它只写这一个目录，从不改你的 `opencode.json(c)`——OpenCode V2 自己就会发现该目录。升级 another 之后 `another integrations status` 会说明插件是否落后，`another setup` 再跑一次即可对齐；被你手工改过的文件不会被覆盖。源码与细节见 [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/)。Pi 走同一条路：another 自带一个扩展，在 `another setup` 第二页打开 `Pi 标题扩展` 那行，或运行 `another integrations install pi`，它会被写进 Pi 的 `extensions/another-title-policy/`——Pi 自己会发现该目录，another 不改你的 `settings.json`。扩展本身不生成标题：一轮结束（`agent_settled`）时调用 `another rename --auto`，策略、语言、标题 agent 都留在二进制里。源码见 [`integrations/pi-title-policy/`](integrations/pi-title-policy/)。Claude Code 没有可覆盖的标题 agent，也没有"会话已命名"事件，只能在会话结束之后改名：[`integrations/claude-code-title-hook/`](integrations/claude-code-title-hook/) 里的 SessionEnd 钩子调用 `another rename --auto`，写的是 Claude Code 自己的 `custom-title` 记录，所以它自己的列表里也认。已经手工命名过的会话会跳过，手动标题不会被覆盖；需要手工装。Codex 暂无稳定的原生标题策略接口，仍由 another 整理。
 
 ## CLI
 
@@ -285,7 +284,7 @@ another paths unlink <旧目录>
 
 各 provider 特有的 reasoning signature、tool call、tool result、图片和 system record 没有可移植的对等格式，因此不会迁移。来源会话不会被修改。
 
-OpenCode 和 OpenCode 2 通过各自的官方导入／API 接口写入。Codex Desktop 标题来自 GUI 标题索引，不从注入消息中猜测。Pi 写入完整的 assistant 记录，并为重建历史显式设置传输元数据和零值 usage。
+OpenCode 默认通过正式 V2 的导入／API 接口写入；仍在使用早期隔离 `opencode2` 存储时会沿用对应 V2 入口，V1 只作为历史兼容后端。Codex Desktop 标题来自 GUI 标题索引，不从注入消息中猜测。Pi 写入完整的 assistant 记录，并为重建历史显式设置传输元数据和零值 usage。
 
 ## 安全边界
 

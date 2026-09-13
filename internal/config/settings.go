@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const SettingsVersion = 1
@@ -98,6 +99,10 @@ func LoadSettings() (Settings, error) {
 	if settings.TitleModel != nil && settings.TitleModel.Language == "" {
 		settings.TitleModel.Language = settings.TitlePolicy.Language
 	}
+	settings.EnabledProviders = canonicalProviderIDs(settings.EnabledProviders)
+	if settings.TitleModel != nil && isOldOpenCodeID(settings.TitleModel.Provider) {
+		settings.TitleModel.Provider = "opencode"
+	}
 	return settings, nil
 }
 
@@ -109,6 +114,10 @@ func SaveSettings(settings Settings) error {
 		return err
 	}
 	settings.Version = SettingsVersion
+	settings.EnabledProviders = canonicalProviderIDs(settings.EnabledProviders)
+	if settings.TitleModel != nil && isOldOpenCodeID(settings.TitleModel.Provider) {
+		settings.TitleModel.Provider = "opencode"
+	}
 	if settings.TitleModel != nil {
 		if settings.TitlePolicy.Language == "" {
 			settings.TitlePolicy.Language = settings.TitleModel.Language
@@ -142,6 +151,30 @@ func SaveSettings(settings Settings) error {
 		return err
 	}
 	return os.Rename(path, SettingsPath())
+}
+
+func isOldOpenCodeID(id string) bool {
+	switch strings.ToLower(strings.TrimSpace(id)) {
+	case "opencode2", "open-code-2", "o2":
+		return true
+	}
+	return false
+}
+
+func canonicalProviderIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if isOldOpenCodeID(id) {
+			id = "opencode"
+		}
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }
 
 func SettingsExist() bool {

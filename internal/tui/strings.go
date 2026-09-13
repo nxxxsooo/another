@@ -533,7 +533,7 @@ var englishText = uiText{
 	setupTitleHelpModel: "↑↓ agent  ·  ←→ language  ·  enter model  ·  esc back",
 	setupTitleHelpSave:  "↑↓ agent  ·  ←→ language  ·  enter save  ·  esc back",
 
-	setupPluginLabel:     "OpenCode 2 title plugin",
+	setupPluginLabel:     "OpenCode title plugin",
 	setupPluginLabelPi:   "Pi title extension",
 	setupPluginToggleFmt: "%d toggles",
 	setupPluginChecking:  "checking",
@@ -786,7 +786,7 @@ var chineseText = uiText{
 	setupTitleHelpModel: "↑↓ 选 agent  ·  ←→ 选语言  ·  enter 选模型  ·  esc 返回",
 	setupTitleHelpSave:  "↑↓ 选 agent  ·  ←→ 选语言  ·  enter 保存  ·  esc 返回",
 
-	setupPluginLabel:     "OpenCode 2 标题插件",
+	setupPluginLabel:     "OpenCode 标题插件",
 	setupPluginLabelPi:   "Pi 标题扩展",
 	setupPluginToggleFmt: "%d 切换",
 	setupPluginChecking:  "检测中",

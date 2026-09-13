@@ -1,6 +1,6 @@
-// Package opencode2 integrates the OpenCode 2 preview as a separate provider
-// from OpenCode V1. V2 has a different database schema and its own CLI shim;
-// treating both as one provider would silently read or write the wrong store.
+// Package opencode2 implements the OpenCode V2 storage and API contract. The
+// public registry wraps it with the V1 reader so both generations can appear
+// under one OpenCode provider without confusing their schemas.
 package opencode2
 
 import (
@@ -34,13 +34,18 @@ func New() *Provider {
 	root := config.EnvOrDefault("XDG_DATA_HOME", filepath.Join(config.HomeDir(), ".local", "share"))
 	dbPath := config.EnvOrDefault("OPENCODE2_DB_PATH", filepath.Join(root, "opencode", "opencode2.db"))
 	command := config.EnvOrDefault("OPENCODE2_COMMAND", "opencode2")
-	return &Provider{dbPath: dbPath, command: command}
+	return NewAt(dbPath, command)
 }
 
-func (p *Provider) ID() string          { return ProviderID }
-func (p *Provider) DisplayName() string { return "OpenCode 2" }
+// NewAt builds a V2 storage adapter for a known database and command. The
+// unified provider uses it for both the official opencode entry point and the
+// former side-by-side opencode2 installation.
+func NewAt(dbPath, command string) *Provider { return &Provider{dbPath: dbPath, command: command} }
 
-// Installed means a database that carries OpenCode 2's own session table. The
+func (p *Provider) ID() string          { return ProviderID }
+func (p *Provider) DisplayName() string { return "OpenCode V2" }
+
+// Installed means a database that carries OpenCode V2's own session table. The
 // file exists from the first launch, and a version that predates this schema
 // leaves one another cannot read: reporting that as installed turns every scan
 // into a failure the whole index pass used to pay for.
@@ -56,6 +61,20 @@ func (p *Provider) Installed() bool {
 	return sqliteTableExists(db, "session_v2")
 }
 func (p *Provider) SupportsResume() bool { return true }
+
+// ReadyToWrite reports whether this store has the native model defaults the
+// importer needs. A unified installation may contain an empty released store
+// beside an active early opencode2 store; choosing the empty one would make a
+// compatible setup unable to migrate anything.
+func (p *Provider) ReadyToWrite() bool {
+	db, err := p.openRO()
+	if err != nil {
+		return false
+	}
+	defer func() { _ = db.Close() }()
+	_, _, err = p.defaults(db)
+	return err == nil
+}
 
 func (p *Provider) DefaultPaths() []provider.PathSpec {
 	return []provider.PathSpec{{Label: "database", Path: p.dbPath, Env: "OPENCODE2_DB_PATH"}}
@@ -117,7 +136,7 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 			title = p.firstUserTitle(db, row.id)
 		}
 		if title == "" {
-			title = "(opencode2 session)"
+			title = "(OpenCode session)"
 		}
 		kind := model.SessionKindRoot
 		if row.parent != "" {
@@ -262,11 +281,11 @@ func (p *Provider) defaults(db *sql.DB) (string, map[string]any, error) {
 	var raw string
 	err := db.QueryRow(`SELECT COALESCE(agent,''), model FROM session_v2 WHERE model IS NOT NULL AND model <> '' ORDER BY time_updated DESC LIMIT 1`).Scan(&agent, &raw)
 	if err != nil {
-		return "", nil, fmt.Errorf("OpenCode 2 has no model default yet; run opencode2 once first")
+		return "", nil, fmt.Errorf("OpenCode V2 has no model default yet; run %s once first", p.command)
 	}
 	var modelRef map[string]any
 	if json.Unmarshal([]byte(raw), &modelRef) != nil || modelRef["id"] == nil || modelRef["providerID"] == nil {
-		return "", nil, fmt.Errorf("OpenCode 2 latest model reference is invalid")
+		return "", nil, fmt.Errorf("OpenCode V2 latest model reference is invalid")
 	}
 	if agent == "" {
 		agent = "build"
@@ -331,7 +350,7 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 	return result, nil
 }
 
-// runImport hands the payload to OpenCode 2's own importer. The subcommand
+// runImport hands the payload to OpenCode V2's own importer. The subcommand
 // moved under `session` during the preview, so the current form is tried first
 // and the older top-level one only when the CLI refused to parse the arguments
 // at all — a refusal that never reaches the server, so the retry cannot import
@@ -346,7 +365,7 @@ func (p *Provider) runImport(ctx context.Context, project, path string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("opencode2 import: %w: %s", err, importFailureDetail(out))
+	return fmt.Errorf("OpenCode import: %w: %s", err, importFailureDetail(out))
 }
 
 func (p *Provider) importOnce(ctx context.Context, args []string) (string, error) {
@@ -367,7 +386,7 @@ func isUsageRefusal(out string) bool {
 // "DESCRIPTION".
 func importFailureDetail(out string) string {
 	if isUsageRefusal(out) {
-		return "this OpenCode 2 build does not accept the import command; run `opencode2 upgrade`"
+		return "this OpenCode V2 build does not accept the import command; upgrade OpenCode"
 	}
 	for _, line := range strings.Split(out, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
@@ -387,10 +406,10 @@ func (p *Provider) awaitSession(ctx context.Context, sessionID string) error {
 			return nil
 		}
 		if !strings.Contains(err.Error(), "is gone") {
-			return fmt.Errorf("opencode2 import: %w", err)
+			return fmt.Errorf("OpenCode import: %w", err)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("opencode2 import: OpenCode 2 reported success but session %s is not there; nothing was migrated", sessionID)
+			return fmt.Errorf("OpenCode import: OpenCode V2 reported success but session %s is not there; nothing was migrated", sessionID)
 		}
 		select {
 		case <-ctx.Done():
@@ -463,7 +482,11 @@ func oc2ID(prefix string) string {
 }
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	cmd := "opencode2 --session " + util.ShellQuote(r.SessionID)
+	command := p.command
+	if command == "" {
+		command = "opencode"
+	}
+	cmd := command + " --session " + util.ShellQuote(r.SessionID)
 	if r.ProjectPath != "" {
 		return "cd " + util.ShellQuote(r.ProjectPath) + " && " + cmd
 	}
@@ -473,7 +496,7 @@ func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, title string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return fmt.Errorf("opencode2: title must not be empty")
+		return fmt.Errorf("OpenCode: title must not be empty")
 	}
 	data, _ := json.Marshal(map[string]string{"title": title})
 	// `opencode2 api` exits 0 on an HTTP 500, so a refused rename arrives here
@@ -486,7 +509,7 @@ func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, t
 	return p.withSessionDirectory(ref.ID, func() error {
 		cmd := exec.CommandContext(ctx, p.command, "api", "POST", "/api/session/"+ref.ID+"/rename", "--data", string(data))
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("opencode2 rename: %w: %s", err, strings.TrimSpace(string(out)))
+			return fmt.Errorf("OpenCode rename: %w: %s", err, strings.TrimSpace(string(out)))
 		}
 		return p.awaitTitle(ctx, ref.ID, title)
 	})
@@ -501,7 +524,7 @@ func (p *Provider) awaitTitle(ctx context.Context, sessionID, want string) error
 		var err error
 		stored, err = p.storedTitle(sessionID)
 		if err != nil {
-			return fmt.Errorf("opencode2 rename: %w", err)
+			return fmt.Errorf("OpenCode rename: %w", err)
 		}
 		if stored == want {
 			return nil
@@ -515,7 +538,7 @@ func (p *Provider) awaitTitle(ctx context.Context, sessionID, want string) error
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("opencode2 rename: OpenCode 2 refused the rename, the title is still %q; a session whose directory no longer exists cannot be renamed", stored)
+	return fmt.Errorf("OpenCode rename: OpenCode V2 refused the rename, the title is still %q; a session whose directory no longer exists cannot be renamed", stored)
 }
 
 func (p *Provider) storedTitle(sessionID string) (string, error) {
@@ -545,7 +568,7 @@ func (p *Provider) CleanupWrite(ctx context.Context, r provider.WriteResult) err
 
 func (p *Provider) delete(ctx context.Context, sessionID string) error {
 	if sessionID == "" {
-		return fmt.Errorf("opencode2: missing session id")
+		return fmt.Errorf("OpenCode: missing session id")
 	}
 	// Same hidden refusal as rename: the CLI exits 0 on an HTTP 500, and a
 	// deletion another believes in but the server refused would be reported as
@@ -553,13 +576,13 @@ func (p *Provider) delete(ctx context.Context, sessionID string) error {
 	return p.withSessionDirectory(sessionID, func() error {
 		cmd := exec.CommandContext(ctx, p.command, "api", "DELETE", "/api/session/"+sessionID)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("opencode2 delete: %w: %s", err, strings.TrimSpace(string(out)))
+			return fmt.Errorf("OpenCode delete: %w: %s", err, strings.TrimSpace(string(out)))
 		}
 		return p.awaitGone(ctx, sessionID)
 	})
 }
 
-// SupportsRelocate reports both modes: OpenCode 2 owns a native fork and a
+// SupportsRelocate reports both modes: OpenCode V2 owns a native fork and a
 // native move, so another never has to re-render the conversation.
 func (p *Provider) SupportsRelocate(mode provider.RelocateMode) bool {
 	return mode == provider.RelocateFork || mode == provider.RelocateMove
@@ -567,14 +590,14 @@ func (p *Provider) SupportsRelocate(mode provider.RelocateMode) bool {
 
 // RelocateSession changes the directory a session belongs to. Move is one
 // native call. Fork is a native copy followed by that same move, because
-// OpenCode 2's fork endpoint deliberately keeps the parent's directory.
+// OpenCode V2's fork endpoint deliberately keeps the parent's directory.
 func (p *Provider) RelocateSession(ctx context.Context, ref provider.SessionRef, opts provider.RelocateOpts) (*provider.RelocateResult, error) {
 	if ref.ID == "" {
-		return nil, fmt.Errorf("opencode2: missing session id")
+		return nil, fmt.Errorf("OpenCode: missing session id")
 	}
 	directory := strings.TrimSpace(opts.Directory)
 	if directory == "" {
-		return nil, fmt.Errorf("opencode2 relocate: target directory must not be empty")
+		return nil, fmt.Errorf("OpenCode relocate: target directory must not be empty")
 	}
 	switch opts.Mode {
 	case provider.RelocateMove:
@@ -629,7 +652,7 @@ func (p *Provider) fork(ctx context.Context, sessionID string) (string, error) {
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("opencode2 fork: %w: %s", err, strings.TrimSpace(stderr.String()+stdout.String()))
+		return "", fmt.Errorf("OpenCode fork: %w: %s", err, strings.TrimSpace(stderr.String()+stdout.String()))
 	}
 	var payload struct {
 		Data struct {
@@ -640,7 +663,7 @@ func (p *Provider) fork(ctx context.Context, sessionID string) (string, error) {
 	if json.Unmarshal([]byte(raw), &payload) != nil || payload.Data.ID == "" {
 		// `opencode2 api` exits 0 on an HTTP 500, so a refusal arrives here
 		// looking like success with an error document instead of a session.
-		return "", fmt.Errorf("opencode2 fork: OpenCode 2 did not return a forked session: %s", truncateForError(raw))
+		return "", fmt.Errorf("OpenCode fork: OpenCode V2 did not return a forked session: %s", truncateForError(raw))
 	}
 	return payload.Data.ID, nil
 }
@@ -649,7 +672,7 @@ func (p *Provider) moveTo(ctx context.Context, sessionID, directory string) erro
 	body, _ := json.Marshal(map[string]string{"directory": directory})
 	cmd := exec.CommandContext(ctx, p.command, "api", "POST", "/api/session/"+sessionID+"/move", "--data", string(body))
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("opencode2 relocate: %w: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("OpenCode relocate: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	// The same silent refusal as rename and delete: exit 0 does not mean the
 	// server accepted it. The session's own row decides.
@@ -665,7 +688,7 @@ func (p *Provider) awaitDirectory(ctx context.Context, sessionID, want string) e
 		var err error
 		stored, err = p.storedDirectory(sessionID)
 		if err != nil {
-			return fmt.Errorf("opencode2 relocate: %w", err)
+			return fmt.Errorf("OpenCode relocate: %w", err)
 		}
 		if stored == want {
 			return nil
@@ -679,7 +702,7 @@ func (p *Provider) awaitDirectory(ctx context.Context, sessionID, want string) e
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("opencode2 relocate: OpenCode 2 refused the move, the directory is still %q; check that %s exists and is a project OpenCode 2 can open", stored, want)
+	return fmt.Errorf("OpenCode relocate: OpenCode V2 refused the move, the directory is still %q; check that %s exists and is a project OpenCode V2 can open", stored, want)
 }
 
 func (p *Provider) storedDirectory(sessionID string) (string, error) {
@@ -709,10 +732,10 @@ func (p *Provider) verifyForkCarried(ctx context.Context, sessionID string) erro
 	defer func() { _ = db.Close() }()
 	var count int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM session_message WHERE session_id = ? AND type IN ('user','assistant')`, sessionID).Scan(&count); err != nil {
-		return fmt.Errorf("opencode2 relocate: verify fork: %w", err)
+		return fmt.Errorf("OpenCode relocate: verify fork: %w", err)
 	}
 	if count == 0 {
-		return fmt.Errorf("opencode2 relocate: fork %s carried no messages", sessionID)
+		return fmt.Errorf("OpenCode relocate: fork %s carried no messages", sessionID)
 	}
 	return nil
 }
@@ -734,10 +757,10 @@ func (p *Provider) awaitGone(ctx context.Context, sessionID string) error {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("opencode2 delete: %w", err)
+			return fmt.Errorf("OpenCode delete: %w", err)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("opencode2 delete: OpenCode 2 refused the deletion, session %s is still there; a session whose directory no longer exists cannot be deleted", sessionID)
+			return fmt.Errorf("OpenCode delete: OpenCode V2 refused the deletion, session %s is still there; a session whose directory no longer exists cannot be deleted", sessionID)
 		}
 		select {
 		case <-ctx.Done():

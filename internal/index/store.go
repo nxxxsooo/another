@@ -219,8 +219,39 @@ SELECT provider, id, storage_path, project_path, title, created_at, updated_at, 
 FROM sessions`); err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_migration_dedup_origin ON migration_dedup(provider, origin_id, origin_source)`)
-	return err
+	if _, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_migration_dedup_origin ON migration_dedup(provider, origin_id, origin_source)`); err != nil {
+		return err
+	}
+	return s.unifyOpenCodeProviderIDs()
+}
+
+// unifyOpenCodeProviderIDs upgrades another's private index only. Agent-owned
+// V1 and V2 databases remain untouched; a following incremental scan refreshes
+// their rows through the unified provider.
+func (s *Store) unifyOpenCodeProviderIDs() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, table := range []struct{ name, key string }{
+		{"sessions", "id"}, {"source_files", "storage_path"}, {"session_sources", "storage_path"},
+		{"content_index", "session_id"}, {"migration_dedup", "origin_digest"},
+	} {
+		if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM %s AS old WHERE old.provider = 'opencode2' AND EXISTS (SELECT 1 FROM %s AS current WHERE current.provider = 'opencode' AND current.%s = old.%s)`, table.name, table.name, table.key, table.key)); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE ` + table.name + ` SET provider = 'opencode' WHERE provider = 'opencode2'`); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`UPDATE session_fts SET provider = 'opencode' WHERE provider = 'opencode2'`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE migration_dedup SET origin_source = 'opencode' WHERE origin_source = 'opencode2'`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func addColumn(db *sql.DB, statement string) error {

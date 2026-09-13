@@ -13,7 +13,7 @@ import (
 func TestSettingsRoundTripAndPermissions(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
-	want := config.Settings{EnabledProviders: []string{"pi", "codex", "opencode2"}}
+	want := config.Settings{EnabledProviders: []string{"pi", "codex", "opencode"}}
 	if err := config.SaveSettings(want); err != nil {
 		t.Fatal(err)
 	}
@@ -50,6 +50,27 @@ func TestLoadSettingsRejectsUnknownVersion(t *testing.T) {
 	}
 	if _, err := config.LoadSettings(); err == nil {
 		t.Fatal("unknown config version was accepted")
+	}
+}
+
+func TestLoadSettingsUnifiesFormerOpenCodeProvider(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := os.MkdirAll(config.ConfigDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"version":1,"enabled_providers":["pi","opencode2","opencode"],"title_model":{"provider":"opencode2"}}`
+	if err := os.WriteFile(config.SettingsPath(), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.EnabledProviders, []string{"pi", "opencode"}) {
+		t.Fatalf("providers = %v", got.EnabledProviders)
+	}
+	if got.TitleModel == nil || got.TitleModel.Provider != "opencode" {
+		t.Fatalf("title model = %+v", got.TitleModel)
 	}
 }
 

@@ -386,14 +386,14 @@ func TestApplyIntegrationsFollowsTheRecordedAnswer(t *testing.T) {
 	out = captureStdout(t, func() {
 		applyIntegrations(consent, resolvers)
 	})
-	wantContains(t, out, "OpenCode 2 title plugin:")
+	wantContains(t, out, "OpenCode title plugin:")
 	if !integrations.OpenCode2Status(dir).State.Installed() {
 		t.Fatal("consent did not install the plugin")
 	}
 	out = captureStdout(t, func() {
 		applyIntegrations(config.Settings{}, resolvers)
 	})
-	wantContains(t, out, "still installed; remove it with 'another integrations remove opencode2'")
+	wantContains(t, out, "still installed; remove it with 'another integrations remove opencode'")
 	for _, state := range []integrations.State{integrations.StateCurrent, integrations.StateOutdated, integrations.StateModified, integrations.StateAdoptable, integrations.StateForeign, integrations.StateMissing} {
 		if integrationStateText(integrations.Status{State: state, Version: "1.0"}) == "" {
 			t.Fatalf("no text for %s", state)

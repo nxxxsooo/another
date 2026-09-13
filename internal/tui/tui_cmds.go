@@ -454,6 +454,14 @@ func relocateSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.
 			done.err = fmt.Errorf(txt.relocateUnsupportedFmt, p.DisplayName())
 			return done
 		}
+		ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+		if dynamic, ok := p.(provider.SessionCapabilityProvider); ok {
+			caps := dynamic.Capabilities(ref)
+			if mode == provider.RelocateFork && !caps.RelocateFork || mode == provider.RelocateMove && !caps.RelocateMove {
+				done.err = fmt.Errorf(txt.relocateUnsupportedFmt, p.DisplayName())
+				return done
+			}
+		}
 		res, err := relocator.RelocateSession(ctx, provider.SessionRef{
 			ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath,
 		}, provider.RelocateOpts{Directory: directory, Mode: mode})

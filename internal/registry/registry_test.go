@@ -11,7 +11,7 @@ import (
 func TestNormalizeID(t *testing.T) {
 	cases := map[string]string{
 		"claude": "claude-code", "Claude-Code": "claude-code",
-		"cursor-agent": "cursor", "open-code": "opencode", "o2": "opencode2", "open-code-2": "opencode2",
+		"cursor-agent": "cursor", "open-code": "opencode", "o2": "opencode", "open-code-2": "opencode",
 		"agy": "agy", "antigravity": "agy", "antigravity-cli": "agy", "antigravity_cli": "agy",
 		"qwen": "qwen", "qwen-code": "qwen", "qwencode": "qwen",
 	}
@@ -25,7 +25,7 @@ func TestNormalizeID(t *testing.T) {
 func TestNewEnabledKeepsOnlyConfiguredProviders(t *testing.T) {
 	reg := registry.NewEnabled([]string{"pi", "o2", "unknown"})
 	ids := reg.IDs()
-	if len(ids) != 2 || ids[0] != "opencode2" || ids[1] != "pi" {
+	if len(ids) != 2 || ids[0] != "opencode" || ids[1] != "pi" {
 		t.Fatalf("enabled ids = %v", ids)
 	}
 	if _, err := reg.Get("codex"); err == nil {
@@ -40,7 +40,7 @@ func TestNewEnabledPreservesConfiguredOrder(t *testing.T) {
 	for i, p := range providers {
 		got[i] = p.ID()
 	}
-	want := []string{"pi", "opencode2", "codex"}
+	want := []string{"pi", "opencode", "codex"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("configured provider order = %v, want %v", got, want)
 	}
@@ -57,15 +57,15 @@ func TestNewOrderedPutsSavedProvidersFirstAndKeepsTheRest(t *testing.T) {
 		}
 		seen[p.ID()] = true
 	}
-	if len(got) < 10 || !reflect.DeepEqual(got[:2], []string{"pi", "opencode2"}) {
+	if len(got) < 10 || !reflect.DeepEqual(got[:2], []string{"pi", "opencode"}) {
 		t.Fatalf("ordered providers = %v", got)
 	}
 }
 
 func TestRegistryProviders(t *testing.T) {
 	reg := registry.New()
-	if len(reg.All()) < 11 {
-		t.Fatalf("expected at least 11 providers, got %d", len(reg.All()))
+	if len(reg.All()) < 10 {
+		t.Fatalf("expected at least 10 providers, got %d", len(reg.All()))
 	}
 	if _, err := reg.Get("codex"); err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestRegistryProviders(t *testing.T) {
 // as unsupported rather than re-rendering the conversation into a new
 // directory and calling that a move.
 func TestOnlyNativeProvidersClaimRelocate(t *testing.T) {
-	want := map[string]bool{"pi": true, "opencode2": true}
+	want := map[string]bool{"pi": true, "opencode": true}
 	for _, p := range registry.New().All() {
 		relocator, ok := p.(provider.SessionRelocator)
 		if ok != want[p.ID()] {

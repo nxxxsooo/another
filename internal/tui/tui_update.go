@@ -906,7 +906,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.err = err.Error()
 				return m, nil
 			}
-			if _, ok := p.(provider.SessionArchiver); !ok {
+			if !capabilitiesFor(p, it.summary).Archive {
 				m.err = fmt.Sprintf(txt.archiveUnsupportedFm, p.DisplayName())
 				return m, nil
 			}
@@ -962,7 +962,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.err = err.Error()
 				return m, nil
 			}
-			if _, ok := p.(provider.SessionRenamer); !ok {
+			if !capabilitiesFor(p, it.summary).Rename {
 				m.err = fmt.Sprintf(txt.renameUnsupportedFmt, p.DisplayName())
 				return m, nil
 			}
@@ -999,15 +999,16 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.err = err.Error()
 				return m, nil
 			}
-			relocator, ok := p.(provider.SessionRelocator)
-			if !ok || !relocator.SupportsRelocate(provider.RelocateFork) {
+			_, ok := p.(provider.SessionRelocator)
+			caps := capabilitiesFor(p, it.summary)
+			if !ok || !caps.RelocateFork {
 				m.err = fmt.Sprintf(txt.relocateUnsupportedFmt, p.DisplayName())
 				return m, nil
 			}
 			sel := it
 			m.selected = &sel
 			m.relocateMove = false
-			m.relocateCanMove = relocator.SupportsRelocate(provider.RelocateMove)
+			m.relocateCanMove = caps.RelocateMove
 			start := m.cwd
 			if start == "" {
 				start = it.summary.ProjectPath
@@ -1036,7 +1037,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.err = err.Error()
 				return m, nil
 			}
-			if _, ok := p.(provider.SessionDeleter); !ok {
+			if !capabilitiesFor(p, it.summary).Delete {
 				m.err = fmt.Sprintf(txt.deleteUnsupportedFmt, p.DisplayName())
 				return m, nil
 			}

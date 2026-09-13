@@ -25,7 +25,6 @@ AGENTS = {
     "claude-code": ("CLA", "#FF985A"),
     "cursor": ("CUR", "#4776FF"),
     "opencode": ("OPC", "#FF4FBF"),
-    "opencode2": ("OC2", "#FF79D0"),
     "qwen": ("QWN", "#D46EFF"),
     "agy": ("AGY", "#F5EF34"),
 }
@@ -82,7 +81,7 @@ rows = [
     ("3m ago", "codex", "Review auth boundary and write the tests", "~/code/api", "18"),
     ("12m ago", "claude-code", "Trace the regression to the native session format", "~/code/cli", "76"),
     ("1h ago", "opencode", "Release notes for the latest package", "~/tools/pkg", "12"),
-    ("2h ago", "opencode2", "Prototype the new terminal workflow", "~/labs/tui", "9"),
+    ("2h ago", "qwen", "Prototype the new terminal workflow", "~/labs/tui", "9"),
 ]
 row_svg = []
 for i, (when, agent, title, path, count) in enumerate(rows):
@@ -98,7 +97,7 @@ for i, (when, agent, title, path, count) in enumerate(rows):
 
 # The picker is where a chip and the name it stands for are seen together, so
 # the codes on the rows behind it can be read at all.
-targets = [("claude-code", "Claude Code"), ("codex", "Codex"), ("opencode", "OpenCode"), ("opencode2", "OpenCode 2")]
+targets = [("claude-code", "Claude Code"), ("codex", "Codex"), ("opencode", "OpenCode"), ("qwen", "Qwen Code")]
 target_svg = []
 for i, (agent, name) in enumerate(targets):
     y = 262 + i * 36
