@@ -38,7 +38,13 @@ if ($Version -eq 'latest') {
 }
 
 $bare = $Version.TrimStart('v')
-$url = "https://github.com/$Repo/releases/download/$Version/another_${bare}_windows_${arch}.zip"
+$url = if ($env:ANOTHER_DOWNLOAD_URL) {
+  # An explicit URL makes the exact installer testable before a release owns
+  # an asset, and supports mirrors without changing the normal trust path.
+  $env:ANOTHER_DOWNLOAD_URL
+} else {
+  "https://github.com/$Repo/releases/download/$Version/another_${bare}_windows_${arch}.zip"
+}
 $tmpdir = Join-Path ([IO.Path]::GetTempPath()) ("another-install-" + [Guid]::NewGuid().ToString('N'))
 
 try {
@@ -48,8 +54,38 @@ try {
   Invoke-WebRequest $url -OutFile $zip
   Expand-Archive $zip -DestinationPath $tmpdir
   New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-  Copy-Item (Join-Path $tmpdir 'another.exe') (Join-Path $InstallDir 'another.exe') -Force
-  Write-Output "Installed to $(Join-Path $InstallDir 'another.exe')"
+  $source = Join-Path $tmpdir 'another.exe'
+  $destination = Join-Path $InstallDir 'another.exe'
+  $old = $null
+  if (Test-Path -LiteralPath $destination) {
+    # Windows will not overwrite a running executable, but it does permit a
+    # rename. Keep the old image beside the new one until the process whose
+    # pid `another update` supplied has exited. A direct installer run has no
+    # such process and removes the old image immediately.
+    $suffix = if ($env:ANOTHER_UPDATE_PID) { $env:ANOTHER_UPDATE_PID } else { [Guid]::NewGuid().ToString('N') }
+    $old = "$destination.old-$suffix"
+    Move-Item -LiteralPath $destination -Destination $old -Force
+  }
+  try {
+    Copy-Item -LiteralPath $source -Destination $destination -Force
+  } catch {
+    if ($old -and -not (Test-Path -LiteralPath $destination)) {
+      Move-Item -LiteralPath $old -Destination $destination -Force
+    }
+    throw
+  }
+  Write-Output "Installed to $destination"
+
+  if ($old) {
+    if ($env:ANOTHER_UPDATE_PID) {
+      $quotedOld = $old.Replace("'", "''")
+      $cleanup = "Wait-Process -Id $env:ANOTHER_UPDATE_PID -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '$quotedOld' -Force -ErrorAction SilentlyContinue"
+      $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cleanup))
+      Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile', '-EncodedCommand', $encoded | Out-Null
+    } else {
+      Remove-Item -LiteralPath $old -Force
+    }
+  }
 } finally {
   Remove-Item $tmpdir -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -49,5 +50,22 @@ func TestShellQuoteSurvivesAwkwardPaths(t *testing.T) {
 	}
 	if got := shellQuote("/tmp/it's here"); got != `'/tmp/it'\''s here'` {
 		t.Fatalf("an embedded quote was not closed and reopened: %q", got)
+	}
+}
+
+// `another update` runs from the exe it has to replace. The installer uses
+// this pid to rename that live image and remove it only after another exits;
+// losing either value makes updates fail on Windows even though clean installs
+// still pass.
+func TestWindowsSelfUpdateCarriesQuotedDirectoryAndPid(t *testing.T) {
+	got := windowsSelfUpdateScript(`C:\Users\it's me\bin`, 4242)
+	for _, want := range []string{
+		`$env:INSTALL_DIR='C:\Users\it''s me\bin'`,
+		`$env:ANOTHER_UPDATE_PID='4242'`,
+		`scripts/install.ps1 | iex`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("self-update script does not contain %q: %s", want, got)
+		}
 	}
 }

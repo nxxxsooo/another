@@ -1,9 +1,10 @@
 # Windows support
 
 Implementation branch `research/windows-support`, rebased onto `2fcc9af`.
-Cross-compiled and unit-tested on macOS; the Windows CI leg runs the suite on
-`windows-latest`. Nothing here has been run by a human on a real Windows
-machine yet — that is the remaining verification, listed at the bottom.
+Cross-compiled and unit-tested on macOS, green on `windows-latest`, then run
+on Mingjian's local Parallels Windows 11 ARM64 VM (Windows 10.0.26200.9168,
+PowerShell 5.1.26100.9168). The real-machine evidence and remaining provider
+gaps are listed below.
 
 ## What changed and why
 
@@ -77,22 +78,60 @@ check are Unix-only.
 - CI gains a `windows-latest` leg: build, vet, full test suite with `-race`,
   plus the ps1 parser check.
 
-## Still needs a real Windows machine
+The VM exposed one self-update bug before release: Windows permits renaming a
+running executable but not overwriting or deleting it. `another update` now
+passes its pid to the installer; the installer renames the live image aside,
+installs the new one with rollback on copy failure, and starts a hidden helper
+that waits for the old process to exit before deleting it. The exact path was
+tested with a live `another.exe`: version `0.0.0-windows-test` stayed running,
+`0.0.1-installer-test` was callable at the original path immediately, and the
+`.old-<pid>` image disappeared after the old process exited. The original
+binary and the test directory were then removed.
 
-1. Run the installer, then `another` end to end: setup, list, preview.
-2. The handoff into each installed agent (at least the six continuously
-   tested ones): does the PowerShell line land, and does the agent resume?
-3. Confirm where OpenCode, Codex Desktop, and CodeM actually keep state on
+## Real Windows VM results
+
+- Native ARM64 binary starts and reports the stamped version; `--help` renders.
+- First-run setup is visually correct in Windows Terminal: zero providers are
+  preselected; Codex and Qwen detection appears; the title page and save flow
+  work; settings land under `%APPDATA%\another`.
+- `providers doctor` found the VM's real Codex, OpenCode, and Qwen installs.
+  Codex sessions were at `~\.codex\sessions`. OpenCode 1's real database was
+  at `~\.local\share\opencode\opencode.db`, proving the native-first / legacy
+  fallback selects the right branch on this machine.
+- `list --refresh`, `index status`, and `show` loaded two real Codex sessions.
+  The TUI listed the project-scoped session and previewed all 20 messages,
+  including mixed English/Chinese, with correct colors and layout.
+- Enter produced and executed the PowerShell command
+  `Set-Location -LiteralPath 'C:\…'; codex resume '01…'`. Codex reached its
+  own trust prompt and then attempted the exact session resume. It finally
+  stopped on the VM's unrelated Codex configuration (`config.toml` originally
+  contained only invalid `-NoNewline`; with a temporary empty config, the VM
+  lacked the session's `OpenAI` model-provider definition). The another side
+  of the handoff is therefore verified; a successful model turn is not.
+- The invalid Codex config was backed up byte-for-byte for the test, restored,
+  and verified against its original SHA-256
+  `57571E88F0418F98D1334E3E4E93159459B1155DDD14D18E4012AA7164D8F8AD`.
+  another's test settings/index, binaries, installer directories, screenshots,
+  and HTTP server were removed. The VM's user PATH was not changed.
+
+## Still open after the VM pass
+
+1. Handoff into the other continuously tested agents. This VM only had a real
+   Codex session; OpenCode and Qwen were installed but their stores were empty,
+   while Claude, OpenCode 2, Pi, and AGY were not installed.
+2. Confirm where OpenCode 2, Codex Desktop, and CodeM actually keep state on
    Windows; adjust `AgentDataRoot` / `desktopStateDir` if the probe guesses
    wrong. Same for the Claude project-directory encoding: the mapping matches
    Claude's rule, but the on-disk ground truth for a drive-letter path is
    unverified.
-4. `another update` from a ps1 install.
-5. TUI feel in Windows Terminal (and conhost, if that matters): colors,
-   clipboard copy, farewell screen, window title.
-6. Claude Code's project-trust path: `~/.claude.json` location and the
+3. Run `another update` against a real published Windows asset. The installer
+   and live-executable replacement are verified with a locally served zip; the
+   final GitHub URL cannot exist before the release does.
+4. Clipboard copy, farewell screen, and window-title restoration. Setup/list/
+   preview colors and layout in Windows Terminal are verified.
+5. Claude Code's project-trust path: `~/.claude.json` location and the
    re-run flow on Windows.
-7. Whether AGY on Windows takes a presence lock another could share. Until
+6. Whether AGY on Windows takes a presence lock another could share. Until
    that is established, agy rename/delete of existing conversations refuse
    there (`lock_other.go`), and the delete tests skip on Windows.
 

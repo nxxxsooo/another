@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,10 +81,12 @@ func runSelfUpdate(cmd *cobra.Command, checkOnly bool) error {
 		fmt.Fprintf(out, "\nInstalled at %s; re-running the install script.\n", exe)
 		if runtime.GOOS == "windows" {
 			// The PowerShell installer reads its destination from INSTALL_DIR,
-			// mirroring the install.sh contract on Unix.
-			script := "$env:INSTALL_DIR=" + util.QuoteArg(filepath.Dir(exe)) +
-				"; irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
-			return runUpdateCommand(cmd, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
+			// mirroring the install.sh contract on Unix. It also needs our pid:
+			// Windows permits renaming a running exe but not deleting it, so the
+			// installer puts the old image aside and a detached helper removes
+			// it only after this process exits.
+			script := windowsSelfUpdateScript(filepath.Dir(exe), os.Getpid())
+			return runUpdateCommand(cmd, "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
 		}
 		script := "curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | INSTALL_DIR=" +
 			shellQuote(filepath.Dir(exe)) + " bash"
@@ -209,6 +212,17 @@ func goBinaryName() string {
 		return "another.exe"
 	}
 	return "another"
+}
+
+// windowsSelfUpdateScript carries the running executable's directory and pid
+// into install.ps1. It is pure so quoting and the cleanup handoff stay tested
+// on Unix too; its caller computes filepath.Dir on the target OS, since a Unix
+// filepath implementation cannot split a Windows path in a unit test. Using
+// the explicit PowerShell kind is important for the same reason.
+func windowsSelfUpdateScript(installDir string, pid int) string {
+	return "$env:INSTALL_DIR=" + util.QuoteArgFor(util.ShellPowerShell, installDir) +
+		"; $env:ANOTHER_UPDATE_PID='" + strconv.Itoa(pid) +
+		"'; irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
 }
 
 // runUpdateCommand hands the terminal to the installer so its own progress and
