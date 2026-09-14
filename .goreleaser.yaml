@@ -144,15 +144,10 @@ release:
 
     ## Compatibility
 
-    `a` now always archives the selected session; `u` undoes the most recent
-    archive or reversible delete, and Esc dismisses the undo offer.
+    This release changes only local index reconciliation. When an agent leaves
+    the same session ID in more than one project directory, another prefers a
+    message-bearing transcript over a newer metadata-only snapshot. Native
+    session files are not moved, rewritten, or deleted.
 
-    Outside the TUI, an optional shell alias `a` launches `another`. Existing
-    commands, functions, and aliases are preserved. Script installs add it at
-    installation; Homebrew, manual, and source installs add it on the first
-    interactive launch, outside Homebrew's install sandbox. Open a new shell
-    afterwards, or run `another aliases install` explicitly.
-
-    Development installs add `a-dev` and `adev` for `another-dev` instead.
     Windows native handoff beyond Codex remains a documented coverage gap;
     see [Windows verification](https://github.com/nxxxsooo/another/blob/main/docs/windows-support.md).

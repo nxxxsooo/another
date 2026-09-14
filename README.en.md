@@ -37,6 +37,7 @@ store, so you open it there and keep going.
 - **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
 - **Local and fast:** reads native local stores; the private SQLite index (under `~/.cache/another/`, `%LOCALAPPDATA%\another` on Windows) skips unchanged sessions on re-scan.
+- **Duplicate-source reconciliation:** when one session ID remains in both an old and a new project directory, the message-bearing transcript wins over a newer empty state snapshot, keeping its title, path, and count aligned with native resume.
 
 ## Install
 

@@ -458,7 +458,8 @@ FROM (
 	  SELECT ss.*,
 	    ROW_NUMBER() OVER (
 	      PARTITION BY provider, id
-	      ORDER BY source_priority DESC, updated_at DESC, message_count DESC,
+	      ORDER BY source_priority DESC, (message_count > 0) DESC,
+	               updated_at DESC, message_count DESC,
 	               source_mtime DESC, storage_path ASC
     ) AS source_rank
   FROM session_sources ss WHERE provider = ?

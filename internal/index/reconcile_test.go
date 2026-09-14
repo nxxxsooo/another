@@ -59,6 +59,41 @@ func TestReconcilePromotesRemainingSourceAndPrunesDeletedSession(t *testing.T) {
 	}
 }
 
+// Claude can leave a newer metadata-only snapshot in an old project bucket
+// after the real transcript resumes under a renamed directory. Both files use
+// the same session ID, but only the transcript is loadable and matches what
+// `claude --resume <id>` opens.
+func TestReconcilePrefersTranscriptOverNewerMetadataSnapshot(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+	now := time.Now()
+	transcript := model.Summary{
+		ID: "same", Provider: "claude-code", Title: "renamed transcript",
+		StoragePath: "/claude/new-project/same.jsonl", UpdatedAt: now,
+		MessageCount: 133, SourceMtime: 200, SourceSize: 1200000,
+	}
+	snapshot := model.Summary{
+		ID: "same", Provider: "claude-code", Title: "stale generated title",
+		StoragePath: "/claude/old-project/same.jsonl", UpdatedAt: now.Add(time.Hour),
+		MessageCount: 0, SourceMtime: 300, SourceSize: 1000,
+	}
+	if err := store.reconcileProvider("claude-code", []model.Summary{transcript, snapshot}, map[string]struct{}{
+		transcript.StoragePath: {}, snapshot.StoragePath: {},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get("claude-code", "same")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.StoragePath != transcript.StoragePath || got.Title != transcript.Title || got.MessageCount != transcript.MessageCount {
+		t.Fatalf("metadata snapshot won over transcript: %+v", got)
+	}
+}
+
 func TestReconcileInvalidatesSameTimestampAndCountSourceEdit(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "index.db"))
 	if err != nil {
