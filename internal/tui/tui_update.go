@@ -117,6 +117,8 @@ func (m modelState) onArchiveDone(msg archiveDoneMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.archived {
 		summary := msg.summary
+		m.lastDeleted = nil
+		m.restoreDeleted = nil
 		m.lastArchived = &summary
 		m.status = okStyle.Render(txt.archivedPrefix+truncateDisplay(msg.summary.Title, 48)) + mutedStyle.Render(txt.undoHint)
 	} else {
@@ -263,6 +265,7 @@ func (m modelState) onDeleteDone(msg deleteDoneMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	deleted := m.selected
+	m.lastArchived = nil
 	m.selected = nil
 	m.lastResume = ""
 	m.status = okStyle.Render(txt.deletedPrefix + truncateDisplay(msg.title, 48))
@@ -426,6 +429,17 @@ func (m modelState) onSearchResults(msg searchResultsMsg) (tea.Model, tea.Cmd) {
 func (m modelState) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.searching {
 		return m.updateSearching(msg)
+	}
+	// An undo offer is transient feedback, not a mode. Dismiss it before
+	// search/selection handling, even while its completed action refreshes
+	// the list. The native operation has already finished at this point.
+	if msg.String() == "esc" && m.overlay == overlayNone && (m.lastArchived != nil || m.lastDeleted != nil) {
+		m.lastArchived = nil
+		m.lastDeleted = nil
+		m.restoreDeleted = nil
+		m.status = ""
+		m.err = ""
+		return m, nil
 	}
 	if m.loading && !navigationKey(msg) {
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
@@ -824,9 +838,14 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m, nil
 	case "u":
-		// Undo the delete another just did. Unlike archive, this is not bound
-		// to the key that caused it: ctrl+d again on a fresh row would arm a
-		// second deletion instead of taking one back.
+		// Archive and delete share one undo key and one most-recent offer.
+		// Their action keys always act on the currently selected session.
+		if m.lastArchived != nil {
+			summary := *m.lastArchived
+			m.loading = true
+			m.err = ""
+			return m, tea.Batch(m.spinner.Tick, archiveSessionCmd(m.ctx, m.reg, m.idx, summary, false))
+		}
 		if m.lastDeleted == nil || m.restoreDeleted == nil {
 			return m, nil
 		}
@@ -890,12 +909,6 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Archive and select-all used to sit on a and A, two unrelated actions one
 	// Shift apart, with only one of them in the footer.
 	case "a":
-		if m.lastArchived != nil {
-			summary := *m.lastArchived
-			m.loading = true
-			m.err = ""
-			return m, tea.Batch(m.spinner.Tick, archiveSessionCmd(m.ctx, m.reg, m.idx, summary, false))
-		}
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
 				m.err = txt.cannotArchiveRunning
