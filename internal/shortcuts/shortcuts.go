@@ -3,6 +3,7 @@ package shortcuts
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 const marker = "__ANOTHER_SHORTCUT__"
@@ -103,6 +105,40 @@ func reverseLines(s string) []string {
 	return lines
 }
 
+// Windows PowerShell profiles are often UTF-16. Keep their byte order instead
+// of appending UTF-8 bytes to an otherwise valid owner-managed profile.
+func profileText(data []byte) (string, binary.ByteOrder) {
+	var order binary.ByteOrder
+	if len(data) >= 2 {
+		switch {
+		case data[0] == 0xff && data[1] == 0xfe:
+			order = binary.LittleEndian
+		case data[0] == 0xfe && data[1] == 0xff:
+			order = binary.BigEndian
+		}
+	}
+	if order == nil {
+		return string(data), nil
+	}
+	units := make([]uint16, 0, (len(data)-2)/2)
+	for i := 2; i+1 < len(data); i += 2 {
+		units = append(units, order.Uint16(data[i:i+2]))
+	}
+	return string(utf16.Decode(units)), order
+}
+
+func encodeProfileAppend(text string, order binary.ByteOrder) []byte {
+	if order == nil {
+		return []byte(text)
+	}
+	units := utf16.Encode([]rune(text))
+	data := make([]byte, 2*len(units))
+	for i, unit := range units {
+		order.PutUint16(data[2*i:2*i+2], unit)
+	}
+	return data
+}
+
 // Ensure checks once per shell and binary kind on an interactive launch. This
 // runs in the real user's environment, unlike Homebrew's sandboxed install
 // hooks. A conflict is a completed check; explicit Install can retry later.
@@ -163,7 +199,11 @@ func Install(ctx context.Context, shell string, dev bool, out io.Writer) error {
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		if strings.Contains(string(content), definition) {
+		text, order := profileText(content)
+		if order != nil && len(content)%2 != 0 {
+			return fmt.Errorf("invalid UTF-16 profile %s; skipped", profile)
+		}
+		if strings.Contains(text, definition) {
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(profile), 0o700); err != nil {
@@ -173,7 +213,7 @@ func Install(ctx context.Context, shell string, dev bool, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		_, writeErr := io.WriteString(f, "\n# another shortcut: "+name+"\n"+definition+"\n")
+		_, writeErr := f.Write(encodeProfileAppend("\n# another shortcut: "+name+"\n"+definition+"\n", order))
 		closeErr := f.Close()
 		if writeErr != nil {
 			return writeErr

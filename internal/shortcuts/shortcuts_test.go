@@ -3,6 +3,7 @@ package shortcuts
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -208,6 +209,36 @@ func TestPowerShellDefinitionPreservesExistingFunction(t *testing.T) {
 		got, err = runShell(context.Background(), p, script)
 		if err != nil || got != "another-dev" {
 			t.Fatalf("PowerShell alias %s: %q, %v", name, got, err)
+		}
+	}
+	profile := filepath.Join(t.TempDir(), "profile.ps1")
+	data := append([]byte{0xff, 0xfe}, encodeProfileAppend("# existing 中文\r\n", binary.LittleEndian)...)
+	data = append(data, encodeProfileAppend(p.definition("a", "another")+"\r\n", binary.LittleEndian)...)
+	if err := os.WriteFile(profile, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script = `. '` + strings.ReplaceAll(profile, "'", "''") + `'; Write-Output ('` + marker + `' + (Get-Alias 'a').Definition)`
+	got, err = runShell(context.Background(), p, script)
+	if err != nil || got != "another" {
+		t.Fatalf("UTF-16 PowerShell profile: %q, %v", got, err)
+	}
+}
+
+func TestProfileAppendPreservesUTF16Encoding(t *testing.T) {
+	for _, order := range []binary.ByteOrder{binary.LittleEndian, binary.BigEndian} {
+		bom := make([]byte, 2)
+		order.PutUint16(bom, 0xfeff)
+		original := "# owner 中文\r\n"
+		data := append(bom, encodeProfileAppend(original, order)...)
+		text, detected := profileText(data)
+		if text != original || detected != order {
+			t.Fatal("profile encoding was not detected")
+		}
+		definition := "\nalias a='another'\n"
+		combined := append(data, encodeProfileAppend(definition, detected)...)
+		text, _ = profileText(combined)
+		if text != original+definition {
+			t.Fatalf("existing profile was corrupted: %q", text)
 		}
 	}
 }
