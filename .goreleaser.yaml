@@ -77,6 +77,9 @@ homebrew_casks:
             writable_paths: ["another"],
             must_succeed:   false
       end
+    caveats: |
+      On its first interactive launch, another adds the shell alias a if that
+      name is free. Open a new shell afterwards, or run another aliases install.
     zap:
       trash:
         # Only on `brew uninstall --zap`. These are the two directories another
@@ -141,11 +144,15 @@ release:
 
     ## Compatibility
 
-    OpenCode V1 history and V2 sessions now share the `opencode` provider. Existing
-    `opencode2`, `open-code-2`, and `o2` aliases continue to work. Operations use
-    the session's native store and matching CLI; new migrations target V2.
+    `a` now always archives the selected session; `u` undoes the most recent
+    archive or reversible delete, and Esc dismisses the undo offer.
 
-    Windows now has amd64 and arm64 ZIPs. Windows CI covers the full test suite;
-    real Windows VM checks cover setup, indexing, preview, Codex handoff, and
-    live-executable replacement. Native Windows handoff for the other agents
-    remains a coverage gap; see [Windows verification](https://github.com/nxxxsooo/another/blob/main/docs/windows-support.md).
+    Outside the TUI, an optional shell alias `a` launches `another`. Existing
+    commands, functions, and aliases are preserved. Script installs add it at
+    installation; Homebrew, manual, and source installs add it on the first
+    interactive launch, outside Homebrew's install sandbox. Open a new shell
+    afterwards, or run `another aliases install` explicitly.
+
+    Development installs add `a-dev` and `adev` for `another-dev` instead.
+    Windows native handoff beyond Codex remains a documented coverage gap;
+    see [Windows verification](https://github.com/nxxxsooo/another/blob/main/docs/windows-support.md).

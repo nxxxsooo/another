@@ -90,6 +90,7 @@ func (a *App) Root() *cobra.Command {
 				return tui.RunMigrate(a.Registry, a.Index, a.Migrate, id, from, mode)
 			}
 			if len(args) == 0 {
+				a.ensureAliases(cmd)
 				if !config.SettingsExist() && stdinIsTerminal() {
 					saved, err := a.runSetup(cmd.Context())
 					if err != nil || !saved {
@@ -130,6 +131,7 @@ func (a *App) Root() *cobra.Command {
 	root.AddCommand(a.searchCmd())
 	root.AddCommand(a.tuiCmd())
 	root.AddCommand(a.updateCmd())
+	root.AddCommand(a.aliasesCmd())
 	return root
 }
 
@@ -661,6 +663,7 @@ func (a *App) tuiCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			a.ensureAliases(cmd)
 			return tui.Run(a.Registry, a.Index, a.Migrate, mode)
 		},
 	}

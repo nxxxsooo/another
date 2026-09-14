@@ -59,6 +59,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubus
 
 The Windows script installs `another.exe` to `%LOCALAPPDATA%\another` and adds it to the user `PATH`; restart the terminal afterwards.
 
+Script installs try to add the shell alias `a='another'`. Homebrew, manual, and source installs do this on the first interactive launch of `another`, outside Homebrew's temporary-HOME install sandbox. An existing command, function, or alias with that name is left alone, and repeat installs do not append duplicates. Bash, Zsh, Fish, and PowerShell are supported; open a new shell to use the alias. Run `another aliases install` to retry explicitly; PowerShell 7 users can pass `--shell pwsh`.
+
+For local development, `make install` installs `another-dev` and tries to add both `a-dev` and `adev`, each pointing to `another-dev`. Conflicting names are skipped independently; `a` stays reserved for the released binary.
+
 Homebrew 6 requires third-party taps to be trusted before it will load them, and
 refuses the install otherwise. Older versions load the tap directly and treat
 `brew trust` as an unknown command; skip that line on those.
@@ -165,10 +169,10 @@ f         switch between the current project and all projects
 Ctrl+R    rename in the source agent's native title store
 Tab       accept the AI title suggestion, when one is configured and arrives
 m         fork or move the session into another project directory
-a         archive; press a again for one-step undo
+a         archive the current session; press a again to archive the next
 x / X     mark the row under the cursor / mark or clear the whole page
 Ctrl+D    delete after an explicit confirmation
-u         undo that delete, where the agent's session is a file another can put back
+u         undo the latest archive or reversible delete; Esc dismisses the offer
 /         search titles and normalized conversation text
 r         refresh the local index
 Esc       close a picker or dismiss transient state

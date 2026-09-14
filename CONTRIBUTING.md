@@ -17,6 +17,8 @@ Requires Go 1.24 or newer. The SQLite index is a cache under `~/.cache/another/`
 
 `make build` writes `bin/another`, and running it as `./bin/another` keeps a development build out of `PATH`. To carry one between terminals, `make install` puts it at `~/.local/bin/another-dev` — never at `another`, which belongs to whatever you installed from a release. Both builds stamp their own version, and a build from this Makefile always ends in `+dev`, so `--version` says which one you are looking at even when the tree sits exactly on a tag.
 
+`make install` also adds `a-dev` and `adev` aliases for `another-dev` when their names are free in your interactive shell. Existing aliases, functions, and executable commands are preserved. Open a new shell after installation; use `another-dev aliases install --dev` to retry. The release shortcut `a` always points to `another`.
+
 ## What must pass
 
 Everything below is enforced in CI, and running it locally is faster than a failed run:
