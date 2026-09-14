@@ -45,6 +45,10 @@ func (a *App) renameCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("%s does not support rename", p.DisplayName())
 			}
+			ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+			if dynamic, ok := p.(provider.SessionCapabilityProvider); ok && !dynamic.Capabilities(ref).Rename {
+				return fmt.Errorf("this %s session does not support rename with the installed command", p.DisplayName())
+			}
 			// Renaming the live session races the agent that owns it. The one
 			// place that is not true is a SessionEnd hook: the session is over,
 			// there is no next turn to lose, and the agent still exports its id

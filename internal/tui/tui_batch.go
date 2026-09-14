@@ -217,7 +217,7 @@ func batchPrepareCmd(ctx context.Context, gen uint64, reg *registry.Registry, cf
 					fail(sm, err)
 					continue
 				}
-				if _, ok := p.(provider.SessionRenamer); !ok {
+				if !capabilitiesFor(p, sm).Rename {
 					freeze(sm, titler.FreezeRenameUnsupported)
 					continue
 				}
@@ -535,7 +535,7 @@ func applyRenames(ctx context.Context, lookup providerLookup, byID map[string]mo
 			continue
 		}
 		renamer, ok := p.(provider.SessionRenamer)
-		if !ok {
+		if !ok || !capabilitiesFor(p, sm).Rename {
 			failed = append(failed, applyFailure{id: r.SessionID, reason: txt.rowRenameUnsupported})
 			continue
 		}

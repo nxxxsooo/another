@@ -52,7 +52,7 @@ func OpenCode2ConfigDir(ctx context.Context) string {
 // fail: every caller has a fallback, and setup must not hang on an agent that
 // happens to be stopped.
 func probeOpenCode2ConfigDir(ctx context.Context) string {
-	command := config.EnvOrDefault("OPENCODE2_COMMAND", "opencode2")
+	command := config.EnvOrDefault("OPENCODE_COMMAND", "opencode")
 	if _, err := exec.LookPath(command); err != nil {
 		return ""
 	}

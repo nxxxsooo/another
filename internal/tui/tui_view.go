@@ -890,12 +890,23 @@ func (m modelState) selectedSessionCapabilities() sessionCapabilities {
 	if err != nil {
 		return sessionCapabilities{}
 	}
-	var caps sessionCapabilities
-	_, caps.rename = p.(provider.SessionRenamer)
-	_, caps.archive = p.(provider.SessionArchiver)
-	_, caps.delete = p.(provider.SessionDeleter)
+	actual := capabilitiesFor(p, it.summary)
+	return sessionCapabilities{rename: actual.Rename, archive: actual.Archive, relocate: actual.RelocateFork, delete: actual.Delete}
+}
+
+func capabilitiesFor(p provider.Provider, sm model.Summary) provider.SessionCapabilities {
+	ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+	if dynamic, ok := p.(provider.SessionCapabilityProvider); ok {
+		return dynamic.Capabilities(ref)
+	}
+	var caps provider.SessionCapabilities
+	_, caps.Rename = p.(provider.SessionRenamer)
+	_, caps.Archive = p.(provider.SessionArchiver)
+	_, caps.Delete = p.(provider.SessionDeleter)
+	_, caps.ReversibleDelete = p.(provider.ReversibleSessionDeleter)
 	if relocator, ok := p.(provider.SessionRelocator); ok {
-		caps.relocate = relocator.SupportsRelocate(provider.RelocateFork)
+		caps.RelocateFork = relocator.SupportsRelocate(provider.RelocateFork)
+		caps.RelocateMove = relocator.SupportsRelocate(provider.RelocateMove)
 	}
 	return caps
 }
