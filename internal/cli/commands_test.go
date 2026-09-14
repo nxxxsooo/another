@@ -11,6 +11,7 @@ import (
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/integrations"
 	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 // seededApp returns an app with two providers: alpha holds two sessions, one of
@@ -292,7 +293,9 @@ func TestPathsReportsLinksAndUnlinks(t *testing.T) {
 	out = mustRun(t, app, "paths", "link", gone, newHome)
 	wantContains(t, out, "Linked", "1 session(s) now belong to")
 	settings, err := config.LoadSettings()
-	if err != nil || len(settings.PathAliases) != 1 || settings.PathAliases[0].To != newHome {
+	// The link command stores the normalized directory, which on Windows is
+	// the EvalSymlinks result without the \\?\ volume prefix.
+	if err != nil || len(settings.PathAliases) != 1 || settings.PathAliases[0].To != util.NormalizeProjectPath(newHome) {
 		t.Fatalf("saved aliases = %+v, %v", settings.PathAliases, err)
 	}
 	out = mustRun(t, app, "paths")

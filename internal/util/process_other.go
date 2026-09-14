@@ -10,4 +10,12 @@ package util
 // the session another was about to rewrite. Reporting that as unknown is the
 // difference between refusing the mutation and performing it against a live
 // agent.
-func ProcessLiveness(int) Liveness { return ProcessUnknown }
+//
+// A non-positive pid is gone on every OS: no process can have one, so that
+// answer needs no check.
+func ProcessLiveness(pid int) Liveness {
+	if pid <= 0 {
+		return ProcessGone
+	}
+	return ProcessUnknown
+}

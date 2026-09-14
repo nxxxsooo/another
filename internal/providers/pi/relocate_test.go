@@ -51,7 +51,7 @@ func TestRelocateForkCopiesEveryRecordVerbatim(t *testing.T) {
 	if res.SessionID == "01a065a5-edfc-73df-89b3-f14b9b01f243" {
 		t.Fatal("the fork kept the source session id; pi would find two files claiming it")
 	}
-	wantDir := filepath.Join(root, "sessions", "--"+strings.ReplaceAll(strings.TrimPrefix(target, "/"), "/", "-")+"--")
+	wantDir := filepath.Join(root, "sessions", piTestEncodeDir(target))
 	if filepath.Dir(res.StoragePath) != wantDir {
 		t.Fatalf("fork landed in %s, want %s", filepath.Dir(res.StoragePath), wantDir)
 	}

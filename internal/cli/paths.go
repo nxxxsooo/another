@@ -59,7 +59,7 @@ func (a *App) reportMissingDirectories(cmd *cobra.Command) error {
 		for _, candidate := range dir.Candidates {
 			fmt.Printf("  Candidate: %s (%s)\n", util.TildePath(candidate.Path), candidate.Why)
 			fmt.Printf("    another paths link %s %s\n",
-				util.ShellQuote(candidate.Alias.From), util.ShellQuote(candidate.Alias.To))
+				util.QuoteArg(candidate.Alias.From), util.QuoteArg(candidate.Alias.To))
 		}
 		fmt.Println()
 	}

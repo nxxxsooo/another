@@ -11,6 +11,7 @@ import (
 
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 func TestWriteRoundTripDoesNotMutateAndCleanup(t *testing.T) {
@@ -94,7 +95,7 @@ func TestMetadataWriteJoinsCleanupFailure(t *testing.T) {
 		return os.WriteFile(filepath.Join(path, "keep"), []byte("x"), 0o600)
 	}
 	_, err := p.Write(context.Background(), &model.Conversation{ID: "origin", Provider: "codex", ProjectPath: "/project", Messages: []model.Message{{Role: model.RoleUser, Content: "hello"}}}, provider.WriteOpts{})
-	if err == nil || !strings.Contains(err.Error(), "metadata failed") || !strings.Contains(err.Error(), "directory not empty") {
+	if err == nil || !strings.Contains(err.Error(), "metadata failed") || !strings.Contains(err.Error(), "not empty") {
 		t.Fatalf("joined metadata error = %v", err)
 	}
 }
@@ -102,8 +103,14 @@ func TestMetadataWriteJoinsCleanupFailure(t *testing.T) {
 func TestResumeCommandShellQuotes(t *testing.T) {
 	p := &Provider{}
 	got := p.ResumeCommand(provider.WriteResult{SessionID: "id; bad", ProjectPath: "/tmp/a b"})
-	if got != "cd '/tmp/a b' && commandcode --resume 'id; bad'" {
-		t.Fatalf("resume = %q", got)
+	want := util.CdAnd("/tmp/a b", "commandcode --resume "+util.QuoteArg("id; bad"))
+	if got != want {
+		t.Fatalf("resume = %q, want %q", got, want)
+	}
+	// The hostile id must only appear inside quotes the local shell treats as
+	// literal; a bare `id` followed by `;` would run `bad` as a command.
+	if strings.Contains(got, "id; bad") && !strings.Contains(got, util.QuoteArg("id; bad")) {
+		t.Fatalf("hostile session id escaped its quoting: %q", got)
 	}
 }
 

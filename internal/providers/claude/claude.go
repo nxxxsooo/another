@@ -381,9 +381,9 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	if r.ProjectPath != "" {
-		return "cd " + util.ShellQuote(r.ProjectPath) + " && claude --resume " + util.ShellQuote(r.SessionID)
+		return util.CdAnd(r.ProjectPath, "claude --resume "+util.QuoteArg(r.SessionID))
 	}
-	return "claude --resume " + util.ShellQuote(r.SessionID)
+	return "claude --resume " + util.QuoteArg(r.SessionID)
 }
 
 func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, title string) error {

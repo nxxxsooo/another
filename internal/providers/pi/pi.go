@@ -135,9 +135,13 @@ func (p *Provider) DefaultPaths() []provider.PathSpec {
 func (p *Provider) sessionsRoot() string { return filepath.Join(p.root, "sessions") }
 
 // encodeProjectDir mirrors pi's directory naming: "/a/b c" becomes "--a-b c--".
+// pi replaces /, \, and : with dashes (upstream getDefaultSessionDirPath);
+// the colon is what a Windows drive letter leaves behind, and it is illegal
+// in a Windows file name, so without this every pi write fails there.
 func encodeProjectDir(absPath string) string {
 	trimmed := strings.Trim(filepath.ToSlash(absPath), "/")
-	return "--" + strings.ReplaceAll(trimmed, "/", "-") + "--"
+	trimmed = strings.NewReplacer("/", "-", ":", "-").Replace(trimmed)
+	return "--" + trimmed + "--"
 }
 
 // decodeProjectDir is a best-effort inverse used only when a session file has
@@ -616,9 +620,9 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 // ResumeCommand points at the exact session file. pi -r would also work but
 // requires the user to pick the right entry from a list.
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	cmd := "pi --session " + util.ShellQuote(r.StoragePath)
+	cmd := "pi --session " + util.QuoteArg(r.StoragePath)
 	if r.ProjectPath != "" {
-		return "cd " + util.ShellQuote(r.ProjectPath) + " && " + cmd
+		return util.CdAnd(r.ProjectPath, cmd)
 	}
 	return cmd
 }

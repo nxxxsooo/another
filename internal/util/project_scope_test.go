@@ -12,8 +12,12 @@ import (
 )
 
 func TestParseWorktreeList(t *testing.T) {
-	data := []byte("worktree /repo\x00HEAD one\x00branch refs/heads/main\x00\x00worktree /tmp/repo tree\x00HEAD two\x00detached\x00\x00")
-	want := []string{"/repo", "/tmp/repo tree"}
+	// Built from real temp directories: drive-less literals like /repo only
+	// occur in git output on Unix, while on Windows git prints a drive letter.
+	a := filepath.Join(t.TempDir(), "repo")
+	b := filepath.Join(t.TempDir(), "repo tree")
+	data := []byte("worktree " + a + "\x00HEAD one\x00branch refs/heads/main\x00\x00worktree " + b + "\x00HEAD two\x00detached\x00\x00")
+	want := []string{util.NormalizeProjectPath(a), util.NormalizeProjectPath(b)}
 	if got := util.ParseWorktreeList(data); !reflect.DeepEqual(got, want) {
 		t.Fatalf("roots = %#v, want %#v", got, want)
 	}

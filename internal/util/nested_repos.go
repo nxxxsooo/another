@@ -24,7 +24,10 @@ func NestedRepoRoots(base string, candidates []string) []string {
 	if base == "" {
 		return nil
 	}
-	prefix := base + "/"
+	// The separator comes from the OS because normalized paths do: a Unix "/"
+	// here would never prefix a Windows path, silently disabling the whole
+	// subtraction on that platform.
+	prefix := base + string(filepath.Separator)
 	isRoot := make(map[string]bool)
 	found := make(map[string]bool)
 	var roots []string

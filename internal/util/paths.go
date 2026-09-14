@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -23,9 +24,30 @@ func NormalizeProjectPath(path string) string {
 	}
 	abs = filepath.Clean(abs)
 	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved
+		return stripExtendedPathPrefix(resolved)
 	}
 	return abs
+}
+
+// stripExtendedPathPrefix drops the \\?\ volume prefix EvalSymlinks returns
+// on Windows. Without it, an existing directory normalizes to \\?\C:\... while
+// a deleted one keeps the plain C:\... form, so stored and queried paths stop
+// matching each other for no reason the user can see.
+func stripExtendedPathPrefix(p string) string {
+	if runtime.GOOS != "windows" {
+		return p
+	}
+	return stripExtendedVolumePrefix(p)
+}
+
+// stripExtendedVolumePrefix drops the \\?\ prefix EvalSymlinks returns, in
+// both its drive and UNC forms, so the result compares equal with paths that
+// never went through symlink resolution.
+func stripExtendedVolumePrefix(p string) string {
+	if strings.HasPrefix(p, `\\?\UNC\`) {
+		return `\\` + strings.TrimPrefix(p, `\\?\UNC\`)
+	}
+	return strings.TrimPrefix(p, `\\?\`)
 }
 
 // ResolveExistingDir expands ~, resolves the path against the current

@@ -340,7 +340,7 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 }
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	return "hermes --resume " + util.ShellQuote(r.SessionID)
+	return "hermes --resume " + util.QuoteArg(r.SessionID)
 }
 
 func (p *Provider) ArchiveSession(ctx context.Context, ref provider.SessionRef, archived bool) error {

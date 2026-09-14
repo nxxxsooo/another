@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,7 +25,9 @@ func TestClassifyExecutableRoutesEachInstaller(t *testing.T) {
 		{"a homebrew cellar build", "/usr/local/Cellar/another/0.9.1/bin/another", sourceHomebrew},
 		{"linuxbrew", "/home/linuxbrew/.linuxbrew/bin/another", sourceHomebrew},
 		{"the install script's default directory", filepath.Join(home, ".local", "bin", "another"), sourceScript},
-		{"a go install build", filepath.Join(goBinDir(), "another"), sourceGoInstall},
+		{"the powershell installer's binary", filepath.Join(home, "bin", "another.exe"), sourceScript},
+		{"an all-caps exe on a case-insensitive filesystem", filepath.Join(home, "bin", "ANOTHER.EXE"), sourceScript},
+		{"a go install build", filepath.Join(goBinDir(), goBinaryName()), sourceGoInstall},
 		{"something else entirely", "/tmp/scratch/renamed-binary", sourceUnknown},
 	}
 	for _, tc := range cases {
@@ -47,5 +50,22 @@ func TestShellQuoteSurvivesAwkwardPaths(t *testing.T) {
 	}
 	if got := shellQuote("/tmp/it's here"); got != `'/tmp/it'\''s here'` {
 		t.Fatalf("an embedded quote was not closed and reopened: %q", got)
+	}
+}
+
+// `another update` runs from the exe it has to replace. The installer uses
+// this pid to rename that live image and remove it only after another exits;
+// losing either value makes updates fail on Windows even though clean installs
+// still pass.
+func TestWindowsSelfUpdateCarriesQuotedDirectoryAndPid(t *testing.T) {
+	got := windowsSelfUpdateScript(`C:\Users\it's me\bin`, 4242)
+	for _, want := range []string{
+		`$env:INSTALL_DIR='C:\Users\it''s me\bin'`,
+		`$env:ANOTHER_UPDATE_PID='4242'`,
+		`scripts/install.ps1 | iex`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("self-update script does not contain %q: %s", want, got)
+		}
 	}
 }

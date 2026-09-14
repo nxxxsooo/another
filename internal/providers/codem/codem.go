@@ -364,12 +364,12 @@ func (p *Provider) ResumeCommand(result provider.WriteResult) string {
 		return ""
 	}
 	_, id := splitSessionKey(result.SessionID)
-	cmd := "codem --resume " + util.ShellQuote(id)
+	cmd := "codem --resume " + util.QuoteArg(id)
 	if root, needed, _ := p.ensureResumeBridge(result); needed {
-		cmd = "LINCO_SESSIONS_ROOT=" + util.ShellQuote(root) + " " + cmd
+		cmd = util.EnvAnd("LINCO_SESSIONS_ROOT", root, cmd)
 	}
 	if result.ProjectPath != "" {
-		return "cd " + util.ShellQuote(result.ProjectPath) + " && " + cmd
+		return util.CdAnd(result.ProjectPath, cmd)
 	}
 	return cmd
 }

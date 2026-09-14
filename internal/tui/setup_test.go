@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -49,7 +50,14 @@ func setupFixture() setupModel {
 func onlyPIOnPath(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "pi"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	// LookPath on Windows only resolves names with an executable extension,
+	// so the stand-in carries one there. Nothing executes it — detection only
+	// checks presence, and the model page tests deliver the listing directly.
+	name := "pi"
+	if runtime.GOOS == "windows" {
+		name = "pi.cmd"
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)

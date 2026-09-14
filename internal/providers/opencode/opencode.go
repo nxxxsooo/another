@@ -27,7 +27,7 @@ type Provider struct {
 }
 
 func New() *Provider {
-	root := config.EnvOrDefault("XDG_DATA_HOME", filepath.Join(config.HomeDir(), ".local", "share"))
+	root := config.AgentDataRoot("opencode")
 	return &Provider{
 		dbPath:  filepath.Join(root, "opencode", "opencode.db"),
 		command: config.EnvOrDefault("OPENCODE_COMMAND", "opencode"),
@@ -483,9 +483,9 @@ func ocID(prefix string) string {
 // ResumeCommand includes the project directory so a pasted line lands in the
 // right project regardless of where the user runs it.
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
-	cmd := "opencode --session " + util.ShellQuote(r.SessionID)
+	cmd := "opencode --session " + util.QuoteArg(r.SessionID)
 	if r.ProjectPath != "" {
-		return "cd " + util.ShellQuote(r.ProjectPath) + " && " + cmd
+		return util.CdAnd(r.ProjectPath, cmd)
 	}
 	return cmd
 }

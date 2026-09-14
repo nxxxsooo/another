@@ -10,6 +10,7 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
@@ -18,6 +19,12 @@ builds:
       - -X github.com/nxxxsooo/another/internal/cli.version={{.Version}}
 archives:
   - formats: [tar.gz]
+    # Windows gets zips: tar.gz needs a third-party unpacker there, while
+    # Expand-Archive handles zips out of the box — which is what
+    # scripts/install.ps1 relies on.
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 # Casks, because goreleaser deprecated `brews`. Casks are no longer macOS-only:
 # Homebrew ships Linux implementations of caskroom, quarantine, installer, and

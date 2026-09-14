@@ -93,6 +93,7 @@ func readDirectory(t *testing.T, path, sessionID string) string {
 // Fork is the server's own copy followed by the server's own move. another
 // never re-renders the conversation, which is what keeps tool calls alive.
 func TestRelocateForkUsesOfficialAPIs(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	capture := apiStub(t, path, "ses_fork")
 	// The stub cannot write the database, so the applied fork and move are
@@ -127,6 +128,7 @@ func TestRelocateForkUsesOfficialAPIs(t *testing.T) {
 }
 
 func TestRelocateMoveUsesOfficialAPI(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	capture := apiStub(t, path, "")
 	storeDirectory(t, path, "ses_fixture", "/tmp/worktree")
@@ -151,6 +153,7 @@ func TestRelocateMoveUsesOfficialAPI(t *testing.T) {
 // reported as a relocated session, or the person is told their session is in a
 // directory it never reached.
 func TestRelocateReportsARefusalTheCLIHides(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	script := filepath.Join(t.TempDir(), "opencode2")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
@@ -174,6 +177,7 @@ func TestRelocateReportsARefusalTheCLIHides(t *testing.T) {
 // A fork that cannot be moved is not what was asked for, and left alone it
 // looks like an accidental duplicate in the source directory.
 func TestRelocateRollsBackAForkItCannotMove(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	// The fork id the stub returns is never staged, so the move cannot land.
 	capture := apiStub(t, path, "ses_ghost")
@@ -193,6 +197,7 @@ func TestRelocateRollsBackAForkItCannotMove(t *testing.T) {
 // A fork the server reported but did not fill is an empty session. Reporting it
 // as relocated would hand the person a directory with nothing in it.
 func TestRelocateRefusesAForkThatCarriedNothing(t *testing.T) {
+	requireShellStub(t)
 	path := fixtureDB(t)
 	apiStub(t, path, "ses_empty")
 	db, err := sql.Open("sqlite", path)

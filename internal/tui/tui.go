@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -295,18 +293,15 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 // and exits instead of resuming. For that exact transition we run it once more;
 // a normal Claude exit never restarts.
 func launchResume(command, target, project string) error {
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
+	shell := defaultShell()
 	fmt.Fprintln(os.Stderr, command)
 	if target != "claude-code" {
-		return syscall.Exec(shell, []string{shell, "-c", command}, os.Environ())
+		return replaceProcess(shell, command)
 	}
 
 	configPath := filepath.Join(config.HomeDir(), ".claude.json")
 	trustedBefore := claudeProjectTrusted(configPath, project)
-	cmd := exec.Command(shell, "-c", command)
+	cmd := shellCommand(shell, command)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return err
@@ -315,7 +310,7 @@ func launchResume(command, target, project string) error {
 		return nil
 	}
 	fmt.Fprintln(os.Stderr, "Workspace trusted; resuming Claude Code…")
-	return syscall.Exec(shell, []string{shell, "-c", command}, os.Environ())
+	return replaceProcess(shell, command)
 }
 
 func claudeProjectTrusted(configPath, project string) bool {

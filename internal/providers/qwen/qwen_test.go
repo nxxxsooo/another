@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/providers/qwen"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 func TestWriteLoadDiscoverRenameAndCleanup(t *testing.T) {
@@ -97,8 +99,9 @@ func TestProviderBasics(t *testing.T) {
 		t.Fatalf("provider basics: %q %q %v", p.ID(), p.DisplayName(), p.SupportsResume())
 	}
 	got := p.ResumeCommand(provider.WriteResult{SessionID: "abc", ProjectPath: "/some/project"})
-	if got != "cd '/some/project' && qwen --resume 'abc'" {
-		t.Fatalf("resume command = %q", got)
+	want := util.CdAnd("/some/project", "qwen --resume "+util.QuoteArg("abc"))
+	if got != want {
+		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
 
@@ -198,10 +201,17 @@ func TestLifecycleRefusesASessionARunningQwenOwns(t *testing.T) {
 		t.Fatal("deleted a session another machine has open")
 	}
 
-	// A sidecar left by a process that is gone is not a running session.
+	// A sidecar left by a process that is gone is not a running session — on
+	// platforms where another can check. Where it cannot (Windows), the same
+	// sidecar refuses: treating an unanswerable claim as expired would move a
+	// transcript out from under a live agent.
 	writeFile(t, runtimePath, fmt.Sprintf(
 		`{"schema_version":1,"pid":%d,"session_id":%q,"work_dir":"/p","hostname":%q,"started_at":1.0,"qwen_version":"0.23.1"}`, deadPID(t), id, host))
-	if err := p.ArchiveSession(context.Background(), ref, true); err != nil {
+	if runtime.GOOS == "windows" {
+		if err := p.ArchiveSession(context.Background(), ref, true); err == nil {
+			t.Fatal("archived a session another could not prove was closed")
+		}
+	} else if err := p.ArchiveSession(context.Background(), ref, true); err != nil {
 		t.Fatalf("archive refused a session nobody is running: %v", err)
 	}
 }
@@ -330,6 +340,9 @@ func writeFile(t *testing.T, path, contents string) {
 func deadPID(t *testing.T) int {
 	t.Helper()
 	cmd := exec.Command("sh", "-c", "exit 0")
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", "exit", "0")
+	}
 	if err := cmd.Run(); err != nil {
 		t.Fatal(err)
 	}

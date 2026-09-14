@@ -60,9 +60,9 @@ func (p *Provider) Write(ctx context.Context, conv *model.Conversation, opts pro
 
 func (p *Provider) ResumeCommand(r provider.WriteResult) string {
 	if r.ProjectPath != "" {
-		return "cd " + util.ShellQuote(r.ProjectPath) + " && commandcode --resume " + util.ShellQuote(r.SessionID)
+		return util.CdAnd(r.ProjectPath, "commandcode --resume "+util.QuoteArg(r.SessionID))
 	}
-	return "commandcode --resume " + util.ShellQuote(r.SessionID)
+	return "commandcode --resume " + util.QuoteArg(r.SessionID)
 }
 
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {
