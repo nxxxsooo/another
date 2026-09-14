@@ -151,7 +151,7 @@ On Windows the installer equivalent is (`another update` runs it for you when it
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
 ```
 
-Outside Homebrew, updates are manual; installed binaries do not follow the repository.
+You can also run `another update`; another chooses Homebrew, the install script, or source-update instructions from the running binary's location. Installed binaries do not follow the repository automatically.
 
 ## Use the TUI
 

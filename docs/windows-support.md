@@ -2,7 +2,7 @@
 
 Implementation branch `research/windows-support`, rebased onto `2fcc9af`.
 Cross-compiled and unit-tested on macOS, green on `windows-latest`, then run
-on Mingjian's local Parallels Windows 11 ARM64 VM (Windows 10.0.26200.9168,
+on a local Parallels Windows 11 ARM64 VM (Windows 10.0.26200.9168,
 PowerShell 5.1.26100.9168). The real-machine evidence and remaining provider
 gaps are listed below.
 
@@ -109,10 +109,9 @@ binary and the test directory were then removed.
   lacked the session's `OpenAI` model-provider definition). The another side
   of the handoff is therefore verified; a successful model turn is not.
 - The invalid Codex config was backed up byte-for-byte for the test, restored,
-  and verified against its original SHA-256
-  `57571E88F0418F98D1334E3E4E93159459B1155DDD14D18E4012AA7164D8F8AD`.
-  another's test settings/index, binaries, installer directories, screenshots,
-  and HTTP server were removed. The VM's user PATH was not changed.
+  and verified against its original SHA-256. another's test settings/index,
+  binaries, installer directories, screenshots, and HTTP server were removed.
+  The VM's user PATH was not changed.
 
 ## Still open after the VM pass
 
