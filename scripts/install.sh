@@ -70,6 +70,7 @@ mkdir -p "$INSTALL_DIR"
 install -m 755 "$tmpdir/another" "$INSTALL_DIR/another"
 echo "Installed to $INSTALL_DIR/another"
 configure_path
+"$INSTALL_DIR/another" aliases install || echo "Optional alias skipped; run another aliases install to retry." >&2
 case ":${PATH:-}:" in
   *":$INSTALL_DIR:"*) echo "Run: another --help" ;;
   *) echo "Run now: $INSTALL_DIR/another --help" ;;

@@ -55,6 +55,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubus
 
 Windows 脚本把 `another.exe` 装到 `%LOCALAPPDATA%\another`，并加入用户 `PATH`；装完重开一个终端即可。
 
+脚本安装会尝试添加 shell alias `a='another'`；Homebrew、手动下载和源码安装在首次交互运行 `another` 时补装，避免 Homebrew 安装沙箱写到临时 HOME。已有同名命令、函数或 alias 时跳过，不覆盖；重复安装不会重复追加。支持 Bash、Zsh、Fish 和 PowerShell，打开新 shell 后生效。也可运行 `another aliases install` 手动补装；PowerShell 7 可指定 `--shell pwsh`。
+
+本地开发用 `make install`，安装 `another-dev` 并尝试添加 `a-dev`、`adev` 两个快捷名，均指向 `another-dev`，各自遇到冲突就跳过；`a` 始终留给正式版。
+
 Homebrew 6 要求先信任第三方 tap，否则会拒绝安装。旧版 Homebrew 不认识 `brew trust`，可跳过这一行，直接安装。
 
 安装脚本会在默认目录不在 `PATH` 时，把它持久化到当前 shell 的启动文件（zsh 为 `~/.zshrc`）。命令末尾的 `export` 让当前终端也立即生效；这一步必须由启动安装脚本的 shell 执行，脚本的子进程无法修改父 shell，SSH 与本机终端在这里没有区别。
@@ -146,10 +150,10 @@ f         在当前项目和全部项目之间切换
 Ctrl+R    在来源 agent 的原生标题存储中重命名
 Tab       已配置 AI 标题且建议到达时，接受建议
 m         把会话复制或搬到另一个项目目录
-a         归档；再次按 a 可撤销上一步归档
+a         归档当前会话；再次按 a 继续归档下一条
 x / X     标记光标所在会话 / 整页全选或全清
 Ctrl+D    明确确认后删除
-u         撤销这次删除；仅限会话就是一个文件、Another 能原样放回的 agent
+u         撤销最近一次归档或可原样恢复的删除；Esc 关闭撤销提示
 /         搜索标题和标准化后的会话正文
 r         刷新本地索引
 Esc       关闭选择器或临时状态

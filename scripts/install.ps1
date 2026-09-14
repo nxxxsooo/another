@@ -91,6 +91,10 @@ try {
 }
 
 Ensure-Path
+& (Join-Path $InstallDir 'another.exe') aliases install --shell (Get-Process -Id $PID).Path
+if ($LASTEXITCODE -ne 0) {
+  Write-Warning 'Optional alias skipped; run another aliases install to retry.'
+}
 if (($env:Path -split ';') -contains $InstallDir) {
   Write-Output 'Run: another --help'
 } else {

@@ -30,6 +30,7 @@ install: build
 	@chmod 0755 $(HOME)/.local/bin/.$(DEV_BINARY).new
 	@mv -f $(HOME)/.local/bin/.$(DEV_BINARY).new $(HOME)/.local/bin/$(DEV_BINARY)
 	@echo "Installed $(VERSION) -> $(HOME)/.local/bin/$(DEV_BINARY)"
+	@"$(HOME)/.local/bin/$(DEV_BINARY)" aliases install --dev || echo "Development aliases skipped; run another-dev aliases install --dev to retry."
 
 clean:
 	rm -rf bin/ dist/
