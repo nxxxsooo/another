@@ -87,7 +87,7 @@ func TestFirstSetupRequiresManualAgentSelection(t *testing.T) {
 		t.Fatalf("first setup preselected agents: %v", selected)
 	}
 	selected := initialSetupSelection([]string{"o2", "QWEN"})
-	if !selected["opencode2"] || !selected["qwen"] || len(selected) != 2 {
+	if !selected["opencode"] || !selected["qwen"] || len(selected) != 2 {
 		t.Fatalf("existing setup selection was not preserved: %v", selected)
 	}
 }

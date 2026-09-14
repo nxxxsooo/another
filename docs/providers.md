@@ -15,7 +15,7 @@ Antigravity's archive is one of those dashes: its storage has no archived state 
 It depends on who owns the session, and the confirmation says which case you are in before you commit.
 
 - **Claude Code and Pi.** The session is one file, so `another` holds those exact bytes and `u` writes them back: same session ID, same path, same modification time, and the agent resumes it as if it had never gone.
-- **OpenCode 2.** The server owns the deletion. Pushing the conversation back through its API would create a new session with a new ID, which is a copy rather than an undo, so there is none and the modal says so.
+- **OpenCode V2.** The server owns the deletion. Pushing the conversation back through its API would create a new session with a new ID, which is a copy rather than an undo, so there is none and the modal says so. V1 history shares the OpenCode list but keeps its own native capabilities.
 - **Antigravity.** A session is not one file but a whole brain directory beside a trajectory database, often tens of megabytes, and `another` will not hold that many bytes in memory waiting for second thoughts, so there is no undo there either.
 - **Qwen Code.** A session is a transcript plus the sidecars that belong to it and the backups of every file it edited, so the same reasoning applies and the delete is final.
 - **CodeM.** A session is a transcript plus the working directory CodeM keeps beside it for that session's scratchpad and tool results, so the same reasoning applies and the delete is final.

@@ -14,8 +14,7 @@ import (
 	"github.com/nxxxsooo/another/internal/providers/commandcode"
 	"github.com/nxxxsooo/another/internal/providers/cursor"
 	"github.com/nxxxsooo/another/internal/providers/hermes"
-	"github.com/nxxxsooo/another/internal/providers/opencode"
-	"github.com/nxxxsooo/another/internal/providers/opencode2"
+	"github.com/nxxxsooo/another/internal/providers/opencodeunified"
 	"github.com/nxxxsooo/another/internal/providers/pi"
 	"github.com/nxxxsooo/another/internal/providers/qwen"
 )
@@ -67,8 +66,7 @@ func newRegistry(allowed map[string]bool) *Registry {
 		claude.New(),
 		codex.New(),
 		cursor.New(),
-		opencode.New(),
-		opencode2.New(),
+		opencodeunified.New(),
 		commandcode.New(),
 		codem.New(),
 		hermes.New(),
@@ -149,7 +147,7 @@ func CLICommand(id string) string {
 		"codex":       "codex",
 		"cursor":      "cursor-agent",
 		"opencode":    "opencode",
-		"opencode2":   "opencode2",
+		"opencode2":   "opencode",
 		"commandcode": "commandcode",
 		"codem":       "codem",
 		"hermes":      "hermes",
@@ -174,7 +172,7 @@ func CLIAvailable(id string) bool {
 // providers, not deprecated ones; the tier only decides how prominently setup
 // offers them, so a list of ten does not bury the six that are tested.
 var compatibilityAdapters = map[string]bool{
-	"cursor": true, "opencode": true, "commandcode": true, "codem": true, "hermes": true,
+	"cursor": true, "commandcode": true, "codem": true, "hermes": true,
 }
 
 // IsCompatibilityAdapter reports whether an agent belongs to the second tier.
@@ -195,7 +193,7 @@ func NormalizeID(id string) string {
 		"codex":  "codex",
 		"cursor": "cursor", "cursor-agent": "cursor",
 		"opencode": "opencode", "open-code": "opencode",
-		"opencode2": "opencode2", "open-code-2": "opencode2", "o2": "opencode2",
+		"opencode2": "opencode", "open-code-2": "opencode", "o2": "opencode",
 		"commandcode": "commandcode", "command-code": "commandcode",
 		"codem": "codem", "code-m": "codem", "lark-codem": "codem", "feishu-codem": "codem",
 		"hermes": "hermes", "hermes-agent": "hermes",

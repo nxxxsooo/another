@@ -28,11 +28,13 @@ type Provider struct {
 
 func New() *Provider {
 	root := config.AgentDataRoot("opencode")
-	return &Provider{
-		dbPath:  filepath.Join(root, "opencode", "opencode.db"),
-		command: config.EnvOrDefault("OPENCODE_COMMAND", "opencode"),
-	}
+	return NewAt(filepath.Join(root, "opencode", "opencode.db"), config.EnvOrDefault("OPENCODE_COMMAND", "opencode"))
 }
+
+// NewAt builds the V1 storage adapter for a known database and command. It is
+// used by the unified OpenCode provider, which keeps V1 history readable after
+// the public OpenCode command has moved on to V2.
+func NewAt(dbPath, command string) *Provider { return &Provider{dbPath: dbPath, command: command} }
 
 func (p *Provider) ID() string          { return ProviderID }
 func (p *Provider) DisplayName() string { return "OpenCode" }

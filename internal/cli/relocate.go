@@ -49,6 +49,13 @@ func (a *App) relocateCmd() *cobra.Command {
 			if !relocator.SupportsRelocate(mode) {
 				return fmt.Errorf("%s does not support %s", p.DisplayName(), relocateVerb(mode))
 			}
+			ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+			if dynamic, ok := p.(provider.SessionCapabilityProvider); ok {
+				caps := dynamic.Capabilities(ref)
+				if mode == provider.RelocateFork && !caps.RelocateFork || mode == provider.RelocateMove && !caps.RelocateMove {
+					return fmt.Errorf("this %s session does not support %s", p.DisplayName(), relocateVerb(mode))
+				}
+			}
 			if !yes && !dryRun {
 				if !stdinIsTerminal() {
 					return fmt.Errorf("confirmation requires a terminal; pass --yes to relocate non-interactively")

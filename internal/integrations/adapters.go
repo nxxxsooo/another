@@ -37,7 +37,7 @@ type Adapter struct {
 var adapters = []Adapter{
 	{
 		ID:        OpenCode2,
-		Provider:  "opencode2",
+		Provider:  "opencode",
 		ConfigDir: OpenCode2ConfigDir,
 		Status:    OpenCode2Status,
 		Install:   InstallOpenCode2,
@@ -76,11 +76,16 @@ func Providers() []string {
 	for _, a := range adapters {
 		names = append(names, a.Provider)
 	}
+	// Keep the former public name as a command-line compatibility alias.
+	names = append(names, "opencode2")
 	return names
 }
 
 // ForProvider returns the adapter that writes into this agent, if there is one.
 func ForProvider(provider string) (Adapter, bool) {
+	if provider == "opencode2" || provider == "open-code-2" || provider == "o2" {
+		provider = "opencode"
+	}
 	for _, a := range adapters {
 		if a.Provider == provider {
 			return a, true

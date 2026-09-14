@@ -17,11 +17,11 @@
 | `internal/index` | SQLite store: discovery reconciliation, FTS5 search, incremental refresh, path aliases, migration dedup records. |
 | `internal/migrate` | The migration engine: context modes, projection, write, verify, rollback, dedup. |
 | `internal/titler` | AI title suggestions through an installed agent CLI, single and batch. |
-| `internal/integrations` | Adapters another installs into other agents: the OpenCode 2 title plugin and the Pi title extension, behind one shared install, compare, and remove path. |
+| `internal/integrations` | Adapters another installs into other agents: the OpenCode V2 title plugin and the Pi title extension, behind one shared install, compare, and remove path. |
 | `internal/config` | Settings file, paths, atomic writes, permissions. |
 | `internal/i18n` | English and Chinese strings for the TUI. |
 | `internal/util` | Paths, project scope and nested-repo detection, JSONL scanning, title picking, display helpers. |
-| `integrations/` | Sources shipped to other agents: the OpenCode 2 title plugin, the Pi title extension, the Claude Code SessionEnd hook. |
+| `integrations/` | Sources shipped to other agents: the OpenCode V2 title plugin, the Pi title extension, the Claude Code SessionEnd hook. |
 | `docs/assets/`, `scripts/` | Generated artwork and the scripts that regenerate it, plus the install script. |
 
 ## Data flow
@@ -81,7 +81,7 @@ An operation the agent has no verified native contract for is reported as unsupp
 
 Migration renders a conversation through the portable model into a different agent's format. Reasoning signatures, tool calls, images, and system records do not travel; ordered user and assistant text, timestamps, project directory, and title do.
 
-Relocation moves or forks a session within the same agent, using that agent's own copy or move. Nothing is re-rendered, so tool calls and reasoning survive. Only OpenCode 2 and Pi have such an operation today.
+Relocation moves or forks a session within the same agent, using that agent's own copy or move. Nothing is re-rendered, so tool calls and reasoning survive. Only OpenCode V2 sessions and Pi have such an operation today; V1 OpenCode history stays in the same provider but does not advertise it.
 
 ## Project scope
 

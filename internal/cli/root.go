@@ -572,7 +572,7 @@ func (a *App) providersCmd() *cobra.Command {
 					found := adapter.Status(adapter.ConfigDir(cmd.Context()))
 					fmt.Printf("    title adapter: %s\n", integrationStateText(found))
 					if found.RedundantEntry != "" {
-						fmt.Printf("    note: %s still lists this plugin; OpenCode 2 finds it without that entry\n",
+						fmt.Printf("    note: %s still lists this plugin; OpenCode finds it without that entry\n",
 							util.TildePath(found.RedundantEntry))
 					}
 				}

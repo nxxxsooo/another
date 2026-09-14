@@ -179,6 +179,18 @@ type SessionRelocator interface {
 	SupportsRelocate(RelocateMode) bool
 }
 
+// SessionCapabilities describes native operations for one session. Composite
+// providers use it when old and current storage generations have different
+// contracts; callers should fall back to interface assertions when it is not
+// implemented.
+type SessionCapabilities struct {
+	Rename, Archive, RelocateFork, RelocateMove, Delete, ReversibleDelete bool
+}
+
+type SessionCapabilityProvider interface {
+	Capabilities(SessionRef) SessionCapabilities
+}
+
 // ErrRelocateUnsupported is returned when a provider cannot relocate at all, or
 // cannot perform the requested mode.
 var ErrRelocateUnsupported = errors.New("relocate is not supported")

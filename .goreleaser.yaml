@@ -30,7 +30,7 @@ archives:
 # Homebrew ships Linux implementations of caskroom, quarantine, installer, and
 # trash, and Cask::DSL includes OnSystem::MacOSAndLinux, so the generated
 # on_macos/on_linux blocks both resolve. Homebrew therefore covers every
-# platform this project builds for.
+# macOS and Linux platform this project builds for. Windows uses the PowerShell installer.
 #
 # GITHUB_TOKEN cannot write to a repository outside this one, so the tap needs
 # its own fine-grained token with contents:write on the tap alone.
@@ -130,3 +130,22 @@ release:
     ```
 
     Or download the archive for your platform below and verify it against `checksums.txt`.
+
+    Windows (PowerShell):
+
+    ```powershell
+    irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex
+    ```
+
+    Existing script installs on any supported platform can run `another update`.
+
+    ## Compatibility
+
+    OpenCode V1 history and V2 sessions now share the `opencode` provider. Existing
+    `opencode2`, `open-code-2`, and `o2` aliases continue to work. Operations use
+    the session's native store and matching CLI; new migrations target V2.
+
+    Windows now has amd64 and arm64 ZIPs. Windows CI covers the full test suite;
+    real Windows VM checks cover setup, indexing, preview, Codex handoff, and
+    live-executable replacement. Native Windows handoff for the other agents
+    remains a coverage gap; see [Windows verification](https://github.com/nxxxsooo/another/blob/main/docs/windows-support.md).

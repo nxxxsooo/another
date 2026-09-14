@@ -186,7 +186,7 @@ func applyIntegrations(settings config.Settings, resolvers map[string]func() int
 		}
 		fmt.Printf("%s: %s\n", label, util.TildePath(result.Dir))
 		if result.RedundantEntry != "" {
-			fmt.Printf("    %s still lists this plugin; OpenCode 2 finds it without that entry\n",
+			fmt.Printf("    %s still lists this plugin; OpenCode finds it without that entry\n",
 				util.TildePath(result.RedundantEntry))
 		}
 	}
@@ -198,7 +198,7 @@ func adapterLabel(adapter integrations.Adapter) string {
 	if adapter.ID == integrations.Pi {
 		return "Pi title extension"
 	}
-	return "OpenCode 2 title plugin"
+	return "OpenCode title plugin"
 }
 
 func printIntegration(adapter integrations.Adapter, status integrations.Status) {
@@ -210,7 +210,7 @@ func printIntegration(adapter integrations.Adapter, status integrations.Status) 
 	if status.RedundantEntry != "" {
 		// The entry is harmless while the directory stays where it is, so
 		// this is a cleanup note rather than a failure.
-		fmt.Printf("    note: %s still lists this plugin; OpenCode 2 finds it without that entry\n",
+		fmt.Printf("    note: %s still lists this plugin; OpenCode finds it without that entry\n",
 			util.TildePath(status.RedundantEntry))
 	}
 }
