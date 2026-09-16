@@ -1,7 +1,8 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin } from "@opencode/plugin"
 import {
   fallbackTitle,
   finalizeTitle,
+  firstTitle,
   isRefusal,
   loadLanguage,
   parsePartialTitle,
@@ -64,6 +65,23 @@ const plugin = {
       return (await ctx.generate.text({ prompt })).text
     }
 
+    // Supply the final title before OpenCode's native title request is sent.
+    // A rename event can be missed when a location reloads or its subscription
+    // fails; the native title must not depend on a later event for its date.
+    const titleHook = await ctx.session.hook("title", async (event) => {
+      const session = await ctx.session.get({ sessionID: event.sessionID })
+      if (session.parentID || session.title?.trim()) return
+      const messages = await ctx.session.context({ sessionID: event.sessionID })
+      const first = messages.find((message) => message.type === "user" && message.text.trim() !== "")
+      if (first?.type !== "user") return
+      try {
+        event.result = firstTitle(await generate(repairPrompt(language, first.text), event.model), session.time.created, language)
+      } catch (error) {
+        console.error("another title policy generation failed", error)
+        event.result = fallbackTitle(session.time.created, language)
+      }
+    })
+
     // A session going idle is the only signal the plugin gets that a turn
     // finished, and it arrives again on every later turn, so the same session
     // can be in here more than once at a time. The set is not memory of what
@@ -95,7 +113,7 @@ const plugin = {
         // forced: the session keeps no name, which is the state the next idle
         // will try again from.
         if (!title) return
-        await ctx.session.rename({ sessionID, title })
+        await ctx.session.update({ sessionID, title })
       } catch (error) {
         if (!controller.signal.aborted) console.error("another title policy repair failed", error)
       } finally {
@@ -104,43 +122,39 @@ const plugin = {
     }
 
     void (async () => {
-      try {
-        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-          if (event.type === "session.idle") {
-            void repair(event.data.sessionID)
-            continue
+      while (!controller.signal.aborted) {
+        try {
+          for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+            try {
+              if (event.type === "session.idle") {
+                void repair(event.data.sessionID)
+                continue
+              }
+              if (event.type !== "session.renamed") continue
+              // Keep the event path for manual Type｜Topic renames. The title
+              // hook above no longer needs this path for automatic titles.
+              const refused = isRefusal(event.data.title)
+              if (!refused && !parsePartialTitle(event.data.title)) continue
+              const session = await ctx.session.get({ sessionID: event.data.sessionID })
+              if (session.parentID || session.title !== event.data.title) continue
+              const title = refused
+                ? fallbackTitle(session.time.created, language)
+                : finalizeTitle(event.data.title, session.time.created, language)
+              if (title) await ctx.session.update({ sessionID: event.data.sessionID, title })
+            } catch (error) {
+              if (!controller.signal.aborted) console.error("another title policy event failed", error)
+            }
           }
-          if (event.type !== "session.renamed") continue
-          // The title the model just produced is the whole trigger. Nothing is
-          // remembered between events on purpose: an earlier version kept the
-          // pending sessions in memory and lost the date whenever the plugin
-          // reloaded, the server restarted, or the session belonged to a
-          // directory whose instance was not the one watching.
-          // A refusal is a defect this policy can produce, never a name the
-          // user should read: OpenCode 2 writes the title agent's answer to the
-          // session as it stands, so a model that declines names the session
-          // after its own refusal.
-          const refused = isRefusal(event.data.title)
-          if (!refused && !parsePartialTitle(event.data.title)) continue
-          const session = await ctx.session.get({ sessionID: event.data.sessionID })
-          // Child sessions are named after the task that spawned them, which
-          // is more useful to their parent than a dated policy title.
-          if (session.parentID) continue
-          const title = refused
-            ? fallbackTitle(session.time.created, language)
-            : finalizeTitle(event.data.title, session.time.created, language)
-          if (!title) continue
-          // A dated title no longer parses as Type｜Topic, so the rename this
-          // triggers ends here rather than looping.
-          await ctx.session.rename({ sessionID: event.data.sessionID, title })
+        } catch (error) {
+          if (!controller.signal.aborted) console.error("another title policy event stream failed", error)
         }
-      } catch (error) {
-        if (!controller.signal.aborted) console.error("another title policy event loop failed", error)
+        if (!controller.signal.aborted) await wait(1000, controller.signal)
       }
     })()
 
     return async () => {
       controller.abort()
+      await titleHook.dispose()
       await registration.dispose()
     }
   },

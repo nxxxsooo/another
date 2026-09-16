@@ -131,3 +131,10 @@ export function repairTitle(generated: string, created: number, configured: Titl
   if (!text) return
   return isRefusal(text) ? fallbackTitle(created, configured) : finalizeTitle(text, created, configured)
 }
+
+// The title hook must never hand an undated model answer back to OpenCode.
+// When the model drifts, use a dated fallback rather than allowing the native
+// generator to persist an unchecked Type｜Topic title.
+export function firstTitle(generated: string, created: number, configured: TitleLanguage): string | undefined {
+  return repairTitle(generated, created, configured) ?? fallbackTitle(created, configured)
+}

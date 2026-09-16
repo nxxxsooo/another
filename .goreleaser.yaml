@@ -144,12 +144,12 @@ release:
 
     ## Compatibility
 
-    Renaming an OpenCode V2 session works again. OpenCode 2.0 retired the
-    rename endpoint another was calling, so every rename against a current
-    build failed with `HTTP 404 Not Found` and left the title untouched.
-    another now renames through OpenCode's session update route and falls back
-    to the retired one for older builds. Nothing else changed, and native
-    session files are not moved, rewritten, or deleted.
+    On OpenCode 2.0.4, another's optional title plugin now includes the
+    creation date before OpenCode saves its first automatic session title.
+    Previously some new sessions kept only `Type｜Topic` when the follow-up
+    rename event was missed. After upgrading another, run
+    `another integrations install opencode` to refresh an installed plugin;
+    existing session titles are unchanged. Other agents are unaffected.
 
     Windows native handoff beyond Codex remains a documented coverage gap;
     see [Windows verification](https://github.com/nxxxsooo/another/blob/main/docs/windows-support.md).

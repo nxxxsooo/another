@@ -3,6 +3,7 @@ import test from "node:test"
 import {
   cleanGenerated,
   fallbackTitle,
+  firstTitle,
   finalizeTitle,
   isRefusal,
   loadLanguage,
@@ -105,6 +106,15 @@ test("a repaired session is dated, and an unusable answer is declined", () => {
   assert.equal(repairTitle("", created, "auto"), undefined)
   // The repair must not re-date a title that already carries a date.
   assert.equal(repairTitle("0905｜修复｜取消批量命名", created, "zh"), undefined)
+})
+
+test("first-title hook always supplies a dated title, even for invalid model output", () => {
+  const created = Date.parse("2026-09-15T23:30:00Z")
+  assert.equal(firstTitle("研究｜Open Code重命名插件日期缺失", created, "auto"), "0916｜研究｜Open Code重命名插件日期缺失")
+  assert.equal(firstTitle("探索｜分支安装是否过多", created, "auto"), "0916｜探索｜分支安装是否过多")
+  assert.equal(firstTitle("Here is a title", created, "zh"), "0916｜探索｜未命名会话")
+  assert.equal(firstTitle("", created, "auto"), "0916｜Explore｜Untitled session")
+  assert.equal(firstTitle("研究｜日期缺失", 0, "auto"), undefined)
 })
 
 test("the repair prompt carries the policy and the opening message", () => {
