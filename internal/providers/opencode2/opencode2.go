@@ -507,12 +507,45 @@ func (p *Provider) RenameSession(ctx context.Context, ref provider.SessionRef, t
 	// directory is restored around the whole exchange, including the wait for
 	// the server to persist its write.
 	return p.withSessionDirectory(ref.ID, func() error {
-		cmd := exec.CommandContext(ctx, p.command, "api", "POST", "/api/session/"+ref.ID+"/rename", "--data", string(data))
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("OpenCode rename: %w: %s", err, strings.TrimSpace(string(out)))
+		if err := p.sendTitle(ctx, ref.ID, data); err != nil {
+			return err
 		}
 		return p.awaitTitle(ctx, ref.ID, title)
 	})
+}
+
+// sendTitle hands the new title to the server. OpenCode V2 retired the
+// dedicated rename route in favour of a session update, so the current form is
+// tried first and the older one only when the route itself is missing, the way
+// import already handles a subcommand that moved. A rename is the same write
+// either way, so the retry cannot half-apply anything.
+func (p *Provider) sendTitle(ctx context.Context, sessionID string, data []byte) error {
+	out, err := p.apiOnce(ctx, "PATCH", "/api/session/"+sessionID, data)
+	if err == nil {
+		return nil
+	}
+	if isMissingRoute(out) {
+		if _, legacyErr := p.apiOnce(ctx, "POST", "/api/session/"+sessionID+"/rename", data); legacyErr == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("OpenCode rename: %w: %s", err, strings.TrimSpace(out))
+}
+
+func (p *Provider) apiOnce(ctx context.Context, method, path string, data []byte) (string, error) {
+	cmd := exec.CommandContext(ctx, p.command, "api", method, path, "--data", string(data))
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// isMissingRoute reports a 404 the server answered with nothing but the status
+// line, which is how a route this build does not serve arrives. A session the
+// server cannot find is also a 404, but it carries an error document, and
+// retrying that one against a retired route would only replace a clear refusal
+// with a worse message.
+func isMissingRoute(out string) bool {
+	out = strings.TrimSpace(out)
+	return strings.Contains(out, "HTTP 404") && !strings.Contains(out, "{")
 }
 
 // awaitTitle waits briefly for the server to persist a title, because the API

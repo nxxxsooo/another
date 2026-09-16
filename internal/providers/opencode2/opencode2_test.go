@@ -339,9 +339,76 @@ func TestRenameUsesOfficialAPI(t *testing.T) {
 	}
 	got, _ := os.ReadFile(capture)
 	text := strings.TrimSpace(string(got))
-	if !strings.Contains(text, "api POST /api/session/ses_fixture/rename --data") || !strings.Contains(text, `new title`) {
+	if !strings.Contains(text, "api PATCH /api/session/ses_fixture --data") || !strings.Contains(text, `new title`) {
 		t.Fatalf("rename command = %q", got)
 	}
+}
+
+// OpenCode V2 replaced `POST /api/session/{id}/rename` with a session update,
+// and a build that still serves the old route answers the new one with a bare
+// 404 — which reached the person as "OpenCode rename: exit status 1: HTTP 404
+// Not Found" and no rename.
+func TestRenameFallsBackToTheRetiredRoute(t *testing.T) {
+	requireShellStub(t)
+	path := fixtureDB(t)
+	capture := filepath.Join(t.TempDir(), "args")
+	script := filepath.Join(t.TempDir(), "opencode2")
+	body := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CAPTURE\"\n" +
+		"case \"$*\" in *PATCH*) echo 'HTTP 404 Not Found'; exit 1;; esac\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	t.Setenv("OPENCODE2_COMMAND", script)
+	t.Setenv("CAPTURE", capture)
+	storeDirectory(t, path, "ses_fixture", t.TempDir())
+	storeTitle(t, path, "new title")
+	if err := opencode2.New().RenameSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}, "new title"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(capture)
+	if !strings.Contains(string(got), "api POST /api/session/ses_fixture/rename --data") {
+		t.Fatalf("rename never reached the retired route: %q", got)
+	}
+}
+
+// A 404 for a session the server cannot find carries its own error document.
+// Retrying that against the retired route would answer a clear refusal with a
+// second 404, so the person must keep the server's own words.
+func TestRenameKeepsTheServerRefusalForAMissingSession(t *testing.T) {
+	requireShellStub(t)
+	path := fixtureDB(t)
+	capture := filepath.Join(t.TempDir(), "args")
+	script := filepath.Join(t.TempDir(), "opencode2")
+	body := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CAPTURE\"\n" +
+		"echo '{\"_tag\":\"SessionNotFoundError\",\"message\":\"Session not found\"}'\n" +
+		"echo 'HTTP 404 Not Found'\nexit 1\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCODE2_DB_PATH", path)
+	t.Setenv("OPENCODE2_COMMAND", script)
+	t.Setenv("CAPTURE", capture)
+	storeDirectory(t, path, "ses_fixture", t.TempDir())
+	err := opencode2.New().RenameSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}, "new title")
+	if err == nil {
+		t.Fatal("a refused rename was reported as success")
+	}
+	if !strings.Contains(err.Error(), "SessionNotFoundError") {
+		t.Fatalf("error hides what the server said: %v", err)
+	}
+	if strings.Contains(string(mustReadFile(t, capture)), "/rename") {
+		t.Fatal("a refused session was retried against the retired route")
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 // `opencode2 api` exits 0 on an HTTP 500, which is how a refused rename used
