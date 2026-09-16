@@ -42,6 +42,7 @@ Rules that are not negotiable:
 - A rename writes to the agent's own title store. If the agent reads titles from more than one place and you can only reach some of them, return `provider.ErrPartial` wrapped with what was missed. That is a caveat, not a failure.
 - Return `provider.ErrRelocateUnsupported` for a mode you do not own. `SupportsRelocate` is per mode, because an agent can own a copy without owning a move.
 - Never modify a source session during migration.
+- An HTTP-backed provider's routes belong to the agent and move between its releases. A stubbed binary in a test proves only what another sends, never that the server still serves it, so read the live surface — `opencode api GET /openapi.json` for OpenCode V2 — and distinguish a 404 for a route the build does not serve from a 404 for a session that is gone. OpenCode 2.0 retired `POST /api/session/{id}/rename` for a `PATCH /api/session/{id}` update, and every rename failed until another followed.
 
 ## Registration
 
