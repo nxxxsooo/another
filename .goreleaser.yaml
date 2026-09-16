@@ -144,9 +144,11 @@ release:
 
     ## Compatibility
 
-    This release changes only local index reconciliation. When an agent leaves
-    the same session ID in more than one project directory, another prefers a
-    message-bearing transcript over a newer metadata-only snapshot. Native
+    Renaming an OpenCode V2 session works again. OpenCode 2.0 retired the
+    rename endpoint another was calling, so every rename against a current
+    build failed with `HTTP 404 Not Found` and left the title untouched.
+    another now renames through OpenCode's session update route and falls back
+    to the retired one for older builds. Nothing else changed, and native
     session files are not moved, rewritten, or deleted.
 
     Windows native handoff beyond Codex remains a documented coverage gap;
