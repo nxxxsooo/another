@@ -41,7 +41,7 @@ Two passes then clean it up:
 
 One honest limitation: the bloom in the master is light thrown *onto* the
 plate. Removing the plate necessarily dims it. This is a derived asset for
-plateless surfaces, not a replacement for the master, and DESIGN.md's
+ plateless surfaces, not a replacement for the master, and docs/design.md's
 requirement to preserve the bloom applies to the master.
 
 Requires Pillow.

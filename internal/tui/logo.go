@@ -23,7 +23,7 @@ import (
 // The mark is printed twice, offset horizontally, in the two brand states: the
 // agent the session came from and the agent it went to. Where the two copies
 // overlap the cell is lit near-white, which is the part of the session both
-// agents hold. This is the identity PRODUCT.md already resolved — two
+// agents hold. This is the identity docs/product.md already resolved — two
 // near-coincident forms that read as one thing which cannot shed its extra
 // presence — and the same channel-split language the README's hero banner uses,
 // so the goodbye and the landing image read as one mark.
