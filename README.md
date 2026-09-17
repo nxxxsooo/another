@@ -361,6 +361,16 @@ python3 ./scripts/render-mark-transparent.py                       # 标志透�
 
 `another` 起源于 [CyrusSE/agenthop](https://github.com/CyrusSE/agenthop) 的 fork，并按 MIT License 分发。目前已使用独立的 module path、provider 契约、TUI、配置流程和发布体系。
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=nxxxsooo%2Fanother&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=nxxxsooo/another&type=date&theme=dark&legend=top-left" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=nxxxsooo/another&type=date&legend=top-left" />
+    <img alt="another Star History chart" src="https://api.star-history.com/chart?repos=nxxxsooo/another&type=date&legend=top-left" />
+  </picture>
+</a>
+
 ## 许可证
 
 [MIT](LICENSE)

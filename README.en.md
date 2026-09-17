@@ -373,6 +373,16 @@ The name is also a quiet nod to [*Another*](https://www.pa-works.jp/works/anothe
 
 `another` began as a fork of [CyrusSE/agenthop](https://github.com/CyrusSE/agenthop) and is distributed under the MIT License. It now has its own module path, provider contracts, TUI, setup flow, and release surface.
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=nxxxsooo%2Fanother&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=nxxxsooo/another&type=date&theme=dark&legend=top-left" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=nxxxsooo/another&type=date&legend=top-left" />
+    <img alt="another Star History chart" src="https://api.star-history.com/chart?repos=nxxxsooo/another&type=date&legend=top-left" />
+  </picture>
+</a>
+
 ## License
 
 [MIT](LICENSE)
