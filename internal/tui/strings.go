@@ -96,6 +96,7 @@ type uiText struct {
 	noResumeCommandFmt   string
 	projectUnknown       string
 	resumeCopied         string
+	resumeCopyFailed     string
 	cannotArchiveRunning string
 	archiveUnsupportedFm string
 	cannotRenameRunning  string
@@ -377,6 +378,7 @@ var englishText = uiText{
 	noResumeCommandFmt:   "%s has no resume command",
 	projectUnknown:       "Could not determine the current project",
 	resumeCopied:         "Resume command copied",
+	resumeCopyFailed:     "No clipboard available; the command is on screen",
 	cannotArchiveRunning: "The session running right now cannot be archived",
 	archiveUnsupportedFm: "%s does not support archiving",
 	cannotRenameRunning:  "The session running right now cannot be renamed",
@@ -630,6 +632,7 @@ var chineseText = uiText{
 	noResumeCommandFmt:   "%s 没有可用的 resume 命令",
 	projectUnknown:       "无法确定当前项目",
 	resumeCopied:         "已复制 resume 命令",
+	resumeCopyFailed:     "没有可用剪贴板，命令已显示在屏幕上",
 	cannotArchiveRunning: "不能归档当前正在运行的会话",
 	archiveUnsupportedFm: "%s 不支持归档",
 	cannotRenameRunning:  "不能重命名当前正在运行的会话",

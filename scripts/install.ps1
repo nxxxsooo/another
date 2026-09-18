@@ -1,6 +1,6 @@
 # Installs another on Windows.
 #
-#   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+#   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mjshao.fun/another/install.ps1 | iex"
 #
 # Honors $env:INSTALL_DIR (default %LOCALAPPDATA%\another) and $env:VERSION
 # (default latest), mirroring scripts/install.sh on Unix. `another update`

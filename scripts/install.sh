@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+#
+# Installs another on macOS and Linux.
+#
+#   curl -fsSL https://mjshao.fun/another/install.sh | bash
+#
+# That URL is a permanent redirect to this file on GitHub; `another update`
+# fetches the raw URL directly so self-update does not depend on the site.
+# Honors INSTALL_DIR (default ~/.local/bin) and VERSION (default latest).
+
 set -euo pipefail
 
 REPO="nxxxsooo/another"
@@ -60,7 +69,10 @@ if [ "$VERSION" = "latest" ]; then
   VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4)"
 fi
 
-url="https://github.com/${REPO}/releases/download/${VERSION}/another_${VERSION#v}_${os}_${arch}.tar.gz"
+# An explicit URL makes the exact installer testable before a release owns an
+# asset, and supports mirrors without changing the normal trust path. install.ps1
+# has honored this since Windows support landed; the two installers agree now.
+url="${ANOTHER_DOWNLOAD_URL:-https://github.com/${REPO}/releases/download/${VERSION}/another_${VERSION#v}_${os}_${arch}.tar.gz}"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 

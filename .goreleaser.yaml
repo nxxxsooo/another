@@ -137,7 +137,7 @@ release:
     Windows (PowerShell):
 
     ```powershell
-    irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex
+    irm https://mjshao.fun/another/install.ps1 | iex
     ```
 
     Existing script installs on any supported platform can run `another update`.

@@ -45,13 +45,13 @@ brew trust nxxxsooo/tap
 brew install nxxxsooo/tap/another
 
 # 安装脚本
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
+curl -fsSL https://mjshao.fun/another/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Windows（PowerShell）：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mjshao.fun/another/install.ps1 | iex"
 ```
 
 Windows 脚本把 `another.exe` 装到 `%LOCALAPPDATA%\another`，并加入用户 `PATH`；装完重开一个终端即可。
@@ -127,14 +127,14 @@ another
 
 ```bash
 brew upgrade another                     # Homebrew
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # 安装脚本
+curl -fsSL https://mjshao.fun/another/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # 安装脚本
 go install github.com/nxxxsooo/another/cmd/another@latest                                      # 源码安装
 ```
 
 Windows 下安装脚本的等价命令（`another update` 能判断出安装来源时会替你执行）：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mjshao.fun/another/install.ps1 | iex"
 ```
 
 也可以直接运行 `another update`；another 会根据当前二进制的位置选择 Homebrew、安装脚本或源码更新说明。已安装的二进制不会自动跟随仓库变化。
@@ -166,6 +166,8 @@ q         退出
 TUI 运行期间会把终端标题设为 `another`（setup 页为 `another setup`），退出时改回当前目录，把终端交给目标 agent 时改成那个 agent 的名字——标签页上写的始终是此刻真正在跑的东西。
 
 在 macOS 上，TUI 打开时会临时切到当前可用的英文键盘布局，让字母快捷键不受中文拼音输入法拦截；退出或进入目标 agent 前会恢复打开 TUI 前的输入源。Linux 不修改系统输入源。
+
+在 Linux 上，`c` 复制 resume 命令依赖 `xclip`、`xsel` 或 `wl-clipboard`。无头机器通常一个都没有，这时 another 会直接说明剪贴板不可用，而不是谎报已复制；命令仍留在屏幕上，可以手动选中。
 
 迁移完成后，界面会先显示准确的恢复命令。按 `Enter` 把终端交给目标 agent，按 `c` 复制命令，或按 `Esc` 留在会话列表。
 

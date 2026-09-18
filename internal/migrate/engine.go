@@ -151,6 +151,17 @@ func (e *Engine) writeConversationMode(ctx context.Context, dst provider.Provide
 				warnings = append(warnings, "record migration: "+err.Error())
 			}
 		}
+		// A dedup hit carries only the id and storage path out of the index,
+		// and every provider drops the `cd` from its resume command when the
+		// project path is empty. Without this, migrating an already-migrated
+		// session hands back a command that resumes wherever the user happens
+		// to be standing.
+		if existing.ProjectPath == "" {
+			existing.ProjectPath = project
+			if existing.ProjectPath == "" {
+				existing.ProjectPath = conv.ProjectPath
+			}
+		}
 		return &Result{
 			Source:        conv,
 			Write:         existing,
