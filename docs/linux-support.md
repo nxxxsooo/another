@@ -43,6 +43,54 @@ another itself.
 - **Farewell screen.** The logo and `Keep the session. Change the agent.`
   render correctly on exit.
 
+## Second pass: a real Ubuntu desktop VM
+
+The container answers for a server. A Parallels Ubuntu 24.04 LTS ARM64 desktop
+VM (GNOME, `Type=wayland`, user `parallels`, Rosetta enabled) answers for a
+workstation, and this one already had a real OpenCode install with a 16 MB
+`opencode.db`.
+
+- **Install in a real login session.** The installer ran end to end from a real
+  release tarball, wrote the PATH line to `~/.bashrc`, and — because `SHELL` is
+  exported in a login session — installed the `a` alias through the ordinary
+  path, not the new fallback.
+- **Real OpenCode data.** `providers doctor` found the primary V1 database and
+  the V2 compat database through the unified provider; `list --refresh` and
+  `show` read the machine's actual session.
+- **Real migration and handoff.** That OpenCode session migrated to Codex on
+  the VM, and Enter resumed each side for real: `codex resume '01a0b368…'`
+  reached Codex's sign-in screen, and OpenCode reopened its own session with
+  the original message and its earlier error intact.
+- **amd64 through Rosetta.** The `linux/amd64` build ran and reported its
+  version, and the cross-compiled `shortcuts`, `migrate`, `index`, and `tui`
+  test binaries all passed. This is x86-64 userspace on an ARM64 kernel, not a
+  native amd64 machine, so it proves the binary and the packages, not the
+  kernel interface.
+- **Wayland clipboard, both ways.** A stock Ubuntu desktop has no
+  `wl-clipboard`, so `c` reported `No clipboard available` on a real GNOME
+  Wayland session — the same result as the headless container, from a machine
+  that visibly has a clipboard. After `apt install wl-clipboard`, `c` reported
+  the copy and `wl-paste` returned the exact command.
+
+Everything another touched in the VM was removed afterwards: its binary,
+config, index, the seeded Codex store, the npm prefix, and both `~/.bashrc`
+lines. `wl-clipboard` was left installed. The OpenCode store was only read.
+
+### The network, and what the short URL does not fix
+
+From that VM's network (mainland China, no proxy), `https://mjshao.fun` resolved
+and returned its 308 in 1.3s while `raw.githubusercontent.com` and `github.com`
+both timed out; only `api.github.com` answered. The short URL shortens what a
+user types and nothing else — the script body and the release tarball still come
+from GitHub, so an install there fails either way. Making installs work on that
+network would mean serving the script body and mirroring release assets from the
+site, which is a product decision, not a packaging one.
+
+`scripts/install.sh` gained `ANOTHER_DOWNLOAD_URL`, which `install.ps1` has
+honored since Windows support landed. It made this VM test possible at all —
+the tarball was served from the host — and it is the same escape hatch for a
+mirror or for testing an installer before a release owns its asset.
+
 ## What it found, and the fixes
 
 ### 1. The alias step failed whenever `SHELL` was not exported
@@ -93,14 +141,15 @@ path from the request, then the source conversation
 
 ## Still open
 
-1. Only Codex and Claude Code were exercised here. Pi, OpenCode, OpenCode 2,
-   Qwen Code, and Antigravity are untested on Linux against their real stores.
-2. No real model turn. Codex reached its sign-in screen; no agent resumed a
-   conversation end to end because the container has no credentials.
-3. `amd64` is unverified. This pass ran `linux/arm64` only, on Apple Silicon.
-4. Wayland clipboards (`wl-copy`) are untested; only the X11 path with `xclip`
-   and the no-clipboard path were run.
-5. Distro variance. Ubuntu 24.04 only — no glibc-vs-musl check (CGO is off, so
-   the binary is static), no Fedora/Arch/NixOS, and no systemd-less system.
-6. The alias fallback resolves the login shell, which can differ from the shell
+1. Pi, Qwen Code, and Antigravity are untested on Linux against real stores.
+   Codex, Claude Code, and OpenCode (V1 and V2 databases) are covered.
+2. No real model turn. Codex reached its sign-in screen and OpenCode reopened
+   its session, but no agent completed a turn — neither machine has usable
+   credentials.
+3. No native amd64 kernel. The amd64 binary and four test packages pass under
+   Rosetta on an ARM64 kernel; a real x86-64 machine has not run them.
+4. Distro variance. Ubuntu 24.04 only — no Fedora/Arch/NixOS, no musl system
+   (CGO is off, so the binary is static), no systemd-less init.
+5. The alias fallback resolves the login shell, which can differ from the shell
    the user is actually sitting in. `SHELL` still wins when it is exported.
+6. Installing on a network that cannot reach GitHub, as described above.
