@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+#
+# Installs another on macOS and Linux.
+#
+#   curl -fsSL https://mjshao.fun/another/install.sh | bash
+#
+# That URL is a permanent redirect to this file on GitHub; `another update`
+# fetches the raw URL directly so self-update does not depend on the site.
+# Honors INSTALL_DIR (default ~/.local/bin) and VERSION (default latest).
+
 set -euo pipefail
 
 REPO="nxxxsooo/another"

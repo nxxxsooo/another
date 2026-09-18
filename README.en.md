@@ -49,13 +49,13 @@ brew trust nxxxsooo/tap
 brew install nxxxsooo/tap/another
 
 # Install script
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
+curl -fsSL https://mjshao.fun/another/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Windows (PowerShell):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mjshao.fun/another/install.ps1 | iex"
 ```
 
 The Windows script installs `another.exe` to `%LOCALAPPDATA%\another` and adds it to the user `PATH`; restart the terminal afterwards.
@@ -146,14 +146,14 @@ keeps the full-color interface while continuing to honor `NO_COLOR`.
 
 ```bash
 brew upgrade another                     # Homebrew
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # script
+curl -fsSL https://mjshao.fun/another/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # script
 go install github.com/nxxxsooo/another/cmd/another@latest                                      # source
 ```
 
 On Windows the installer equivalent is (`another update` runs it for you when it can tell how you installed):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mjshao.fun/another/install.ps1 | iex"
 ```
 
 You can also run `another update`; another chooses Homebrew, the install script, or source-update instructions from the running binary's location. Installed binaries do not follow the repository automatically.

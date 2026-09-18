@@ -88,6 +88,10 @@ func runSelfUpdate(cmd *cobra.Command, checkOnly bool) error {
 			script := windowsSelfUpdateScript(filepath.Dir(exe), os.Getpid())
 			return runUpdateCommand(cmd, "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
 		}
+		// Self-update fetches the raw GitHub URL rather than the short
+		// mjshao.fun/another/install.sh a human would type: nobody types this
+		// one, and routing it through the site's redirect would make updates
+		// depend on the site being up for no gain in readability.
 		script := "curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | INSTALL_DIR=" +
 			shellQuote(filepath.Dir(exe)) + " bash"
 		return runUpdateCommand(cmd, "sh", "-c", script)
@@ -100,12 +104,12 @@ func runSelfUpdate(cmd *cobra.Command, checkOnly bool) error {
 	default:
 		fmt.Fprintf(out, "\nCould not tell how %s was installed. Use whichever applies:\n", exe)
 		if runtime.GOOS == "windows" {
-			fmt.Fprintln(out, `  powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"`)
+			fmt.Fprintln(out, `  powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mjshao.fun/another/install.ps1 | iex"`)
 			fmt.Fprintln(out, "  go install github.com/nxxxsooo/another/cmd/another@latest")
 			return nil
 		}
 		fmt.Fprintln(out, "  brew upgrade --cask another")
-		fmt.Fprintln(out, `  curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"`)
+		fmt.Fprintln(out, `  curl -fsSL https://mjshao.fun/another/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"`)
 		fmt.Fprintln(out, "  go install github.com/nxxxsooo/another/cmd/another@latest")
 		return nil
 	}
@@ -218,7 +222,8 @@ func goBinaryName() string {
 // into install.ps1. It is pure so quoting and the cleanup handoff stay tested
 // on Unix too; its caller computes filepath.Dir on the target OS, since a Unix
 // filepath implementation cannot split a Windows path in a unit test. Using
-// the explicit PowerShell kind is important for the same reason.
+// the explicit PowerShell kind is important for the same reason. Like the Unix
+// branch, it fetches the raw GitHub URL, not the short mjshao.fun one.
 func windowsSelfUpdateScript(installDir string, pid int) string {
 	return "$env:INSTALL_DIR=" + util.QuoteArgFor(util.ShellPowerShell, installDir) +
 		"; $env:ANOTHER_UPDATE_PID='" + strconv.Itoa(pid) +

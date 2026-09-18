@@ -45,13 +45,13 @@ brew trust nxxxsooo/tap
 brew install nxxxsooo/tap/another
 
 # 安装脚本
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
+curl -fsSL https://mjshao.fun/another/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Windows（PowerShell）：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mjshao.fun/another/install.ps1 | iex"
 ```
 
 Windows 脚本把 `another.exe` 装到 `%LOCALAPPDATA%\another`，并加入用户 `PATH`；装完重开一个终端即可。
@@ -127,14 +127,14 @@ another
 
 ```bash
 brew upgrade another                     # Homebrew
-curl -fsSL https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # 安装脚本
+curl -fsSL https://mjshao.fun/another/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"  # 安装脚本
 go install github.com/nxxxsooo/another/cmd/another@latest                                      # 源码安装
 ```
 
 Windows 下安装脚本的等价命令（`another update` 能判断出安装来源时会替你执行）：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nxxxsooo/another/main/scripts/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mjshao.fun/another/install.ps1 | iex"
 ```
 
 也可以直接运行 `another update`；another 会根据当前二进制的位置选择 Homebrew、安装脚本或源码更新说明。已安装的二进制不会自动跟随仓库变化。
