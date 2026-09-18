@@ -17,7 +17,7 @@ Writing about the project is not a release surface. A launch post, a WeChat arti
 
 There is no fixed release cadence. Tag when the change on `main` is worth what a release costs — one install for every user, and every surface in the matrix above for the maintainer — and judge that per change rather than against a clock. A fix people are hitting today is worth a tag today, even if one already went out; a change nobody is waiting on can sit on `main` until something else joins it.
 
-Release notes are written for the person deciding whether to upgrade: features and fixes in their own words, grouped, with docs, chores, CI, tests, and merge commits filtered out. `.goreleaser.yaml` does the grouping and the install header; do not replace it with a raw commit list.
+Release notes are written for the person deciding whether to upgrade: features and fixes in their own words, grouped, with docs, chores, CI, tests, and merge commits filtered out. `.goreleaser.yaml` does the grouping and the install header; do not replace it with a raw commit list. Its `release.header` is a hand-written template, not a generated one: the `## Compatibility` section describes whichever release last edited it and will silently ship stale text otherwise. Rewrite that section for the version being tagged, before the tag, and check the published notes afterwards.
 
 Before publishing, record the target version and all surfaces. Do not mix unexplained working-tree changes into a release. Do not report “released”, “published”, or “fully updated” until every applicable surface has been verified through its consumer-facing entry point; report partial success and blocked or unavailable surfaces explicitly.
 
