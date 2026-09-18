@@ -901,8 +901,15 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "c":
 		if m.lastResume != "" {
-			_ = clipboard.WriteAll(m.lastResume)
-			m.status = okStyle.Render(txt.resumeCopied)
+			// A headless Linux box has no clipboard utility at all, and
+			// atotto/clipboard says so instead of copying. Reporting "copied"
+			// there sends the user to paste something that is not on the
+			// clipboard.
+			if err := clipboard.WriteAll(m.lastResume); err != nil {
+				m.status = errStyle.Render(txt.resumeCopyFailed)
+			} else {
+				m.status = okStyle.Render(txt.resumeCopied)
+			}
 		}
 		return m, nil
 	// Shift means one thing in this list: the same action over the whole page.

@@ -186,6 +186,8 @@ While the TUI runs it sets the terminal title to `another`, or `another setup` o
 
 On macOS, opening the TUI temporarily selects the current ASCII-capable keyboard layout so letter shortcuts are not intercepted by a Pinyin IME. The input source active before launch is restored on exit or before handing the terminal to the target agent. Linux input sources are left untouched.
 
+On Linux, `c` copies the resume command through `xclip`, `xsel`, or `wl-clipboard`. A headless box usually has none of them; another then says the clipboard is unavailable instead of reporting a copy that did not happen, and the command stays on screen to select by hand.
+
 Migration shows the exact resume command first. Press `Enter` to hand the terminal to the target agent, `c` to copy the command, or `Esc` to keep browsing.
 
 The TUI starts scoped to the current project. A Git repository's main worktree, every registered linked worktree, and their subdirectories form one project; outside Git, the scope is an exact current-directory match. The header always shows the active scope, and search keeps that scope. An empty project view stays empty rather than silently switching global; press `f` to view all projects. At the same window width, switching scope keeps the target button in place, with the session count centered in its reserved area.

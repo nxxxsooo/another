@@ -27,9 +27,12 @@ type shellPlan struct {
 func planFor(shell string) (shellPlan, error) {
 	if shell == "" {
 		shell = os.Getenv("SHELL")
-		if shell == "" && runtime.GOOS == "windows" {
-			shell = "powershell.exe"
-		}
+	}
+	if shell == "" {
+		shell = loginShell()
+	}
+	if shell == "" && runtime.GOOS == "windows" {
+		shell = "powershell.exe"
 	}
 	p := shellPlan{executable: shell, kind: strings.TrimSuffix(strings.ToLower(filepath.Base(shell)), ".exe")}
 	switch p.kind {

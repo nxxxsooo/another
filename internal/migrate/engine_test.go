@@ -63,6 +63,13 @@ func TestEngineVerifiesAndSnapshotsChangedSource(t *testing.T) {
 	if !second.AlreadyExists || second.Write.SessionID != first.Write.SessionID {
 		t.Fatalf("exact snapshot not reused: first=%+v second=%+v", first.Write, second.Write)
 	}
+	// A repeat migration must hand back the same runnable command as the first.
+	// The dedup result is built from the index, which carries no project path,
+	// so every provider used to drop the `cd` and resume wherever the user
+	// happened to be standing.
+	if second.Resume != first.Resume {
+		t.Fatalf("resume changed on repeat migration:\n first=%q\nsecond=%q", first.Resume, second.Resume)
+	}
 	f, err := os.OpenFile(written.StoragePath, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)

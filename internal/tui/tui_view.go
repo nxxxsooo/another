@@ -771,6 +771,13 @@ func (m modelState) footerView() string {
 	case m.loading:
 		lines = append(lines, m.spinner.View()+mutedStyle.Render(txt.working))
 	case m.lastResume != "":
+		// `c` is only offered while a resume command is on screen, so a status
+		// that lost to this case was a status nobody could ever see — the copy
+		// confirmation, and the headless-Linux report that there was no
+		// clipboard to copy into, both fell here.
+		if m.status != "" {
+			lines = append(lines, m.status)
+		}
 		lines = append(lines, accentStyle.Render(m.lastResume))
 	case m.status != "":
 		lines = append(lines, m.status)
