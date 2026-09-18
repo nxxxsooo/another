@@ -144,12 +144,12 @@ release:
 
     ## Compatibility
 
-    On OpenCode 2.0.4, another's optional title plugin now includes the
-    creation date before OpenCode saves its first automatic session title.
-    Previously some new sessions kept only `Type｜Topic` when the follow-up
-    rename event was missed. After upgrading another, run
-    `another integrations install opencode` to refresh an installed plugin;
-    existing session titles are unchanged. Other agents are unaffected.
+    On Linux, the `a` alias was skipped on every script install and every
+    `another update`, because `curl … | bash` leaves `SHELL` set but not
+    exported. It installs normally now. Copying a resume command needs
+    `xclip`, `xsel`, or `wl-copy` on the machine; when none is present,
+    `c` says so instead of reporting a copy that never happened.
 
-    Windows native handoff beyond Codex remains a documented coverage gap;
-    see [Windows verification](https://github.com/nxxxsooo/another/blob/main/docs/windows-support.md).
+    Coverage gaps are documented per platform: see
+    [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
+    and [Windows verification](https://github.com/nxxxsooo/another/blob/main/docs/windows-support.md).
