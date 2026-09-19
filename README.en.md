@@ -142,6 +142,14 @@ Ghostty over SSH usually forwards `TERM=xterm-ghostty` without forwarding
 `COLORTERM`. From `v0.13.3`, another recognizes that environment directly and
 keeps the full-color interface while continuing to honor `NO_COLOR`.
 
+From `v0.15.6`, the browser and setup recheck terminal dimensions and resend the full frame
+every two seconds to repair stale cells and missed resizes, without clearing
+the screen first. When the terminal supports focus reporting, returning to the
+window immediately clears and redraws it; periodic redraws pause while it is
+unfocused. Resuming the process also repairs the screen immediately. `Ctrl+L`
+forces a redraw while preserving your input, selection, and open dialog.
+Redrawing does not rescan sessions or refresh the index; use `r` for a data refresh.
+
 ### Update
 
 ```bash
@@ -168,6 +176,7 @@ Enter     resume the selected session in its native agent
 Space     preview the conversation
 f         switch between the current project and all projects
 Ctrl+R    rename in the source agent's native title store
+Ctrl+L    redraw the screen without resetting your input or selection
 Tab       accept the AI title suggestion, when one is configured and arrives
 m         fork or move the session into another project directory
 a         archive the current session; press a again to archive the next

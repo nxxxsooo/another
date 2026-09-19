@@ -144,11 +144,17 @@ release:
 
     ## Compatibility
 
-    On Linux, the `a` alias was skipped on every script install and every
-    `another update`, because `curl … | bash` leaves `SHELL` set but not
-    exported. It installs normally now. Copying a resume command needs
-    `xclip`, `xsel`, or `wl-copy` on the machine; when none is present,
-    `c` says so instead of reporting a copy that never happened.
+    v0.15.6 adds automatic screen recovery to the browser and setup. Every
+    two seconds they recheck terminal dimensions and resend the full frame
+    without clearing it first. Focus reporting, when supported, pauses these
+    redraws while unfocused and immediately repairs the screen on return.
+    Resuming the process also repairs it; Ctrl+L forces a manual redraw.
+    Input, selection, and open dialogs are preserved. This redraw does not
+    rescan sessions or refresh the index; use `r` for a data refresh.
+
+    No configuration or session migration is required. Automated checks cover
+    unchanged-frame output and editing-state preservation; the reported
+    Ghostty visual corruption has not been reproduced in a live GUI window.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)

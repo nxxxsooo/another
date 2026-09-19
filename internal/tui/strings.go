@@ -230,6 +230,7 @@ type uiText struct {
 	helpKeyScope     string
 	helpKeySearch    string
 	helpKeyRefresh   string
+	helpKeyRedraw    string
 	helpKeyOpen      string
 	helpKeyMigrate   string
 	helpKeyPreview   string
@@ -497,6 +498,7 @@ var englishText = uiText{
 	helpKeyScope:     "project or all projects",
 	helpKeySearch:    "search titles and text",
 	helpKeyRefresh:   "refresh",
+	helpKeyRedraw:    "redraw screen",
 	helpKeyOpen:      "open it where it lives",
 	helpKeyMigrate:   "carry it to another agent",
 	helpKeyPreview:   "preview the conversation",
@@ -748,6 +750,7 @@ var chineseText = uiText{
 	helpKeyScope:         "本项目或全部项目",
 	helpKeySearch:        "搜索标题和消息",
 	helpKeyRefresh:       "刷新",
+	helpKeyRedraw:        "重绘画面",
 	helpKeyOpen:          "在原 agent 里打开",
 	helpKeyMigrate:       "迁移到另一个 agent",
 	helpKeyPreview:       "预览对话",

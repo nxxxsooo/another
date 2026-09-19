@@ -18,6 +18,9 @@ import (
 // type, key presses go through updateKey, and anything else feeds the
 // component that currently owns the screen.
 func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, handled := m.recovery.update(msg); handled {
+		return m, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return m.onWindowSize(msg)
@@ -64,8 +67,8 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m modelState) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
-	// A probe that confirms the size already on screen is not a resize, and
-	// repainting for it would flicker the list under the user's hands.
+	// Bubble Tea already invalidates its render cache on WindowSizeMsg.
+	// An unchanged size needs no relayout or explicit screen clear.
 	if msg.Width == m.width && msg.Height == m.height {
 		return m, nil
 	}

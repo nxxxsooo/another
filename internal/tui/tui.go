@@ -173,6 +173,7 @@ type modelState struct {
 	launchProject  string
 	width          int
 	height         int
+	recovery       screenRecovery
 	ctx            context.Context
 	cancel         context.CancelFunc
 	previewContent string
@@ -264,7 +265,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		m.targets.SetItems(targetItems(reg, initial.Provider))
 		m.overlay = overlayTarget
 	}
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus())
 	restoreInputSource := temporarilyUseASCIIInputSource()
 	defer restoreInputSource()
 	final, runErr := p.Run()
@@ -361,7 +362,7 @@ func (m *modelState) updateSourceCounts(counts map[string]int) {
 }
 
 func (m modelState) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.HideCursor, tea.SetWindowTitle(windowTitle), m.spinner.Tick, probeSizeCmd(0), loadSessionsPageCmd(m, m.pageGen)}
+	cmds := []tea.Cmd{tea.HideCursor, tea.SetWindowTitle(windowTitle), m.spinner.Tick, probeSizeCmd(0), screenCheckCmd(), loadSessionsPageCmd(m, m.pageGen)}
 	if m.indexing {
 		cmds = append(cmds, backgroundIndexCmd(m.ctx, m.reg, m.idx))
 	} else {

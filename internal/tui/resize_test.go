@@ -49,8 +49,7 @@ func TestStartupRemeasuresTheTerminal(t *testing.T) {
 	}
 }
 
-// The probes stop. A program waiting on a keypress should not be woken for the
-// rest of its life by a window that settled in the first second.
+// The fast startup probes stop; runtime recovery has its own slower cadence.
 func TestProbingStopsOnceTheWindowHasSettled(t *testing.T) {
 	last := len(sizeProbeDelays) - 1
 	if probeSizeCmd(last) == nil {
@@ -70,8 +69,8 @@ func TestProbingStopsOnceTheWindowHasSettled(t *testing.T) {
 	}
 }
 
-// A probe that confirms the size already on screen is not a resize. Clearing
-// for it would flicker both screens a few times on every startup.
+// A confirmed size invalidates Bubble Tea's cache but must not explicitly
+// clear the screen or relayout the model.
 func TestAConfirmedSizeDoesNotRepaint(t *testing.T) {
 	m := layoutTestModel()
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

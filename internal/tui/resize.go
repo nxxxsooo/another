@@ -27,8 +27,7 @@ var sizeProbeDelays = []time.Duration{
 type sizeProbeMsg struct{ step int }
 
 // probeSizeCmd schedules one probe and returns nil once the window has had long
-// enough to settle. Probing forever would keep waking a program that is only
-// waiting for a keypress.
+// enough to settle. The slower runtime recovery loop then takes over.
 func probeSizeCmd(step int) tea.Cmd {
 	if step < 0 || step >= len(sizeProbeDelays) {
 		return nil

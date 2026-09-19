@@ -142,6 +142,7 @@ type setupModel struct {
 	cancelled bool
 	err       string
 	spinner   spinner.Model
+	recovery  screenRecovery
 
 	// showAdapters opens the second tier. It starts open when one of those
 	// agents is already selected: a setting that cannot be seen cannot be
@@ -273,7 +274,7 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 	// The page renders in the language it is about to offer to change, so the
 	// interface it opens in is the one already configured.
 	restoreLanguage := applyLanguage(i18n.Lang(initial.UI.Language))
-	program := tea.NewProgram(start, tea.WithAltScreen())
+	program := tea.NewProgram(start, tea.WithAltScreen(), tea.WithReportFocus())
 	restoreInputSource := temporarilyUseASCIIInputSource()
 	defer restoreInputSource()
 	final, err := program.Run()
@@ -630,11 +631,14 @@ func restoreTitleCursor(opts []titleOption, previous []titleOption) int {
 func (m setupModel) Init() tea.Cmd {
 	// The lookup starts with page one, which is where the time it takes is
 	// free: the row it fills in belongs to page two.
-	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle), probeSizeCmd(0),
+	return tea.Batch(tea.HideCursor, tea.SetWindowTitle(setupWindowTitle), probeSizeCmd(0), screenCheckCmd(),
 		pluginStatusCmds(m.pluginProbe, m.plugins), sessionCountCmds(m.countSessions, m.items))
 }
 
 func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, handled := m.recovery.update(msg); handled {
+		return m, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		if msg.Width == m.width && msg.Height == m.height {
