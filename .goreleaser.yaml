@@ -144,17 +144,19 @@ release:
 
     ## Compatibility
 
-    v0.15.6 adds automatic screen recovery to the browser and setup. Every
-    two seconds they recheck terminal dimensions and resend the full frame
-    without clearing it first. Focus reporting, when supported, pauses these
-    redraws while unfocused and immediately repairs the screen on return.
-    Resuming the process also repairs it; Ctrl+L forces a manual redraw.
-    Input, selection, and open dialogs are preserved. This redraw does not
-    rescan sessions or refresh the index; use `r` for a data refresh.
+    v0.15.7 fixes the model list setup offers for OpenCode. It is now read
+    from OpenCode's own server (`/api/model`) — the same catalog `/models`
+    shows inside the client, including providers you defined in
+    `opencode.json(c)`. The previous source, `opencode models`, resolves a
+    catalog for the directory it is started in, and another probes from a
+    throwaway temporary directory, so the answer was the half-resolved state:
+    nothing at first, then the whole of models.dev, never your own providers.
+    A build without that endpoint still falls back to `opencode models`.
 
-    No configuration or session migration is required. Automated checks cover
-    unchanged-frame output and editing-state preservation; the reported
-    Ghostty visual corruption has not been reproduced in a live GUI window.
+    Nothing else changes: no configuration, no session migration, and a model
+    already saved in your settings is kept even when the CLI stops listing it.
+    Verified against a live OpenCode with a custom OpenAI-compatible provider,
+    from a directory that agent had never opened.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)

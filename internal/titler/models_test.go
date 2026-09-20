@@ -40,6 +40,21 @@ func TestModelParsersKeepOnlyUsableIdentifiers(t *testing.T) {
 			[]string{"anthropic/claude-opus-5"},
 		},
 		{
+			"opencode server catalog joins provider and model id",
+			parseOpenCodeAPIModels,
+			`{"location":{"directory":"/home/x"},"data":[` +
+				`{"id":"claude-opus-5-fast","modelID":"claude-opus-5","providerID":"anthropic","enabled":true},` +
+				`{"id":"auto","modelID":"auto","providerID":"codem"},` +
+				`{"id":"retired","modelID":"retired","providerID":"anthropic","enabled":false}]}`,
+			[]string{"anthropic/claude-opus-5-fast", "codem/auto"},
+		},
+		{
+			"opencode ignores an answer that is not the catalog",
+			parseOpenCodeAPIModels,
+			"HTTP 404 Not Found\n",
+			nil,
+		},
+		{
 			"claude keeps the --model values and drops its default row",
 			parseClaudeModels,
 			`{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup"}` + "\n" +

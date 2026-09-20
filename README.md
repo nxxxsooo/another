@@ -235,7 +235,7 @@ another providers doctor
 
 如果 setup 中指定了 agent，按 `Ctrl+R` 会以原始标题打开重命名框，同时在后台请求该 agent 生成标题。规则由 another 自己执行，不依赖任何 Skill：中文为 `MMDD｜类型｜主题`，英文为 `MMDD｜Type｜Topic`；日期取自索引中的创建时间并转换到 `Asia/Shanghai`，不会交给模型猜测。
 
-setup 第二页选 agent 和语言，按 `Enter` 进第三页选模型：模型列表由该 agent 的 CLI 自己给出（`pi --list-models`、`agy models`、`opencode models`），输入任意字符即时过滤，第一行「默认模型」表示交给 CLI 自己决定，最后一行可以手输一个列表里还没有的模型名。Claude Code 和 Qwen Code 没有列模型的子命令，但各自的 headless 控制协议能返回当前配置可用的模型目录；another 只发控制请求，不发提示词，也不产生模型调用。Codex 没有可问的接口，直接进手输，页面会说明原因——列一份猜出来的模型 ID 只会让 `--model` 在重命名时才报错。
+setup 第二页选 agent 和语言，按 `Enter` 进第三页选模型：模型列表由该 agent 的 CLI 自己给出（`pi --list-models`、`agy models`），输入任意字符即时过滤，第一行「默认模型」表示交给 CLI 自己决定，最后一行可以手输一个列表里还没有的模型名。从 `v0.15.7` 起，OpenCode 这一路问的是它自己的服务器（`/api/model`），也就是客户端里 `/models` 显示的那一份，你在 `opencode.json(c)` 里自定义的 provider 也在其中；旧版本没有这个端点时回落到 `opencode models`。之前用的就是那个子命令，而它要为启动目录现解析一份目录——another 的探测跑在一次性临时目录里，于是拿到的是还没解析完的中间态：先是空，再是整个 models.dev，自定义 provider 根本轮不到。Claude Code 和 Qwen Code 没有列模型的子命令，但各自的 headless 控制协议能返回当前配置可用的模型目录；another 只发控制请求，不发提示词，也不产生模型调用。Codex 没有可问的接口，直接进手输，页面会说明原因——列一份猜出来的模型 ID 只会让 `--model` 在重命名时才报错。
 
 setup 第二页用 `←→` 选标题语言（与第一页的界面语言互不影响）：**Auto**（默认）、**English**、**中文**。Auto 看第一条有效用户消息：含汉字就用中文，否则用英文。日期和 `｜` 分隔符在三种语言下都不变；八类语义一一对应：功能／Feature、设计／Design、修复／Fix、优化／Optimize、发布／Release、探索／Explore、文档／Docs、研究／Research。
 

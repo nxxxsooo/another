@@ -31,6 +31,11 @@ type modelLister struct {
 	// command needs no input, and the CLI reads from the null device.
 	stdin string
 	parse func(string) []string
+	// next is asked when this way of asking names no model. An agent gets a
+	// second entry only when the first one can be unavailable for a reason
+	// that is not the user's answer — an older build without the command,
+	// or a server that is not running.
+	next *modelLister
 }
 
 var modelListers = map[string]modelLister{
@@ -39,9 +44,10 @@ var modelListers = map[string]modelLister{
 	"pi": {args: []string{"--list-models"}, parse: parseTableModels},
 	// agy prints "id\tDisplay Name" after a progress line.
 	"agy": {args: []string{"models"}, parse: parseTabbedModels},
-	// Both OpenCode generations print one "provider/model" per line.
-	"opencode":  {args: []string{"models"}, parse: parsePlainModels},
-	"opencode2": {args: []string{"models"}, parse: parsePlainModels},
+	// Both OpenCode generations answer from their own server, which is the
+	// catalog /models shows inside the client.
+	"opencode":  {args: []string{"api", "GET", openCodeModelPath}, parse: parseOpenCodeAPIModels, next: &openCodeSubcommand},
+	"opencode2": {args: []string{"api", "GET", openCodeModelPath}, parse: parseOpenCodeAPIModels, next: &openCodeSubcommand},
 	// Qwen Code exposes its current auth type's catalog through the headless
 	// control protocol. The first request enables that protocol; the second
 	// returns the exact IDs accepted by --model. Do not use --bare here: it
@@ -62,6 +68,18 @@ var modelListers = map[string]modelLister{
 		parse: parseClaudeModels,
 	},
 }
+
+// openCodeModelPath is the endpoint behind the client's own /models list: the
+// resolved catalog, custom providers from the user's config included.
+const openCodeModelPath = "/api/model"
+
+// openCodeSubcommand is the fallback for an OpenCode too old to expose that
+// endpoint. It prints the same identifiers, but it resolves them for the
+// directory it was started in, so a directory the client has never opened
+// answers with a catalog that is still settling: nothing at all, then the
+// whole of models.dev, and only later the user's own providers. That is why
+// the server is asked first.
+var openCodeSubcommand = modelLister{args: []string{"models"}, parse: parsePlainModels}
 
 // claudeListRequest is the one control request Claude Code needs to answer
 // with its catalog. The id is only echoed back, so it names another rather
@@ -155,6 +173,29 @@ func ListModels(ctx context.Context, providerID string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, ListTimeout)
 	defer cancel()
 
+	// A silent or failed way of asking is not an answer, so the next one is
+	// tried before the person is sent off to type a name.
+	var failed error
+	for attempt := &lister; attempt != nil; attempt = attempt.next {
+		models, err := runLister(ctx, *attempt, bin, l.command, dir)
+		if len(models) > 0 {
+			return models, nil
+		}
+		if err != nil {
+			if listErr, ok := err.(*ListError); ok && listErr.Reason == ListTimedOut {
+				return nil, err
+			}
+			failed = err
+		}
+	}
+	if failed != nil {
+		return nil, failed
+	}
+	return nil, &ListError{Reason: ListEmpty, Command: l.command}
+}
+
+// runLister asks one way and reads the answer back.
+func runLister(ctx context.Context, lister modelLister, bin, command, dir string) ([]string, error) {
 	// Some CLIs spend their first run in a new directory initializing state
 	// and exit successfully with no output. Measured on OpenCode 2: run one
 	// prints nothing, run two prints the catalog. The second attempt reuses
@@ -171,14 +212,11 @@ func ListModels(ctx context.Context, providerID string) ([]string, error) {
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Run(); err != nil {
 			if ctx.Err() != nil {
-				return nil, &ListError{Reason: ListTimedOut, Command: l.command}
+				return nil, &ListError{Reason: ListTimedOut, Command: command}
 			}
-			return nil, &ListError{Reason: ListFailed, Command: l.command, Detail: failureReason(stderr.String(), stdout.String(), err)}
+			return nil, &ListError{Reason: ListFailed, Command: command, Detail: failureReason(stderr.String(), stdout.String(), err)}
 		}
 		models = dedupe(lister.parse(stdout.String()))
-	}
-	if len(models) == 0 {
-		return nil, &ListError{Reason: ListEmpty, Command: l.command}
 	}
 	return models, nil
 }
@@ -224,6 +262,38 @@ func parsePlainModels(raw string) []string {
 			continue
 		}
 		out = append(out, line)
+	}
+	return out
+}
+
+// parseOpenCodeAPIModels reads the catalog OpenCode's server answers with. The
+// identifier its --model flag takes is the provider and the model's own id
+// joined by a slash: id, not modelID, because a family like claude-opus-5-fast
+// shares one modelID with its siblings. An answer that is not this catalog —
+// an HTTP status line, the web client's HTML, an older build's usage text —
+// parses to nothing and hands the question to the next way of asking.
+func parseOpenCodeAPIModels(raw string) []string {
+	var body struct {
+		Data []struct {
+			ProviderID string `json:"providerID"`
+			ID         string `json:"id"`
+			Enabled    *bool  `json:"enabled"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &body); err != nil {
+		return nil
+	}
+	var out []string
+	for _, model := range body.Data {
+		provider := strings.TrimSpace(model.ProviderID)
+		id := strings.TrimSpace(model.ID)
+		if provider == "" || id == "" {
+			continue
+		}
+		if model.Enabled != nil && !*model.Enabled {
+			continue
+		}
+		out = append(out, provider+"/"+id)
 	}
 	return out
 }
