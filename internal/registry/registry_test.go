@@ -14,11 +14,28 @@ func TestNormalizeID(t *testing.T) {
 		"cursor-agent": "cursor", "open-code": "opencode", "o2": "opencode", "open-code-2": "opencode",
 		"agy": "agy", "antigravity": "agy", "antigravity-cli": "agy", "antigravity_cli": "agy",
 		"qwen": "qwen", "qwen-code": "qwen", "qwencode": "qwen",
+		"doubao-work": "doubao", "Doubao": "doubao",
 	}
 	for in, want := range cases {
 		if got := registry.NormalizeID(in); got != want {
 			t.Fatalf("%q => %q want %q", in, got, want)
 		}
+	}
+}
+
+func TestDoubaoIsOptInSourceAdapter(t *testing.T) {
+	if _, err := registry.NewEnabled(nil).Get("doubao"); err == nil {
+		t.Fatal("Doubao enabled without explicit selection")
+	}
+	p, err := registry.NewEnabled([]string{"doubao-work"}).Get("doubao")
+	if err != nil || !registry.IsCompatibilityAdapter("doubao") {
+		t.Fatalf("Doubao compatibility adapter missing: %v", err)
+	}
+	if _, ok := p.(provider.SessionRenamer); !ok {
+		t.Fatal("native rename missing")
+	}
+	if registry.CLIAvailable("doubao") || p.SupportsResume() {
+		t.Fatal("source-only adapter exposed as a CLI migration target")
 	}
 }
 

@@ -695,3 +695,32 @@ func TestSetupSettlesAnAgentItCannotCount(t *testing.T) {
 		t.Fatalf("failed count did not settle: %+v", got.items[0])
 	}
 }
+
+func TestSetupRemoteDiscoveryWaitsForSelection(t *testing.T) {
+	m := setupFixture()
+	m.items = []setupItem{{id: "doubao", name: "Doubao Work", data: true, available: true, remote: true, deferred: true}}
+	m.selected = map[string]bool{}
+	m.cursor = 0
+	calls := 0
+	m.countSessions = func(string) (int, error) { calls++; return 6, nil }
+	if cmd := sessionCountCmds(m.countSessions, m.items); cmd != nil {
+		t.Fatal("remote discovery started before selection")
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, txt.setupSelectToCount) || !strings.Contains(view, txt.setupRemoteAPI) {
+		t.Fatalf("remote discovery not explained: %s", view)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	if cmd == nil || !updated.(setupModel).selected["doubao"] {
+		t.Fatal("selection did not start discovery")
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			c()
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("discovery calls = %d", calls)
+	}
+}

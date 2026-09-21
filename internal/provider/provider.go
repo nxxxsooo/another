@@ -81,6 +81,12 @@ type PreviewLoader interface {
 	LoadPreview(context.Context, SessionRef, int) (*model.Conversation, error)
 }
 
+// RemoteDiscovery marks providers whose discovery uses account credentials and
+// network access. Setup must wait for explicit selection before counting them.
+type RemoteDiscovery interface {
+	RequiresRemoteDiscovery() bool
+}
+
 // ResumeEnsurer is implemented by targets that must register sessions in a local index (e.g. Codex threads DB).
 type ResumeEnsurer interface {
 	Provider

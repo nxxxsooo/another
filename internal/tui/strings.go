@@ -241,12 +241,14 @@ type uiText struct {
 	helpKeyGroup     string
 
 	// Setup, page one.
-	setupAgentsTitle string
-	setupAgentsHint  string
-	setupCLIFound    string
-	setupCLIMissing  string
-	setupCLIWidth    int
-	setupSessionsFmt string
+	setupAgentsTitle   string
+	setupAgentsHint    string
+	setupCLIFound      string
+	setupCLIMissing    string
+	setupRemoteAPI     string
+	setupSelectToCount string
+	setupCLIWidth      int
+	setupSessionsFmt   string
 	// setupSessionsCounting is the row before its count lands. A first run
 	// has an empty index, so the number is read off the agent's own storage
 	// while the page is up rather than reported as zero.
@@ -512,6 +514,8 @@ var englishText = uiText{
 	setupAgentsHint:       "Space toggles an agent; Shift+↑↓ reorders them.",
 	setupCLIFound:         "CLI found",
 	setupCLIMissing:       "no CLI",
+	setupRemoteAPI:        "cloud API",
+	setupSelectToCount:    "select to connect",
 	setupCLIWidth:         11,
 	setupSessionsFmt:      "%d sessions",
 	setupSessionsCounting: "counting sessions…",
@@ -767,6 +771,8 @@ var chineseText = uiText{
 	setupAgentsHint:       "Space 开关 agent；Shift+↑↓ 调整显示顺序。",
 	setupCLIFound:         "CLI 已安装",
 	setupCLIMissing:       "CLI 未安装",
+	setupRemoteAPI:        "云端 API",
+	setupSelectToCount:    "选中后连接",
 	setupCLIWidth:         12,
 	setupSessionsFmt:      "%d 个会话",
 	setupSessionsCounting: "正在统计会话…",

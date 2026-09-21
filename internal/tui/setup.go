@@ -16,6 +16,7 @@ import (
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/integrations"
+	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/titler"
 	"github.com/nxxxsooo/another/internal/util"
@@ -40,6 +41,8 @@ type setupItem struct {
 	// described as having none, so its storage is counted while the page is
 	// up and the row says so until the number lands.
 	counted   bool
+	remote    bool // credentials/network are used only after explicit selection
+	deferred  bool
 	data, cli bool
 	available bool
 	// adapter marks the second tier: agents another keeps working but does not
@@ -100,7 +103,7 @@ func sessionCountCmds(count func(string) (int, error), items []setupItem) tea.Cm
 	}
 	cmds := make([]tea.Cmd, 0, len(items))
 	for _, item := range items {
-		if item.counted {
+		if item.counted || item.deferred {
 			continue
 		}
 		id := item.id
@@ -239,6 +242,10 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 		// page is up: that is the first run, where the index is empty and the
 		// choice this page asks for is the one the numbers inform.
 		item.counted = item.sessions > 0 || !data
+		if remote, ok := p.(provider.RemoteDiscovery); ok && remote.RequiresRemoteDiscovery() {
+			item.remote = true
+			item.deferred = !chosen[p.ID()]
+		}
 		items = append(items, item)
 	}
 	// The fold needs the two tiers contiguous; a saved display order is kept
@@ -748,6 +755,10 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.selected[item.id] = !m.selected[item.id]
 			m.err = ""
+			if m.selected[item.id] && item.deferred {
+				m.items[index].deferred = false
+				return m, sessionCountCmds(m.countSessions, []setupItem{m.items[index]})
+			}
 		case "enter":
 			if selectedCount(m.selected) == 0 {
 				m.err = txt.setupPickOne
@@ -914,8 +925,13 @@ func (m setupModel) View() string {
 		if item.cli {
 			cli = txt.setupCLIFound
 		}
+		if item.remote {
+			cli = txt.setupRemoteAPI
+		}
 		data := fmt.Sprintf(txt.setupSessionsFmt, item.sessions)
 		switch {
+		case item.deferred && !item.counted:
+			data = txt.setupSelectToCount
 		case !item.counted:
 			data = txt.setupSessionsCounting
 		case !item.data && item.sessions == 0:

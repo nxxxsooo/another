@@ -77,6 +77,19 @@ func TestProviderCLIStatusUnknown(t *testing.T) {
 	}
 }
 
+func TestUnconfiguredCLIDoesNotEnableCloudDiscovery(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	app, err := NewApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = app.Index.Close() }()
+	if _, err := app.Registry.Get("doubao"); err == nil {
+		t.Fatal("cloud-backed discovery enabled before setup")
+	}
+}
+
 func TestRootSessionShortcutRequiresTarget(t *testing.T) {
 	root := (&App{}).Root()
 	root.SetArgs([]string{"abc123"})

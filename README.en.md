@@ -31,12 +31,12 @@ store, so you open it there and keep going.
 ## Features
 
 - **Native sessions:** resumes in the target agent's own format — not a pasted summary.
-- **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, CommandCode, CodeM, Hermes, Qwen Code, and Antigravity.
+- **Eleven agents:** Pi, Codex, Claude Code, Cursor, OpenCode, CommandCode, CodeM, Hermes, Qwen Code, Antigravity, and Doubao Work (desktop, source-only).
 - **One screen:** browse, search, preview, rename, archive, delete, relocate, and migrate without leaving the list.
 - **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects, or `g` to group the list by date or by worktree.
 - **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
-- **Local and fast:** reads native local stores; the private SQLite index (under `~/.cache/another/`, `%LOCALAPPDATA%\another` on Windows) skips unchanged sessions on re-scan.
+- **Local-first:** reads native stores into a private SQLite index (under `~/.cache/another/`, `%LOCALAPPDATA%\another` on Windows), skipping unchanged local sessions on re-scan. Doubao Work uses the signed-in desktop profile and Doubao's cloud APIs.
 - **Duplicate-source reconciliation:** when one session ID remains in both an old and a new project directory, the message-bearing transcript wins over a newer empty state snapshot, keeping its title, path, and count aligned with native resume.
 
 ## Install
@@ -136,7 +136,7 @@ With `~/.local/bin` or your Go bin directory on `PATH`, run:
 another
 ```
 
-The first run opens a Charmtone setup screen. The top of the first page picks the interface language with `←→`: **Auto** (the default, which follows the terminal's locale), **English**, or **中文**. The page redraws as you press, so a wrong choice is visible immediately instead of after saving. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page lists the six continuously tested agents; the four compatibility adapters sit behind one folded row that `Space` opens. The fold starts open when the saved configuration already enables one of them, because a setting you cannot see is a setting you cannot turn off. The second page picks an optional agent for AI title suggestions; it defaults to off. When OpenCode is one of your agents, that page also carries an `OpenCode title plugin` row: `t` turns it on, and only then does another write the plugin into OpenCode's configuration directory. The row names that directory and what is in it already. Run `another setup` any time to change any of these choices.
+The first run opens a Charmtone setup screen. The top of the first page picks the interface language with `←→`: **Auto** (the default, which follows the terminal's locale), **English**, or **中文**. The page redraws as you press, so a wrong choice is visible immediately instead of after saving. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page lists the six continuously tested agents; the five compatibility adapters sit behind one folded row that `Space` opens. The fold starts open when the saved configuration already enables one of them, because a setting you cannot see is a setting you cannot turn off. The second page picks an optional agent for AI title suggestions; it defaults to off. When OpenCode is one of your agents, that page also carries an `OpenCode title plugin` row: `t` turns it on, and only then does another write the plugin into OpenCode's configuration directory. The row names that directory and what is in it already. Run `another setup` any time to change any of these choices.
 
 Ghostty over SSH usually forwards `TERM=xterm-ghostty` without forwarding
 `COLORTERM`. From `v0.13.3`, another recognizes that environment directly and
@@ -226,7 +226,7 @@ Every relocation is read back before it is reported: OpenCode V2 compares the di
 
 Released OpenCode V2 and retained V1 history share one `opencode` provider. another writes new migrations to released V2 by default while continuing to read the V1 `session` schema and `opencode2.db` files left by early side-by-side installations. Lists, filters, and setup show one OpenCode; resume, rename, archive, relocate, and delete dispatch according to each session's real store and capabilities. Existing `opencode2`, `open-code-2`, and `o2` configuration values map to `opencode` without moving or rewriting an agent-owned database.
 
-The continuously tested set is **Pi, OpenCode, Claude Code, Codex, Antigravity, and Qwen Code**; these six enter every release regression pass. Cursor, CommandCode, CodeM, and Hermes remain compatibility adapters, but are not promised an end-to-end maintainer test on every release. First-run setup does not auto-select agents from detected binaries or stale local data; the user chooses what another indexes and exposes.
+The continuously tested set is **Pi, OpenCode, Claude Code, Codex, Antigravity, and Qwen Code**; these six enter every release regression pass. Cursor, CommandCode, CodeM, Hermes, and Doubao Work remain compatibility adapters, but are not promised an end-to-end maintainer test on every release. First-run setup does not auto-select agents from detected binaries or stale local data; the user chooses what another indexes and exposes.
 
 From `v0.15.8`, an agent data-root environment variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `QWEN_HOME`, …) that points directly inside the system temp tree falls back to the real user home. Tools that sandbox one agent run — a memory plugin launching Claude Code to tidy sessions is the known case — use a throwaway temp directory as the agent's home, your settings and hooks copied in with it; when such a session ends, another invoked from inside that hook inherited the sandbox as the real root, which replaced the whole session list with the tool's own machine sessions and left rows that could not be deleted. A sandbox directory is no longer taken for a real data root; deliberate relocations through these variables keep working, and a list polluted by earlier runs is restored by one `another index rebuild`.
 
@@ -244,8 +244,11 @@ The session list marks each agent with a fixed-width color chip. Agent names dif
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
 | Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | ✓ | — | ✓ |
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | ✓ |
+| Doubao Work | `doubao` | `DBW` | — | ✓ | — | — | — |
 
 A dash means that agent has no verified native contract for the operation. Rename, archive, relocate, and delete change the corresponding agent's native state rather than an another-only marker; `another` shows only operations the selected agent actually supports and does not keep private state that disappears on refresh.
+
+**Doubao Work desktop (macOS):** enable it under compatibility adapters in `another setup`. Setup connects only after selection. The adapter lists active Work conversations that have a local desktop session directory, reads their user/assistant text for preview, export, and migration to another agent, and renames through Doubao's native API with readback. It requires an active desktop login, network access, and access to the macOS `Doubao Safe Storage` Keychain item. `DOUBAO_PROFILE` can select a different profile; the default is `~/Library/Application Support/Doubao/Profile 1`. Sessions appear in the everywhere view because Doubao does not supply a coding-project directory. Import into Doubao, native resume, archive, delete, and relocation are not supported. See [provider notes](docs/providers.md#doubao-work-desktop) for data and compatibility limits.
 
 CodeM looks sessions up by a hash of the literal working directory. When a directory moves or an old path becomes a symlink, another uses CodeM's own `LINCO_SESSIONS_ROOT` to give it a resume bridge exposing only the original project-hash directory. No JSONL is copied or moved, and a same-ID session in another project is never exposed to CodeM.
 

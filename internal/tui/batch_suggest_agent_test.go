@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/nxxxsooo/another/internal/model"
-	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/titler"
 )
@@ -49,17 +48,21 @@ func TestBatchAcceptsAConfiguredAgentThatCanSuggest(t *testing.T) {
 	}
 }
 
-// Every provider another can rename is also one it can ask for titles. The
-// old per-row check tested the session's provider and survived only because
-// these two sets coincide; if they ever diverge, the batch needs a real
-// per-row rule and this test is the warning.
-func TestRenamableProvidersCanAllSuggestTitles(t *testing.T) {
-	for _, p := range registry.New().All() {
-		if _, ok := p.(provider.SessionRenamer); !ok {
-			continue
-		}
-		if !titler.Supports(p.ID()) {
-			t.Errorf("%s can be renamed but has no titler launcher", p.ID())
-		}
+// A desktop source can own native rename without offering a headless model.
+// Its rows still reach the configured title agent through the normal flow.
+type desktopRenamer struct{ fakeRenamer }
+
+func (*desktopRenamer) ID() string { return "doubao" }
+
+func TestBatchPreparesRenamableSourceWithoutTitlerLauncher(t *testing.T) {
+	p := &desktopRenamer{}
+	if titler.Supports(p.ID()) {
+		t.Fatal("test needs a source without a title launcher")
+	}
+	sm := batchRow()
+	sm.Provider = p.ID()
+	ready := batchPrepareCmd(context.Background(), 1, registry.NewWith(p), titler.Config{Provider: "agy"}, []model.Summary{sm}, nil)().(batchReadyMsg)
+	if len(ready.items) != 1 || len(ready.frozen) != 0 {
+		t.Fatalf("desktop source was not prepared for the configured agent: %+v", ready)
 	}
 }

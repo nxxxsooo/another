@@ -52,6 +52,16 @@ If a recorded working directory has moved or become a symlink whose physical pat
 
 **The Feishu client's sessions are ordinary sessions.** A conversation started from Feishu is written to the same store with an id like `sess_feishu_p2p_…`, so it lists, opens, and migrates like any other. The loose `sess_*.json` files at the top of the store are that client's own records, not transcripts, and are not indexed.
 
+## Doubao Work desktop
+
+The `doubao` compatibility adapter currently supports macOS Doubao Work. It intersects the server's active conversations with `<profile>/.doubao/agent_mode/workspace/.sessions/<conversation-id>` so ordinary web chats, system conversations, other-device sessions, and stale archived directories are not indexed. The default profile is `~/Library/Application Support/Doubao/Profile 1`; override it with `DOUBAO_PROFILE`.
+
+Discovery and loading contact Doubao's native cloud endpoints. Authentication reads the profile's Cookies SQLite database read-only and decrypts its Chromium v10 cookies in memory using the macOS `Doubao Safe Storage` Keychain item. Cookies, keys, and account data are never written to another's configuration or passed as command-line arguments. Setup defers this access until the adapter is selected. API/login failures are scan failures, preserving the existing index rather than treating an unavailable account as an empty one.
+
+Titles come from the conversation list; creation times come from the IM conversation metadata, never the conversation ID or file mtime. Message history is paginated and ordered by the native message index. The portable view includes visible user/assistant text; attachments, generated files, tool trajectories, and reasoning are not migrated. Local `trajectory.jsonl` files are agent execution traces and are not substituted for the conversation history. Discovery leaves message count unknown rather than confusing a native cursor with a count.
+
+Rename uses `/samantha/thread/update` and checks the title by listing again. Import into Doubao, native desktop resume, archive, delete, and relocation have no verified adapter contract. These endpoints are private desktop interfaces and may change; the adapter was read-tested against Doubao desktop 2.30.2. Use the everywhere view: no coding-project cwd is invented for Work sessions.
+
 ## Child sessions
 
 Child sessions stay out of the list because their parent leads back to them. When the parent is no longer indexed that reasoning fails, so such a child is listed directly; otherwise only knowing its ID would find it, which is indistinguishable from losing it. It becomes a child again as soon as its parent is indexed. A child thread that records no parent at all stays hidden: Codex's guardian threads are written that way, and they are machine assessments of a requested action rather than anyone's conversation.

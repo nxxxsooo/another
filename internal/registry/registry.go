@@ -13,6 +13,7 @@ import (
 	"github.com/nxxxsooo/another/internal/providers/codex"
 	"github.com/nxxxsooo/another/internal/providers/commandcode"
 	"github.com/nxxxsooo/another/internal/providers/cursor"
+	"github.com/nxxxsooo/another/internal/providers/doubao"
 	"github.com/nxxxsooo/another/internal/providers/hermes"
 	"github.com/nxxxsooo/another/internal/providers/opencodeunified"
 	"github.com/nxxxsooo/another/internal/providers/pi"
@@ -73,6 +74,7 @@ func newRegistry(allowed map[string]bool) *Registry {
 		pi.New(),
 		qwen.New(),
 		agy.New(),
+		doubao.New(),
 	}
 	providers := make([]provider.Provider, 0, len(available))
 	for _, p := range available {
@@ -172,7 +174,7 @@ func CLIAvailable(id string) bool {
 // providers, not deprecated ones; the tier only decides how prominently setup
 // offers them, so a list of ten does not bury the six that are tested.
 var compatibilityAdapters = map[string]bool{
-	"cursor": true, "commandcode": true, "codem": true, "hermes": true,
+	"cursor": true, "commandcode": true, "codem": true, "hermes": true, "doubao": true,
 }
 
 // IsCompatibilityAdapter reports whether an agent belongs to the second tier.
@@ -197,6 +199,7 @@ func NormalizeID(id string) string {
 		"commandcode": "commandcode", "command-code": "commandcode",
 		"codem": "codem", "code-m": "codem", "lark-codem": "codem", "feishu-codem": "codem",
 		"hermes": "hermes", "hermes-agent": "hermes",
+		"doubao": "doubao", "doubao-work": "doubao", "doubao_work": "doubao",
 		"pi": "pi", "pi-coding-agent": "pi",
 		"qwen": "qwen", "qwen-code": "qwen", "qwencode": "qwen",
 		"agy": "agy", "antigravity": "agy", "antigravity-cli": "agy", "antigravity_cli": "agy",
