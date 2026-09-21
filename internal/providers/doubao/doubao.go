@@ -22,6 +22,7 @@ const ProviderID = "doubao"
 
 type Provider struct {
 	profile string
+	chats   string
 	base    string
 	http    *http.Client
 	auth    func(context.Context, string) (http.Header, error)
@@ -30,7 +31,7 @@ type Provider struct {
 func New() *Provider {
 	profile := config.EnvRootOrDefault("DOUBAO_PROFILE", filepath.Join(config.HomeDir(), "Library", "Application Support", "Doubao", "Profile 1"))
 	return &Provider{
-		profile: profile, base: apiBase, auth: desktopAuth,
+		profile: profile, chats: filepath.Join(config.HomeDir(), "Doubao", "chats"), base: apiBase, auth: desktopAuth,
 		http: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}},
@@ -118,11 +119,9 @@ func seconds(n integer) time.Time {
 	return time.Unix(int64(n), 0).UTC()
 }
 
-func (p *Provider) summary(c conversation, m metadata) model.Summary {
-	// Work has no authoritative coding-project cwd. Do not assign its generated
-	// workspace or this process's cwd to a conversation.
+func (p *Provider) summary(c conversation, m metadata, projectPath string) model.Summary {
 	return model.Summary{
-		ID: c.ID, Provider: ProviderID, Title: c.Name, Kind: model.SessionKindRoot,
+		ID: c.ID, Provider: ProviderID, ProjectPath: projectPath, Title: c.Name, Kind: model.SessionKindRoot,
 		CreatedAt: seconds(m.Created), UpdatedAt: seconds(c.Updated),
 		StoragePath: filepath.Join(p.sessionsRoot(), c.ID),
 		// Native versions are microseconds; indexing them at nanosecond
@@ -156,7 +155,11 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		if m.Status != 1 { // Only the native active state, never retained archived/deleted directories.
 			continue
 		}
-		out = append(out, p.summary(row, m))
+		projectPath, err := p.projectPath(row.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p.summary(row, m, projectPath))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
@@ -217,9 +220,13 @@ func (p *Provider) load(ctx context.Context, ref provider.SessionRef, limit int)
 	if err != nil {
 		return nil, err
 	}
-	sm := p.summary(row, meta[row.ID])
+	projectPath, err := p.projectPath(row.ID)
+	if err != nil {
+		return nil, err
+	}
+	sm := p.summary(row, meta[row.ID], projectPath)
 	return &model.Conversation{
-		ID: sm.ID, Provider: ProviderID, Title: sm.Title, StoragePath: sm.StoragePath,
+		ID: sm.ID, Provider: ProviderID, ProjectPath: sm.ProjectPath, Title: sm.Title, StoragePath: sm.StoragePath,
 		CreatedAt: sm.CreatedAt, UpdatedAt: sm.UpdatedAt, Messages: messages, MessageCount: len(messages),
 	}, nil
 }

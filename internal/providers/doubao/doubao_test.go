@@ -25,6 +25,10 @@ func testProvider(t *testing.T, handler http.HandlerFunc) *Provider {
 	t.Cleanup(s.Close)
 	p := New()
 	p.profile = t.TempDir()
+	p.chats = filepath.Join(t.TempDir(), "Doubao", "chats")
+	if err := os.MkdirAll(p.chats, 0700); err != nil {
+		t.Fatal(err)
+	}
 	p.base = s.URL
 	p.http = s.Client()
 	p.auth = func(context.Context, string) (http.Header, error) { return make(http.Header), nil }
@@ -115,7 +119,7 @@ func TestDesktopDiscoveryLoadAndNativeRename(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("discovery = %+v, %v", rows, err)
 	}
-	if rows[0].CreatedAt.Unix() != 1789000000 || rows[0].ProjectPath != "" || rows[0].MessageCount != 0 {
+	if rows[0].CreatedAt.Unix() != 1789000000 || rows[0].ProjectPath != p.chats || rows[0].MessageCount != 0 {
 		t.Fatalf("invented metadata: %+v", rows[0])
 	}
 	ref := provider.SessionRef{ID: rows[0].ID}
@@ -240,6 +244,58 @@ func TestBlockTextExcludesToolsAndReasoning(t *testing.T) {
 	err := json.Unmarshal([]byte(`{"content":"{\"text\":\"legacy duplicate\"}","content_block":[{"block_type":10000,"content":{"text_block":{"text":"visible"}}},{"block_type":10000,"parent_id":"tool","content":{"text_block":{"text":"nested tool"}}},{"block_type":10001,"content":{"text_block":{"text":"reasoning"}}}]}`), &m)
 	if err != nil || m.text() != "visible" {
 		t.Fatalf("block text = %q, %v", m.text(), err)
+	}
+}
+
+func TestProjectPathUsesNativeChatWorkspaceOrChatsRoot(t *testing.T) {
+	p := New()
+	p.profile = t.TempDir()
+	p.chats = filepath.Join(t.TempDir(), "Doubao", "chats")
+	workspace := filepath.Join(p.chats, "2026-09-21", "new-chat-1")
+	if err := os.MkdirAll(workspace, 0700); err != nil {
+		t.Fatal(err)
+	}
+	id := "12345678901234567"
+	trajectory := filepath.Join(p.sessionsRoot(), id, "agents", "main", "system", "trajectory.jsonl")
+	if err := os.MkdirAll(filepath.Dir(trajectory), 0700); err != nil {
+		t.Fatal(err)
+	}
+	row := map[string]any{"role": "assistant", "tool_calls": []any{
+		map[string]any{"function": map[string]any{"arguments": map[string]any{"file_path": filepath.Join(workspace, "site", "index.html")}}},
+		map[string]any{"function": map[string]any{"arguments": map[string]any{"file_path": "/tmp/unrelated.txt"}}},
+	}}
+	b, _ := json.Marshal(row)
+	if err := os.WriteFile(trajectory, append(b, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.projectPath(id)
+	if err != nil || got != workspace {
+		t.Fatalf("project path = %q, %v; want %q", got, err, workspace)
+	}
+	got, err = p.projectPath("22345678901234567")
+	if err != nil || got != p.chats {
+		t.Fatalf("fallback project path = %q, %v; want chats root", got, err)
+	}
+}
+
+func TestChatWorkspaceRejectsLookalikesAndMissingDirectories(t *testing.T) {
+	root := t.TempDir()
+	valid := filepath.Join(root, "2026-09-21", "new-chat")
+	if err := os.MkdirAll(valid, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if got := chatWorkspace(root, filepath.Join(valid, "a.txt")); got != valid {
+		t.Fatalf("valid workspace = %q", got)
+	}
+	for _, value := range []string{
+		filepath.Join(root, "2026-09-21", "chat", "a.txt"),
+		filepath.Join(root, "2026-09-21", "new-chat-x", "a.txt"),
+		filepath.Join(root, "2026-09-20", "new-chat-2", "missing.txt"),
+		filepath.Join(root, "..", "escape", "a.txt"),
+	} {
+		if got := chatWorkspace(root, value); got != "" {
+			t.Fatalf("lookalike %q accepted as %q", value, got)
+		}
 	}
 }
 

@@ -60,7 +60,9 @@ Discovery and loading contact Doubao's native cloud endpoints. Authentication re
 
 Titles come from the conversation list; creation times come from the IM conversation metadata, never the conversation ID or file mtime. Message history is paginated and ordered by the native message index. The portable view includes visible user/assistant text; attachments, generated files, tool trajectories, and reasoning are not migrated. Local `trajectory.jsonl` files are agent execution traces and are not substituted for the conversation history. Discovery leaves message count unknown rather than confusing a native cursor with a count.
 
-Rename uses `/samantha/thread/update` and checks the title by listing again. Import into Doubao, native desktop resume, archive, delete, and relocation have no verified adapter contract. These endpoints are private desktop interfaces and may change; the adapter was read-tested against Doubao desktop 2.30.2. Use the everywhere view: no coding-project cwd is invented for Work sessions.
+Rename uses `/samantha/thread/update` and checks the title by listing again. Import into Doubao, native desktop resume, archive, delete, and relocation have no verified adapter contract. These endpoints are private desktop interfaces and may change; the adapter was read-tested against Doubao desktop 2.30.2.
+
+**Project path.** The cloud record has no cwd. When a native trajectory's structured `file_path` or `path` argument points below `~/Doubao/chats/YYYY-MM-DD/new-chat[-N]`, that chat workspace is the project path. Plain message text, shell command strings, paths outside the native chats root, missing directories, and conflicting workspaces are not accepted as stronger evidence. Without one concrete match, the session falls back to `~/Doubao/chats` as its PWD.
 
 ## Child sessions
 

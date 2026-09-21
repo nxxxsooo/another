@@ -221,7 +221,7 @@ OpenCode V2 正式版与 V1 历史会话共用一个 `opencode` provider。anoth
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | ✓ |
 | Doubao Work | `doubao` | `DBW` | — | ✓ | — | — | — |
 
-**豆包工作桌面端（macOS）**：在 `another setup` 的兼容适配中启用，选中后才连接云端。适配器列出本机存在会话目录的活跃工作对话，读取用户与助手文本以供预览、导出和迁移到其他 agent，并通过豆包原生 API 重命名、回读核验。需要桌面端已登录、网络连接及 macOS 钥匙串中 `Doubao Safe Storage` 项的访问权限。可用 `DOUBAO_PROFILE` 指定其他 profile，默认是 `~/Library/Application Support/Doubao/Profile 1`。豆包未提供代码项目目录，因此会话显示在 everywhere 视图。暂不支持导入豆包、原生恢复、归档、删除和迁移目录。数据与兼容性边界见[提供商说明](docs/providers.zh.md#豆包工作桌面端)。
+**豆包工作桌面端（macOS）**：在 `another setup` 的兼容适配中启用，选中后才连接云端。适配器列出本机存在会话目录的活跃工作对话，读取用户与助手文本以供预览、导出和迁移到其他 agent，并通过豆包原生 API 重命名、回读核验。需要桌面端已登录、网络连接及 macOS 钥匙串中 `Doubao Safe Storage` 项的访问权限。可用 `DOUBAO_PROFILE` 指定其他 profile，默认是 `~/Library/Application Support/Doubao/Profile 1`。本地轨迹里有结构化文件工具路径时，会话归属到具体的 `~/Doubao/chats/YYYY-MM-DD/new-chat[-N]`；找不到时统一以 `~/Doubao/chats` 为 PWD。暂不支持导入豆包、原生恢复、归档、删除和迁移目录。数据与兼容性边界见[提供商说明](docs/providers.zh.md#豆包工作桌面端)。
 
 `—` 表示这个 agent 没有经过验证的原生操作契约。重命名、归档、换目录和删除都直接修改对应 agent 的原生状态，不是 Another 私有标记；Another 只展示当前 agent 真正支持的操作，不会维护一份刷新后消失的私有状态。
 
