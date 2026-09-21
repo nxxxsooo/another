@@ -144,19 +144,22 @@ release:
 
     ## Compatibility
 
-    v0.15.7 fixes the model list setup offers for OpenCode. It is now read
-    from OpenCode's own server (`/api/model`) — the same catalog `/models`
-    shows inside the client, including providers you defined in
-    `opencode.json(c)`. The previous source, `opencode models`, resolves a
-    catalog for the directory it is started in, and another probes from a
-    throwaway temporary directory, so the answer was the half-resolved state:
-    nothing at first, then the whole of models.dev, never your own providers.
-    A build without that endpoint still falls back to `opencode models`.
+    v0.15.8 stops another from adopting a sandboxed agent home. Tools that
+    spawn a coding agent around one run — a memory plugin launching Claude
+    Code to tidy sessions is the known case — point the agent's home
+    environment (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …) at a throwaway
+    directory directly inside the system temp tree, settings and hooks
+    copied in with it. A hook running inside such a session used to hand
+    that environment to another, which then read the sandbox as the agent's
+    real home: the session list was replaced by the tool's own machine
+    sessions, and those rows refused to be deleted afterwards. A value that
+    names a directory directly inside the temp tree is now ignored in
+    favour of the real home; deliberate relocations through these
+    variables keep working.
 
-    Nothing else changes: no configuration, no session migration, and a model
-    already saved in your settings is kept even when the CLI stops listing it.
-    Verified against a live OpenCode with a custom OpenAI-compatible provider,
-    from a directory that agent had never opened.
+    A list polluted by earlier runs is restored by one `another index
+    rebuild`. Nothing else changes: no configuration format, no migration
+    behaviour, and agent-owned session data was never touched.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)

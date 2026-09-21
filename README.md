@@ -203,6 +203,8 @@ OpenCode V2 正式版与 V1 历史会话共用一个 `opencode` provider。anoth
 
 持续实测范围是 **Pi、OpenCode、Claude Code、Codex、Antigravity 和 Qwen Code**；这六个进入每次发布的回归检查。Cursor、CommandCode、CodeM 和 Hermes 保留兼容适配，但不承诺每个版本都在维护者环境完成端到端实测。首次 setup 不会根据本机残留数据自动全选，必须由用户手动选择要索引和展示的 agent。
 
+从 `v0.15.8` 起，agent 数据根目录的环境变量（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`QWEN_HOME` 等）指向系统临时目录正下方时会回落到真实的用户目录。围绕一次 agent 运行搭沙盒的工具——记忆类插件拉起 Claude Code 做会话整理是已知的一例——会把一次性临时目录当成 agent 的家目录，连同你的设置和钩子一起复制进去；沙盒会话结束时，钩子里跑的 another 继承了那套环境，就曾把整个会话列表换成工具自己的内部会话，这些行事后还删不掉。沙盒目录现在不再被当作真实数据根，正常通过环境变量搬家不受影响；被旧版本污染过的列表跑一次 `another index rebuild` 即可恢复。
+
 会话列表用等宽色块标记 agent：名字长短差着九个字符，排成文字会让短名字看起来是个更小的 agent，也会把标题挤到每行不同的位置。来源和去向选择器里色块和全名同时出现，那里就是这张对照表。
 
 | Agent | Provider ID | 列表标记 | 原生恢复命令 | 重命名 | 归档 | 换目录 | 删除 |

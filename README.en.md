@@ -228,6 +228,8 @@ Released OpenCode V2 and retained V1 history share one `opencode` provider. anot
 
 The continuously tested set is **Pi, OpenCode, Claude Code, Codex, Antigravity, and Qwen Code**; these six enter every release regression pass. Cursor, CommandCode, CodeM, and Hermes remain compatibility adapters, but are not promised an end-to-end maintainer test on every release. First-run setup does not auto-select agents from detected binaries or stale local data; the user chooses what another indexes and exposes.
 
+From `v0.15.8`, an agent data-root environment variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `QWEN_HOME`, …) that points directly inside the system temp tree falls back to the real user home. Tools that sandbox one agent run — a memory plugin launching Claude Code to tidy sessions is the known case — use a throwaway temp directory as the agent's home, your settings and hooks copied in with it; when such a session ends, another invoked from inside that hook inherited the sandbox as the real root, which replaced the whole session list with the tool's own machine sessions and left rows that could not be deleted. A sandbox directory is no longer taken for a real data root; deliberate relocations through these variables keep working, and a list polluted by earlier runs is restored by one `another index rebuild`.
+
 The session list marks each agent with a fixed-width color chip. Agent names differ by up to nine characters, and set as words they leave a ragged column where a short name reads as a lesser agent and every row starts its title somewhere else. The source and target pickers show the chip next to the full name, which is where this table is read from.
 
 | Agent | Provider ID | List tag | Native resume | Rename | Archive | Relocate | Delete |
