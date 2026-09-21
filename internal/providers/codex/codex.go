@@ -35,7 +35,7 @@ func New() *Provider {
 }
 
 func resolveSessionsRoot() string {
-	if home := config.EnvOrDefault("CODEX_HOME", ""); home != "" {
+	if home := config.EnvRootOrDefault("CODEX_HOME", ""); home != "" {
 		return filepath.Join(home, "sessions")
 	}
 	snap := filepath.Join(config.HomeDir(), "snap", "codex", "current", "sessions")

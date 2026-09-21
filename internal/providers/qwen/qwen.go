@@ -47,7 +47,7 @@ type Provider struct {
 }
 
 func New() *Provider {
-	root := config.EnvOrDefault("QWEN_HOME", filepath.Join(config.HomeDir(), ".qwen"))
+	root := config.EnvRootOrDefault("QWEN_HOME", filepath.Join(config.HomeDir(), ".qwen"))
 	return &Provider{root: root}
 }
 

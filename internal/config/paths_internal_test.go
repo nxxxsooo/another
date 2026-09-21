@@ -16,6 +16,49 @@ func TestAgentDataRootHonorsExplicitOverride(t *testing.T) {
 	}
 }
 
+// A provider data-root env that names a direct child of the temp root is a
+// sandbox another tool spun up around one agent run, not user configuration.
+// Adopting it re-roots discovery at that sandbox while reconcile erases every
+// real session row, so it must fall back to the real home. Test fixtures and
+// deliberate relocations nest deeper or live outside the temp tree entirely,
+// and stay honored.
+func TestEnvRootOrDefaultRefusesTempTreeSandboxes(t *testing.T) {
+	const env = "ANOTHER_TEST_AGENT_HOME"
+
+	t.Setenv(env, filepath.Join(os.TempDir(), "hindsight-claude-code-sandbox"))
+	if got := EnvRootOrDefault(env, "/real/home"); got != "/real/home" {
+		t.Fatalf("sandboxed %s adopted: %q", env, got)
+	}
+
+	// A database file placed directly in such a sandbox is the same accident.
+	t.Setenv(env, filepath.Join(os.TempDir(), "hindsight-opencode2.db"))
+	if got := EnvRootOrDefault(env, "/real/home"); got != "/real/home" {
+		t.Fatalf("sandboxed %s file adopted: %q", env, got)
+	}
+
+	t.Setenv(env, filepath.Join(t.TempDir(), "agent-home"))
+	if got := EnvRootOrDefault(env, "/real/home"); got != os.Getenv(env) {
+		t.Fatalf("nested temp fixture refused: %q", got)
+	}
+
+	// A database file below a nested fixture is what the provider tests use;
+	// it must keep working.
+	t.Setenv(env, filepath.Join(t.TempDir(), "opencode2.db"))
+	if got := EnvRootOrDefault(env, "/real/home"); got != os.Getenv(env) {
+		t.Fatalf("nested temp fixture file refused: %q", got)
+	}
+
+	t.Setenv(env, "/opt/agent-home")
+	if got := EnvRootOrDefault(env, "/real/home"); got != "/opt/agent-home" {
+		t.Fatalf("ordinary override refused: %q", got)
+	}
+
+	t.Setenv(env, "")
+	if got := EnvRootOrDefault(env, "/real/home"); got != "/real/home" {
+		t.Fatalf("empty %s did not fall back: %q", env, got)
+	}
+}
+
 // The probing only runs on Windows; everywhere else the legacy layout is the
 // whole answer, and this pins that so a refactor cannot silently move
 // existing Unix stores.

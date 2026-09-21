@@ -19,7 +19,7 @@ If an operation has no native contract, do not implement it. An unsupported answ
 
 ## The package
 
-Create `internal/providers/<id>/<id>.go` with `const ProviderID = "<id>"` and a `New()` constructor that resolves its root through `config.EnvOrDefault`. Use an existing adapter of the same storage shape as the model: `internal/providers/qwen` for a JSONL tree, `internal/providers/opencode2` for an HTTP-backed store, `internal/providers/agy` for a database with a lock.
+Create `internal/providers/<id>/<id>.go` with `const ProviderID = "<id>"` and a `New()` constructor that resolves its root through `config.EnvRootOrDefault` — never plain `EnvOrDefault`, which would adopt a sandboxed home env a tool put around one agent run (see the comment on `EnvRootOrDefault`). Use an existing adapter of the same storage shape as the model: `internal/providers/qwen` for a JSONL tree, `internal/providers/opencode2` for an HTTP-backed store, `internal/providers/agy` for a database with a lock.
 
 Implement the core interface from `internal/provider/provider.go`:
 

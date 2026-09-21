@@ -30,8 +30,8 @@ type Provider struct{ backends []backend }
 
 func New() *Provider {
 	root := config.AgentDataRoot("opencode")
-	standard := config.EnvOrDefault("OPENCODE_DB_PATH", filepath.Join(root, "opencode", "opencode.db"))
-	oldV2 := config.EnvOrDefault("OPENCODE2_DB_PATH", filepath.Join(root, "opencode", "opencode2.db"))
+	standard := config.EnvRootOrDefault("OPENCODE_DB_PATH", filepath.Join(root, "opencode", "opencode.db"))
+	oldV2 := config.EnvRootOrDefault("OPENCODE2_DB_PATH", filepath.Join(root, "opencode", "opencode2.db"))
 	opencode := config.EnvOrDefault("OPENCODE_COMMAND", "opencode")
 	opencode2 := config.EnvOrDefault("OPENCODE2_COMMAND", "opencode2")
 	return &Provider{backends: []backend{

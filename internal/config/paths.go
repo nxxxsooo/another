@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 func HomeDir() string {
@@ -66,6 +67,48 @@ func EnvOrDefault(env, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// EnvRootOrDefault resolves a provider's data root from env, or falls back.
+// It refuses one shape of value: a directory a sandboxing tool created
+// directly inside the system temp tree. Tools that shell out to an agent CLI
+// — Hindsight's session-deepening runs are the known case — point the CLI's
+// home env at a throwaway os.MkdirTemp("", prefix) directory so the spawned
+// run cannot touch the user's real data. A process launched inside such a run
+// inherits that env, and adopting the sandbox as the provider's root makes
+// discovery index the tool's own machine sessions while reconcile erases
+// every real session row as no longer discoverable; the ghost rows then
+// refuse cleanup because their paths lie outside the restored root. A user
+// deliberately relocating their agent data never puts it where the OS purges
+// it, and test fixtures nest below t.TempDir(), so only the sandbox shape —
+// a direct child of the temp root — is refused.
+func EnvRootOrDefault(env, fallback string) string {
+	v := strings.TrimSpace(os.Getenv(env))
+	if v == "" {
+		return fallback
+	}
+	v = ExpandPath(v)
+	if directTempChild(v) {
+		return fallback
+	}
+	return v
+}
+
+// directTempChild reports whether path sits directly inside the system temp
+// root, the exact shape os.MkdirTemp("", ...) writes.
+func directTempChild(path string) bool {
+	temp := os.TempDir()
+	if temp == "" {
+		return false
+	}
+	dir := filepath.Dir(path)
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(temp); err == nil {
+		temp = resolved
+	}
+	return filepath.Clean(dir) == filepath.Clean(temp)
 }
 
 // AgentDataRoot resolves the data home of an agent that keeps one layout per

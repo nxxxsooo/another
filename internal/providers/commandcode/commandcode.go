@@ -21,7 +21,7 @@ type Provider struct {
 }
 
 func New() *Provider {
-	root := config.EnvOrDefault("COMMANDCODE_HOME", filepath.Join(config.HomeDir(), ".commandcode"))
+	root := config.EnvRootOrDefault("COMMANDCODE_HOME", filepath.Join(config.HomeDir(), ".commandcode"))
 	return &Provider{root: root}
 }
 

@@ -23,7 +23,7 @@ type Provider struct {
 }
 
 func New() *Provider {
-	root := config.EnvOrDefault("CLAUDE_CONFIG_DIR", filepath.Join(config.HomeDir(), ".claude"))
+	root := config.EnvRootOrDefault("CLAUDE_CONFIG_DIR", filepath.Join(config.HomeDir(), ".claude"))
 	return &Provider{root: root}
 }
 

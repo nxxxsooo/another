@@ -56,7 +56,7 @@ type Provider struct {
 }
 
 func New() *Provider {
-	root := config.EnvOrDefault("AGY_HOME", filepath.Join(config.HomeDir(), ".gemini", "antigravity-cli"))
+	root := config.EnvRootOrDefault("AGY_HOME", filepath.Join(config.HomeDir(), ".gemini", "antigravity-cli"))
 	return &Provider{root: root}
 }
 

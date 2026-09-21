@@ -51,7 +51,7 @@ type Provider struct {
 }
 
 func New() *Provider {
-	root := config.EnvOrDefault("CODEM_HOME", filepath.Join(config.HomeDir(), ".codem"))
+	root := config.EnvRootOrDefault("CODEM_HOME", filepath.Join(config.HomeDir(), ".codem"))
 	return &Provider{root: root}
 }
 

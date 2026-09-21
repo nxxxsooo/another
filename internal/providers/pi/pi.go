@@ -103,13 +103,15 @@ const AgentDirEnv = "PI_CODING_AGENT_DIR"
 const LegacyAgentDirEnv = "PI_AGENT_DIR"
 
 // AgentDir resolves the directory Pi keeps its sessions, settings, and
-// extensions in — the one place another and Pi have to agree on.
+// extensions in — the one place another and Pi have to agree on. Both envs
+// refuse sandbox temp roots, so a run launched inside another tool's
+// sandboxed Pi keeps pointing at the user's real Pi.
 func AgentDir() string {
-	if dir := os.Getenv(AgentDirEnv); dir != "" {
-		return config.ExpandPath(dir)
+	if dir := config.EnvRootOrDefault(AgentDirEnv, ""); dir != "" {
+		return dir
 	}
-	if dir := os.Getenv(LegacyAgentDirEnv); dir != "" {
-		return config.ExpandPath(dir)
+	if dir := config.EnvRootOrDefault(LegacyAgentDirEnv, ""); dir != "" {
+		return dir
 	}
 	return filepath.Join(config.HomeDir(), ".pi", "agent")
 }

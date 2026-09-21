@@ -47,6 +47,20 @@ func TestLoadSkipsMetaAndEmptyRows(t *testing.T) {
 	}
 }
 
+// A CLAUDE_CONFIG_DIR created directly inside the temp tree belongs to a
+// sandbox another tool put around one Claude Code run — Hindsight's session
+// deepeners do exactly this. A run launched inside such a session inherits
+// the env; adopting the sandbox as the provider root once indexed the
+// tool's own extraction sessions while reconcile erased every real Claude
+// row, and the ghosts then refused cleanup outside the restored root.
+func TestSandboxedConfigDirEnvIsNotAdopted(t *testing.T) {
+	sandbox := filepath.Join(os.TempDir(), "hindsight-claude-code-sandbox")
+	t.Setenv("CLAUDE_CONFIG_DIR", sandbox)
+	if got := claude.New().DefaultPaths()[0].Path; got == filepath.Join(sandbox, "projects") {
+		t.Fatalf("provider adopted a sandboxed CLAUDE_CONFIG_DIR: %s", got)
+	}
+}
+
 func TestRenameAppendsNativeCustomTitle(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", root)

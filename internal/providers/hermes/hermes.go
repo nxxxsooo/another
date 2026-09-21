@@ -24,7 +24,7 @@ type Provider struct {
 }
 
 func New() *Provider {
-	root := config.EnvOrDefault("HERMES_HOME", filepath.Join(config.HomeDir(), ".hermes"))
+	root := config.EnvRootOrDefault("HERMES_HOME", filepath.Join(config.HomeDir(), ".hermes"))
 	return &Provider{dbPath: filepath.Join(root, "state.db")}
 }
 

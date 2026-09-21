@@ -32,7 +32,7 @@ type Provider struct {
 
 func New() *Provider {
 	root := config.AgentDataRoot("opencode")
-	dbPath := config.EnvOrDefault("OPENCODE2_DB_PATH", filepath.Join(root, "opencode", "opencode2.db"))
+	dbPath := config.EnvRootOrDefault("OPENCODE2_DB_PATH", filepath.Join(root, "opencode", "opencode2.db"))
 	command := config.EnvOrDefault("OPENCODE2_COMMAND", "opencode2")
 	return NewAt(dbPath, command)
 }
