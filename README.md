@@ -27,12 +27,12 @@
 ## 功能
 
 - **原生会话**：在目标 agent 中按其原生格式恢复，不是粘贴一份摘要。
-- **十个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、CommandCode、CodeM、Hermes、Qwen Code 和 Antigravity。
+- **十一个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、CommandCode、CodeM、Hermes、Qwen Code、Antigravity 和 Doubao Work（桌面端，仅作迁移来源）。
 - **一个界面**：直接浏览、搜索、预览、重命名、归档、删除、换目录或迁移会话。
 - **项目聚合**：默认只看当前 Git 项目，并把主工作区与所有已登记 worktree 的会话放在一起；按 `f` 可切换到全部项目，按 `g` 可按日期或 worktree 分组。
 - **迁移后校验**：重新读取每次写入，比较内容摘要；不一致时回滚，来源会话始终保持原样。
 - **中英双语界面**：默认跟随终端 locale，也可以在 setup 里固定为 English 或中文；与标题语言各自独立。
-- **本地运行**：读取各 agent 的本地原生存储；私有 SQLite 索引（`~/.cache/another/`，Windows 下为 `%LOCALAPPDATA%\another`）会在重新扫描时跳过未变会话。
+- **本地优先**：读取原生存储到私有 SQLite 索引（`~/.cache/another/`，Windows 下为 `%LOCALAPPDATA%\another`），重新扫描时跳过未变的本地会话。Doubao Work 使用桌面端登录态和豆包云端 API。
 - **重复源仲裁**：同一个会话 ID 同时留在新旧项目目录时，优先选择含真实消息的 transcript，不让较新的空状态快照覆盖标题、路径和消息数。
 
 ## 安装
@@ -119,7 +119,7 @@ Windows 上解压 `another_*_windows_amd64.zip`，把 `another.exe` 放到 `PATH
 another
 ```
 
-首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。页面默认只列持续实测的六个 agent，四个兼容适配折在末尾一行里，光标移到那行按 `Space` 展开；如果配置里已经启用了其中某个，这行开局就是展开的——看不见的设置没法关掉。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。启用了 OpenCode 时，这一页还有一行 `OpenCode 标题插件`：按 `t` 打开，another 才会把插件写进 OpenCode 的配置目录，那行同时写明将写到哪个目录、目录里现在是什么。之后可随时运行 `another setup` 修改配置。
+首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。页面默认只列持续实测的六个 agent，五个兼容适配折在末尾一行里，光标移到那行按 `Space` 展开；如果配置里已经启用了其中某个，这行开局就是展开的——看不见的设置没法关掉。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。启用了 OpenCode 时，这一页还有一行 `OpenCode 标题插件`：按 `t` 打开，another 才会把插件写进 OpenCode 的配置目录，那行同时写明将写到哪个目录、目录里现在是什么。之后可随时运行 `another setup` 修改配置。
 
 通过 SSH 使用 Ghostty 时，终端通常只转发 `TERM=xterm-ghostty`，不会转发 `COLORTERM`。`v0.13.3` 起 another 会直接识别这种环境并保留完整配色，同时仍遵守 `NO_COLOR`。
 
@@ -201,7 +201,7 @@ TUI 默认按当前项目过滤。Git 仓库的主工作区、所有已登记 wo
 
 OpenCode V2 正式版与 V1 历史会话共用一个 `opencode` provider。another 默认向正式 V2 写入，同时继续读取 V1 的 `session` schema 和早期并行安装留下的 `opencode2.db`；列表、筛选和 setup 只出现一个 OpenCode，但恢复、重命名、归档、换目录和删除会按每条会话的真实存储与能力分派。旧配置中的 `opencode2`、`open-code-2` 和 `o2` 会自动映射到 `opencode`，不会移动或改写 agent 自己的数据库。
 
-持续实测范围是 **Pi、OpenCode、Claude Code、Codex、Antigravity 和 Qwen Code**；这六个进入每次发布的回归检查。Cursor、CommandCode、CodeM 和 Hermes 保留兼容适配，但不承诺每个版本都在维护者环境完成端到端实测。首次 setup 不会根据本机残留数据自动全选，必须由用户手动选择要索引和展示的 agent。
+持续实测范围是 **Pi、OpenCode、Claude Code、Codex、Antigravity 和 Qwen Code**；这六个进入每次发布的回归检查。Cursor、CommandCode、CodeM、Hermes 和 Doubao Work 保留兼容适配，但不承诺每个版本都在维护者环境完成端到端实测。首次 setup 不会根据本机残留数据自动全选，必须由用户手动选择要索引和展示的 agent。
 
 从 `v0.15.8` 起，agent 数据根目录的环境变量（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`QWEN_HOME` 等）指向系统临时目录正下方时会回落到真实的用户目录。围绕一次 agent 运行搭沙盒的工具——记忆类插件拉起 Claude Code 做会话整理是已知的一例——会把一次性临时目录当成 agent 的家目录，连同你的设置和钩子一起复制进去；沙盒会话结束时，钩子里跑的 another 继承了那套环境，就曾把整个会话列表换成工具自己的内部会话，这些行事后还删不掉。沙盒目录现在不再被当作真实数据根，正常通过环境变量搬家不受影响；被旧版本污染过的列表跑一次 `another index rebuild` 即可恢复。
 
@@ -219,6 +219,9 @@ OpenCode V2 正式版与 V1 历史会话共用一个 `opencode` provider。anoth
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
 | Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | ✓ | — | ✓ |
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | ✓ |
+| Doubao Work | `doubao` | `DBW` | — | ✓ | — | — | — |
+
+**豆包工作桌面端（macOS）**：在 `another setup` 的兼容适配中启用，选中后才连接云端。适配器列出本机存在会话目录的活跃工作对话，读取用户与助手文本以供预览、导出和迁移到其他 agent，并通过豆包原生 API 重命名、回读核验。需要桌面端已登录、网络连接及 macOS 钥匙串中 `Doubao Safe Storage` 项的访问权限。可用 `DOUBAO_PROFILE` 指定其他 profile，默认是 `~/Library/Application Support/Doubao/Profile 1`。本地轨迹里有结构化文件工具路径时，会话归属到具体的 `~/Doubao/chats/YYYY-MM-DD/new-chat[-N]`；找不到时统一以 `~/Doubao/chats` 为 PWD。暂不支持导入豆包、原生恢复、归档、删除和迁移目录。数据与兼容性边界见[提供商说明](docs/providers.zh.md#豆包工作桌面端)。
 
 `—` 表示这个 agent 没有经过验证的原生操作契约。重命名、归档、换目录和删除都直接修改对应 agent 的原生状态，不是 Another 私有标记；Another 只展示当前 agent 真正支持的操作，不会维护一份刷新后消失的私有状态。
 

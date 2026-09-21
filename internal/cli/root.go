@@ -44,6 +44,17 @@ func NewApp() (*App, error) {
 		reg = registry.NewEnabled(settings.EnabledProviders)
 	} else if !os.IsNotExist(settingsErr) {
 		return nil, fmt.Errorf("load config: %w", settingsErr)
+	} else {
+		// Legacy noninteractive commands can discover local stores before setup.
+		// A cloud-backed source must still wait for an explicit saved selection.
+		var local []provider.Provider
+		for _, p := range reg.All() {
+			if remote, ok := p.(provider.RemoteDiscovery); ok && remote.RequiresRemoteDiscovery() {
+				continue
+			}
+			local = append(local, p)
+		}
+		reg = registry.NewWith(local...)
 	}
 	// Resolve the interface language before anything can draw. A missing
 	// configuration is not a missing language: it means auto, which reads the

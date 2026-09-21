@@ -50,6 +50,7 @@ var providerColors = map[string]lipgloss.Color{
 	"pi":          charm(charmtone.Turtle),  // cyan
 	"qwen":        charm(charmtone.Mauve),   // violet
 	"agy":         charm(charmtone.Mustard), // yellow
+	"doubao":      charm(charmtone.Salmon),  // coral
 }
 
 // providerFallbacks colors an agent this build does not know about. Registry

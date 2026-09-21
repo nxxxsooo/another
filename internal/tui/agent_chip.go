@@ -51,6 +51,7 @@ var agentCodes = map[string]string{
 	"commandcode": "CMD",
 	"codem":       "CDM",
 	"hermes":      "HRM",
+	"doubao":      "DBW",
 	"pi":          "PI",
 	"qwen":        "QWN",
 	"agy":         "AGY",
