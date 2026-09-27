@@ -48,8 +48,11 @@ func TestEnvRootOrDefaultRefusesTempTreeSandboxes(t *testing.T) {
 		t.Fatalf("nested temp fixture file refused: %q", got)
 	}
 
-	t.Setenv(env, "/opt/agent-home")
-	if got := EnvRootOrDefault(env, "/real/home"); got != "/opt/agent-home" {
+	// /opt is not a fully qualified absolute path on Windows. Use a native
+	// home-relative location outside the temp tree on every platform.
+	ordinary := filepath.Join(HomeDir(), "agent-home")
+	t.Setenv(env, ordinary)
+	if got := EnvRootOrDefault(env, "/real/home"); got != ordinary {
 		t.Fatalf("ordinary override refused: %q", got)
 	}
 
