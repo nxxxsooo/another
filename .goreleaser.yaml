@@ -144,22 +144,15 @@ release:
 
     ## Compatibility
 
-    v0.15.8 stops another from adopting a sandboxed agent home. Tools that
-    spawn a coding agent around one run — a memory plugin launching Claude
-    Code to tidy sessions is the known case — point the agent's home
-    environment (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …) at a throwaway
-    directory directly inside the system temp tree, settings and hooks
-    copied in with it. A hook running inside such a session used to hand
-    that environment to another, which then read the sandbox as the agent's
-    real home: the session list was replaced by the tool's own machine
-    sessions, and those rows refused to be deleted afterwards. A value that
-    names a directory directly inside the temp tree is now ignored in
-    favour of the real home; deliberate relocations through these
-    variables keep working.
+    v0.15.9 fixes missing Qwen Code title suggestions on Windows. npm's
+    `qwen.cmd` truncated the multiline prompt at its first newline, so Qwen
+    never received the title rules or the session content. another now sends
+    the complete prompt through stdin, preserving Chinese text, quotes, and
+    shell metacharacters.
 
-    A list polluted by earlier runs is restored by one `another index
-    rebuild`. Nothing else changes: no configuration format, no migration
-    behaviour, and agent-owned session data was never touched.
+    Existing Qwen authentication and model settings continue to work. Safe
+    mode and disabled chat recording remain enabled; no configuration
+    migration is needed. Script installations can run `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)

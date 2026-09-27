@@ -90,6 +90,22 @@ binary and the test directory were then removed.
 
 ## Real Windows VM results
 
+### v0.15.9: Qwen title suggestions on Windows x64
+
+An additional Windows 11 x64 check with Qwen Code 0.21.1 and Node.js 24.14.1
+reproduced npm's `qwen.cmd` discarding everything after the prompt's first
+newline. The CLI still made a model request, but the title contract and the
+session text never reached it. Title prompts now use stdin instead of argv.
+
+The regression test executes a real CMD shim from a path containing spaces
+and checks the received date, title format, multiline Chinese text, quotes,
+percent signs, and shell metacharacters. It covers both the default model and
+an explicit model. A live request through the configured Qwen provider then
+returned a valid Chinese title in about six seconds. The test does not rename
+an existing session or change Qwen's authentication settings.
+
+### Earlier Windows ARM64 VM pass
+
 - Native ARM64 binary starts and reports the stamped version; `--help` renders.
 - First-run setup is visually correct in Windows Terminal: zero providers are
   preselected; Codex and Qwen detection appears; the title page and save flow

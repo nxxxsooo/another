@@ -97,7 +97,7 @@ var launchers = map[string]launcher{
 		}
 		return append(args, p)
 	}},
-	"qwen": {"qwen", func(c Config, p string) []string {
+	"qwen": {"qwen", func(c Config, _ string) []string {
 		// --bare also drops the user's auth type and provider settings. That
 		// makes a configured Qwen work interactively but fail here, especially
 		// for remote/custom OpenAI-compatible providers. --safe-mode still keeps
@@ -107,7 +107,9 @@ var launchers = map[string]launcher{
 		if c.Model != "" {
 			args = append(args, "--model", c.Model)
 		}
-		return append(args, p)
+		// Suggest supplies the prompt through stdin: Windows npm .cmd shims
+		// truncate multiline arguments and interpret shell metacharacters.
+		return args
 	}},
 	// CodeM can run a headless prompt without recording the generated title as
 	// another user session. Its model selector accepts the same managed IDs as
@@ -247,7 +249,11 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 	defer cancel()
 
 	lang := ResolveLanguage(cfg.Language, req.Messages)
-	cmd := exec.CommandContext(ctx, bin, l.args(cfg, BuildPrompt(req, lang))...)
+	prompt := BuildPrompt(req, lang)
+	cmd := exec.CommandContext(ctx, bin, l.args(cfg, prompt)...)
+	if NormalizeID(cfg.Provider) == "qwen" {
+		cmd.Stdin = strings.NewReader(prompt)
+	}
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "NO_COLOR=1", "CLICOLOR=0", "TERM=dumb")
 	var stdout, stderr bytes.Buffer
