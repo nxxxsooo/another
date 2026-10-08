@@ -213,7 +213,7 @@ The footer carries only the keys every session uses, ending in `?`. That opens t
 
 ## Relocate
 
-Same agent, different working directory: a worktree you just created, a repository that moved, or work that belonged in the project next door all along. Press `m`, type the target directory, and `Tab` chooses between two readings:
+Same agent, different working directory: a worktree you just created, a repository that moved, or work that belonged in the project next door all along. Press `m` and type the target directory — the box suggests this repository's worktrees, completes the path you are typing, and offers directories you have recently worked in; `↑↓` highlights one and `→` or `Enter` puts it in the box. `Tab` chooses between two readings:
 
 - **Fork** (the default): the original stays where it is, and the target directory gains a session you can continue.
 - **Move:** the session itself changes directory, and the old one no longer has it.
