@@ -4,6 +4,7 @@ package shortcuts
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -80,8 +81,30 @@ func (p shellPlan) definition(name, target string) string {
 	}
 }
 
+// startupTimeout bounds one interactive-shell startup. A cold Windows
+// PowerShell on a busy machine can need most of 10s on its own, and the check
+// runs once at install, so waiting longer costs little while giving up early
+// silently skips the shortcuts.
+var startupTimeout = 30 * time.Second
+
+// launchStartupTimeout is the budget for the automatic check at TUI launch.
+// That check repeats on every launch until it succeeds, so a shell that is
+// always slow must not make every launch wait the full install budget.
+const launchStartupTimeout = 10 * time.Second
+
+type startupBudgetKey struct{}
+
+// withStartupBudget overrides startupTimeout for the shell probes under ctx.
+func withStartupBudget(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, startupBudgetKey{}, d)
+}
+
 func runShell(ctx context.Context, p shellPlan, script string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	budget := startupTimeout
+	if d, ok := ctx.Value(startupBudgetKey{}).(time.Duration); ok {
+		budget = d
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	if p.kind == "powershell" || p.kind == "pwsh" {
 		script = `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); ` + script
@@ -89,6 +112,11 @@ func runShell(ctx context.Context, p shellPlan, script string) (string, error) {
 	args := append(append([]string{}, p.args...), script)
 	data, err := exec.CommandContext(ctx, p.executable, args...).Output()
 	if err != nil {
+		// A process killed on deadline exits with "signal: killed" on Unix
+		// and a bare "exit status 1" on Windows; neither says why.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("inspect %s startup: took longer than %s", p.kind, budget)
+		}
 		return "", fmt.Errorf("inspect %s startup: %w", p.kind, err)
 	}
 	// Startup banners are allowed; only the final explicit response is ours.
@@ -160,8 +188,8 @@ func Ensure(ctx context.Context, shell string, dev bool, stateDir string, out io
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := Install(ctx, p.executable, dev, out); err != nil {
-		return err
+	if err := Install(withStartupBudget(ctx, launchStartupTimeout), p.executable, dev, out); err != nil {
+		return fmt.Errorf("%w (run another aliases install to retry with a longer wait)", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(checked), 0o700); err != nil {
 		return err

@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func shellHome(t *testing.T, shell, initial string) (string, shellPlan) {
@@ -221,6 +222,48 @@ func TestPowerShellDefinitionPreservesExistingFunction(t *testing.T) {
 	got, err = runShell(context.Background(), p, script)
 	if err != nil || got != "another" {
 		t.Fatalf("UTF-16 PowerShell profile: %q, %v", got, err)
+	}
+}
+
+// A shell that outlives the startup budget has to be reported as slow. Killed
+// on deadline, Windows reports a bare "exit status 1", which reads like the
+// shell's own error and sends the reader looking in the wrong place.
+func TestRunShellReportsATimeoutAsATimeout(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if runtime.GOOS == "windows" || err != nil {
+		t.Skip("needs a POSIX sh")
+	}
+	old := startupTimeout
+	startupTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { startupTimeout = old })
+	_, err = runShell(context.Background(), shellPlan{executable: sh, args: []string{"-c"}, kind: "sh"}, "sleep 5")
+	if err == nil || !strings.Contains(err.Error(), "took longer than 200ms") {
+		t.Fatalf("err = %v, want a timeout naming the budget", err)
+	}
+}
+
+// The automatic check runs on every TUI launch until it succeeds, so it keeps
+// a short budget of its own; only an explicit install waits for a slow shell.
+func TestLaunchCheckKeepsItsOwnShortBudget(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if runtime.GOOS == "windows" || err != nil {
+		t.Skip("needs a POSIX sh")
+	}
+	if launchStartupTimeout > 10*time.Second {
+		t.Fatalf("launchStartupTimeout = %s, want at most 10s", launchStartupTimeout)
+	}
+	ctx := withStartupBudget(context.Background(), 200*time.Millisecond)
+	_, err = runShell(ctx, shellPlan{executable: sh, args: []string{"-c"}, kind: "sh"}, "sleep 5")
+	if err == nil || !strings.Contains(err.Error(), "took longer than 200ms") {
+		t.Fatalf("err = %v, want the launch budget honoured and named", err)
+	}
+}
+
+// A cold Windows PowerShell on a busy machine needs most of 10s by itself.
+// The check runs once, at install, so the budget errs long.
+func TestStartupBudgetCoversAColdShell(t *testing.T) {
+	if startupTimeout < 30*time.Second {
+		t.Fatalf("startupTimeout = %s, want at least 30s", startupTimeout)
 	}
 }
 
