@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 // The relocate box offers directories people actually work in, most recent
@@ -34,7 +35,12 @@ func TestRecentProjectPathsOrdersByLatestActivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"/p/old", "/p/new", "/p/mid"}; !reflect.DeepEqual(got, want) {
+	// The index stores paths normalized, which on Windows makes /p/old into
+	// a drive-qualified path.
+	want := []string{
+		util.NormalizeProjectPath("/p/old"), util.NormalizeProjectPath("/p/new"), util.NormalizeProjectPath("/p/mid"),
+	}
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 	got, err = store.RecentProjectPaths(2)

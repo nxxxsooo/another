@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nxxxsooo/another/internal/i18n"
 	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/util"
 )
 
 func typeKeys(m modelState, text string) modelState {
@@ -336,8 +337,8 @@ func TestRelocateEnterOnSuggestionFillsWithoutSubmitting(t *testing.T) {
 	if cmd != nil && m.loading {
 		t.Fatal("enter on a suggestion started a relocate")
 	}
-	if got, want := m.relocateInput.Value(), wt+string(filepath.Separator); got != want {
-		t.Fatalf("input = %q, want %q", got, want)
+	if got := m.relocateInput.Value(); !fillsTo(got, wt) {
+		t.Fatalf("input = %q, want a path to %q ending in a separator", got, wt)
 	}
 	if m.overlay != overlayRelocate || m.relocateCursor != -1 {
 		t.Fatalf("overlay = %d cursor = %d", m.overlay, m.relocateCursor)
@@ -362,9 +363,20 @@ func TestRelocateArrowsMoveAndRightFills(t *testing.T) {
 		t.Fatal("tab stopped toggling move")
 	}
 	m, _ = press(m, tea.KeyRight)
-	if got := m.relocateInput.Value(); got != wt+string(filepath.Separator) {
+	if got := m.relocateInput.Value(); !fillsTo(got, wt) {
 		t.Fatalf("right did not fill: %q", got)
 	}
+}
+
+// fillsTo reports whether a filled suggestion names dir. The box shows paths
+// under home with ~, so the text is compared after expansion — the same
+// expansion enter applies — rather than character for character.
+func fillsTo(value, dir string) bool {
+	if !strings.HasSuffix(value, string(filepath.Separator)) {
+		return false
+	}
+	expanded, err := util.ExpandDir(value)
+	return err == nil && filepath.Clean(expanded) == filepath.Clean(dir)
 }
 
 // Typing narrows the list and drops the highlight, so enter after typing

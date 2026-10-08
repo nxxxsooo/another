@@ -54,6 +54,23 @@ func TestResolveDirWithoutCreateMatchesExisting(t *testing.T) {
 	}
 }
 
+// TildePath writes ~ followed by the native separator, and the relocate box
+// fills that form back into its input, so it has to expand too: on Windows
+// that is ~\, not ~/.
+func TestExpandDirAcceptsTildeWithTheNativeSeparator(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	got, err := util.ExpandDir("~" + string(filepath.Separator) + "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(home, "x"); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestResolveDirCreateRefusesFile(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "f")
 	if err := os.WriteFile(file, nil, 0o644); err != nil {

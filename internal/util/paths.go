@@ -98,12 +98,15 @@ func ExpandDir(path string) (string, error) {
 	if trimmed == "" {
 		return "", fmt.Errorf("directory must not be empty")
 	}
-	if trimmed == "~" || strings.HasPrefix(trimmed, "~/") {
+	nativeTilde := "~" + string(filepath.Separator)
+	if trimmed == "~" || strings.HasPrefix(trimmed, "~/") || strings.HasPrefix(trimmed, nativeTilde) {
 		home, err := os.UserHomeDir()
 		if err != nil || home == "" {
 			return "", fmt.Errorf("cannot expand ~: home directory is unknown")
 		}
-		trimmed = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(trimmed, "~"), "/"))
+		rest := strings.TrimPrefix(trimmed, "~")
+		rest = strings.TrimLeft(rest, `/\`)
+		trimmed = filepath.Join(home, rest)
 	}
 	return trimmed, nil
 }
