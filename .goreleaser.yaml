@@ -144,19 +144,17 @@ release:
 
     ## Compatibility
 
-    v0.16.0 extends relocate rather than replacing it. `another relocate`
-    still takes a single session ID exactly as before; it now also accepts
-    several, plus `--create` for a target directory that does not exist yet.
-    Scripts that pass one ID see the same output and exit codes. With several
-    IDs, a failure no longer stops the remaining sessions, and the command
-    exits non-zero when any failed. Relocation is still native-only: Pi and
-    OpenCode V2, as before.
+    v0.16.1 fixes shell shortcuts being skipped when the shell is slow to
+    start. A cold Windows PowerShell on a busy machine could take more than
+    the 10 seconds another allowed, and the shortcuts were skipped with a
+    bare `exit status 1`. `another aliases install` now waits up to 30
+    seconds, and a timeout is reported as one. The automatic check at TUI
+    launch keeps its 10-second budget, so starting another is no slower.
 
-    Setup no longer offers Cursor, CommandCode, or Hermes to new users. Their
-    adapters stay registered: a configuration that already enables one keeps
-    indexing it, and setup still shows that row so it can be turned off.
-    No configuration migration is needed. Script installations can run
-    `another update`.
+    Nothing else changes from v0.16.0: multi-session relocate, `--create`,
+    destination suggestions, and setup no longer offering Cursor,
+    CommandCode, or Hermes to new users. No configuration migration is
+    needed. Script installations can run `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
