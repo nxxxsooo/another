@@ -563,11 +563,24 @@ func (m modelState) relocateView() string {
 	if m.relocateMove {
 		hint = txt.relocateMoveHint
 	}
+	title := txt.relocateModalTitle
+	if n := len(m.relocateBatch); n > 0 {
+		title = fmt.Sprintf(txt.relocateBatchTitleFmt, n)
+		hint = fmt.Sprintf(txt.relocateBatchHintFmt, n)
+		if m.relocateSkipped > 0 {
+			hint += "\n" + fmt.Sprintf(txt.relocateBatchSkippedFmt, m.relocateSkipped)
+		}
+	}
 	if m.height < 18 {
-		return titleStyle.Render(txt.relocateModalTitle) + "\n" +
+		return titleStyle.Render(title) + "\n" +
 			m.relocateInput.View() + "\n" + modes
 	}
-	return titleStyle.Render(txt.relocateModalTitle) + "\n" +
+	if len(m.relocateBatch) > 0 {
+		return titleStyle.Render(title) + "\n" +
+			mutedStyle.Render(hint) + "\n\n" +
+			m.relocateInput.View() + "\n\n" + modes
+	}
+	return titleStyle.Render(title) + "\n" +
 		mutedStyle.Render(hint) + "\n\n" +
 		mutedStyle.Render(field(txt.fieldTitle)) + truncateDisplay(sm.Title, 64) + "\n" +
 		mutedStyle.Render(field(txt.fieldDirectory)) + elidePath(util.TildePath(sm.ProjectPath), 64) + "\n\n" +

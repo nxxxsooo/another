@@ -84,6 +84,16 @@ type modelState struct {
 	// relocateCanMove records whether the selected provider owns a native
 	// move, so the toggle is not offered where it cannot be honoured.
 	relocateCanMove bool
+	// relocateBatch is the marked set the box acts on when m was pressed
+	// with marks; empty means the single selected session. relocateSkipped
+	// counts marked sessions dropped up front because their agent cannot
+	// relocate, so the count the box shows is honest.
+	relocateBatch   []model.Summary
+	relocateSkipped int
+	// relocateCreatePending is set after enter on a directory that does not
+	// exist: the next enter on the same text creates it. Any edit clears it.
+	relocateCreatePending bool
+	relocateCreateFor     string
 
 	// titleCfg is empty unless setup picked an agent to write suggestions.
 	titleCfg   titler.Config

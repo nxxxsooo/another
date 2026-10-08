@@ -118,6 +118,16 @@ type uiText struct {
 	relocateChoiceFork      string
 	relocateChoiceMove      string
 	relocateMoveUnsupported string
+	// Marked-set relocate and directory creation.
+	relocateNoneMarked        string
+	relocateBatchTitleFmt     string
+	relocateBatchHintFmt      string
+	relocateBatchSkippedFmt   string
+	relocateCreateOffer       string
+	relocateBatchForkedFmt    string
+	relocateBatchMovedFmt     string
+	relocateBatchFailedFmt    string
+	relocateBatchAllFailedFmt string
 
 	// Modals.
 	sourceModalTitle   string
@@ -358,7 +368,7 @@ var englishText = uiText{
 	indexing:           "indexing…",
 	sessionCountFmt:    "%d sessions",
 	sessionCountOneFmt: "%d session",
-	markedFmt:          "%d marked  ·  ctrl+t batch · x mark · X all · esc clears",
+	markedFmt:          "%d marked  ·  ctrl+t batch rename · m relocate · x mark · X all · esc clears",
 
 	cwdUnreadable:        "Could not read the current directory, showing every session: ",
 	archivedPrefix:       "Archived ",
@@ -388,18 +398,27 @@ var englishText = uiText{
 	deleteUnsupportedFmt: "%s does not support deleting",
 	terminalTooSmall:     "Terminal too small — resize to at least 48x20",
 
-	cannotRelocateRunning:   "The session running right now cannot be relocated",
-	relocateUnsupportedFmt:  "%s does not support relocating sessions",
-	relocateSameDirectory:   "The session is already in that directory",
-	forkedPrefix:            "Forked into ",
-	movedPrefix:             "Moved to ",
-	relocateModalTitle:      "Relocate session",
-	relocateForkHint:        "Copy this session into another directory. The original stays where it is.",
-	relocateMoveHint:        "Carry this session into another directory. The old directory no longer has it.",
-	relocatePlaceholder:     "Target project directory",
-	relocateChoiceFork:      "Fork",
-	relocateChoiceMove:      "Move",
-	relocateMoveUnsupported: "%s cannot move a session",
+	cannotRelocateRunning:     "The session running right now cannot be relocated",
+	relocateUnsupportedFmt:    "%s does not support relocating sessions",
+	relocateSameDirectory:     "The session is already in that directory",
+	forkedPrefix:              "Forked into ",
+	movedPrefix:               "Moved to ",
+	relocateModalTitle:        "Relocate session",
+	relocateForkHint:          "Copy this session into another directory. The original stays where it is.",
+	relocateMoveHint:          "Carry this session into another directory. The old directory no longer has it.",
+	relocatePlaceholder:       "Target project directory",
+	relocateChoiceFork:        "Fork",
+	relocateChoiceMove:        "Move",
+	relocateMoveUnsupported:   "%s cannot move a session",
+	relocateNoneMarked:        "None of the marked sessions can be relocated by its agent",
+	relocateBatchTitleFmt:     "Relocate %d sessions",
+	relocateBatchHintFmt:      "%d marked sessions go to one directory. Press tab to fork or move.",
+	relocateBatchSkippedFmt:   "%d marked sessions skipped: their agent cannot relocate",
+	relocateCreateOffer:       "That directory does not exist — press enter again to create it",
+	relocateBatchForkedFmt:    "Forked %d into %s",
+	relocateBatchMovedFmt:     "Moved %d to %s",
+	relocateBatchFailedFmt:    "  ·  failed %d: %s · failed rows stay marked, m retries",
+	relocateBatchAllFailedFmt: "Relocate failed on %d: %s · marks kept, m retries",
 
 	sourceModalTitle:      "Source",
 	sourceModalHint:       "Which agent is this session from?",
@@ -481,7 +500,7 @@ var englishText = uiText{
 	helpListBase:         " ↑↓ session · enter open · → other agent · space preview · / search · ? keys",
 	helpListRename:       "rename the session",
 	helpListArchive:      "archive it",
-	helpListRelocate:     "send to another directory",
+	helpListRelocate:     "send to another directory (marked set if any)",
 	helpListDelete:       "delete it",
 	helpRelocate:         " type a directory · tab fork/move · enter confirm · esc cancel",
 	helpRelocateForkOnly: " type a directory · enter fork · esc cancel",
@@ -613,7 +632,7 @@ var chineseText = uiText{
 	indexing:           "正在建立索引…",
 	sessionCountFmt:    "%d 个会话",
 	sessionCountOneFmt: "%d 个会话",
-	markedFmt:          "已标记 %d 个会话  ·  ctrl+t 批量命名 · x 标记 · X 全选 · esc 清除",
+	markedFmt:          "已标记 %d 个会话  ·  ctrl+t 批量命名 · m 换目录 · x 标记 · X 全选 · esc 清除",
 
 	cwdUnreadable:        "无法读取当前目录，已显示全部会话：",
 	archivedPrefix:       "已归档 ",
@@ -643,18 +662,27 @@ var chineseText = uiText{
 	deleteUnsupportedFmt: "%s 不支持删除",
 	terminalTooSmall:     "终端太小 — 请调整到至少 48x20",
 
-	cannotRelocateRunning:   "不能移动当前正在运行的会话",
-	relocateUnsupportedFmt:  "%s 不支持换目录",
-	relocateSameDirectory:   "会话已经在这个目录里",
-	forkedPrefix:            "已复制到 ",
-	movedPrefix:             "已移动到 ",
-	relocateModalTitle:      "会话换目录",
-	relocateForkHint:        "把这条会话复制到另一个目录，原会话保持不动。",
-	relocateMoveHint:        "把这条会话本身搬到另一个目录，原目录不再有它。",
-	relocatePlaceholder:     "目标项目目录",
-	relocateChoiceFork:      "复制",
-	relocateChoiceMove:      "移动",
-	relocateMoveUnsupported: "%s 不支持移动",
+	cannotRelocateRunning:     "不能移动当前正在运行的会话",
+	relocateUnsupportedFmt:    "%s 不支持换目录",
+	relocateSameDirectory:     "会话已经在这个目录里",
+	forkedPrefix:              "已复制到 ",
+	movedPrefix:               "已移动到 ",
+	relocateModalTitle:        "会话换目录",
+	relocateForkHint:          "把这条会话复制到另一个目录，原会话保持不动。",
+	relocateMoveHint:          "把这条会话本身搬到另一个目录，原目录不再有它。",
+	relocatePlaceholder:       "目标项目目录",
+	relocateChoiceFork:        "复制",
+	relocateChoiceMove:        "移动",
+	relocateMoveUnsupported:   "%s 不支持移动",
+	relocateNoneMarked:        "标记的会话都不支持换目录",
+	relocateBatchTitleFmt:     "%d 条会话换目录",
+	relocateBatchHintFmt:      "已标记的 %d 条会话一起换到同一个目录。tab 切换复制/移动。",
+	relocateBatchSkippedFmt:   "跳过 %d 条：其 agent 不支持换目录",
+	relocateCreateOffer:       "这个目录不存在 — 再按一次 enter 创建",
+	relocateBatchForkedFmt:    "已复制 %d 条到 %s",
+	relocateBatchMovedFmt:     "已移动 %d 条到 %s",
+	relocateBatchFailedFmt:    "  ·  失败 %d 条：%s · 失败行仍有标记，m 重试",
+	relocateBatchAllFailedFmt: "换目录失败 %d 条：%s · 标记保留，m 重试",
 
 	sourceModalTitle:      "选择来源",
 	sourceModalHint:       "会话来自哪个 agent？",
@@ -736,7 +764,7 @@ var chineseText = uiText{
 	helpListBase:         " ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · / 搜索 · ? 快捷键",
 	helpListRename:       "重命名会话",
 	helpListArchive:      "归档",
-	helpListRelocate:     "换到另一个目录",
+	helpListRelocate:     "换到另一个目录（有标记时按标记集）",
 	helpListDelete:       "删除",
 	helpModalTitle:       "快捷键",
 	helpModalHint:        "当前 agent 不支持的操作不会列出。",

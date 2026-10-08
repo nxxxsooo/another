@@ -2,6 +2,9 @@ package tui
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -200,3 +203,122 @@ func TestRelocateFailureKeepsTheBoxClosedAndReportsIt(t *testing.T) {
 }
 
 var errStaleIndex = errors.New("relocated, but index refresh failed: database is locked")
+
+func relocateMarkedModel(t *testing.T, providers ...string) modelState {
+	t.Helper()
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	items := make([]list.Item, 0, len(providers))
+	for i, p := range providers {
+		id := fmt.Sprintf("s%d", i)
+		items = append(items, sessionItem{summary: model.Summary{ID: id, Provider: p, Title: "T " + id, ProjectPath: "/tmp/project"}})
+		m.marked[id] = true
+	}
+	m.sessions.SetItems(items)
+	m.layout()
+	return m
+}
+
+// With sessions marked, m takes the marked set the way ctrl+t takes it for
+// rename, rather than the row under the cursor.
+func TestRelocateWithMarksTakesTheMarkedSet(t *testing.T) {
+	m := relocateMarkedModel(t, "pi", "pi", "pi")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m = updated.(modelState)
+	if m.overlay != overlayRelocate {
+		t.Fatalf("overlay = %d", m.overlay)
+	}
+	if got := len(m.relocateBatch); got != 3 {
+		t.Fatalf("batch = %d sessions, want 3", got)
+	}
+	if !m.relocateCanMove {
+		t.Fatal("every marked agent owns a native move but the toggle was hidden")
+	}
+	if view := ansi.Strip(m.relocateView()); !strings.Contains(view, "3") {
+		t.Fatalf("view does not show the count: %q", view)
+	}
+}
+
+// Sessions whose agent cannot relocate are dropped up front and counted, so
+// the person knows before confirming that the set shrank.
+func TestRelocateWithMarksSkipsAgentsWithoutIt(t *testing.T) {
+	m := relocateMarkedModel(t, "pi", "codex")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m = updated.(modelState)
+	if m.overlay != overlayRelocate || len(m.relocateBatch) != 1 || m.relocateSkipped != 1 {
+		t.Fatalf("overlay = %d batch = %d skipped = %d", m.overlay, len(m.relocateBatch), m.relocateSkipped)
+	}
+	m = relocateMarkedModel(t, "codex")
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m = updated.(modelState)
+	if m.overlay == overlayRelocate || m.err == "" {
+		t.Fatalf("a set with nothing relocatable opened the box: overlay = %d err = %q", m.overlay, m.err)
+	}
+}
+
+// A missing directory is not a typo until the person says so: the first enter
+// explains, the second creates.
+func TestRelocateCreatesTheDirectoryOnSecondEnter(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "fresh")
+	m := relocateReadyModel(t, "pi")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m = updated.(modelState)
+	m.relocateInput.SetValue(target)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(modelState)
+	if cmd != nil || m.overlay != overlayRelocate || !m.relocateCreatePending {
+		t.Fatalf("first enter: cmd = %v overlay = %d pending = %v", cmd, m.overlay, m.relocateCreatePending)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatal("first enter created the directory")
+	}
+	// Editing the path withdraws the offer; it must be made again for the
+	// new text.
+	m = typeKeys(m, "x")
+	if m.relocateCreatePending {
+		t.Fatal("pending survived an edit")
+	}
+	m.relocateInput.SetValue(target)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(modelState)
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(modelState)
+	if cmd == nil {
+		t.Fatalf("second enter did not start the relocate: err = %q", m.err)
+	}
+	if info, err := os.Stat(target); err != nil || !info.IsDir() {
+		t.Fatalf("directory not created: %v", err)
+	}
+}
+
+// A batch result unmarks what landed and keeps the failures marked, the way
+// batch rename does, so one more m retries exactly the rows that need it.
+func TestRelocateBatchDoneKeepsFailuresMarked(t *testing.T) {
+	m := relocateMarkedModel(t, "pi", "pi", "pi")
+	m.overlay = overlayRelocate
+	updated, _ := m.Update(relocateBatchDoneMsg{
+		directory: "/tmp/worktree", moved: true,
+		done:   []string{"s0", "s2"},
+		failed: []relocateFailure{{id: "s1", err: errors.New("locked")}},
+	})
+	m = updated.(modelState)
+	if m.overlay != overlayNone {
+		t.Fatalf("box stayed open: overlay = %d", m.overlay)
+	}
+	if m.marked["s0"] || m.marked["s2"] || !m.marked["s1"] {
+		t.Fatalf("marks = %v", m.marked)
+	}
+	status := ansi.Strip(m.status)
+	if !strings.Contains(status, "2") || !strings.Contains(status, "s1") || !strings.Contains(status, "locked") {
+		t.Fatalf("status = %q", status)
+	}
+	if m.err != "" {
+		t.Fatalf("a partial success was reported as failure: %q", m.err)
+	}
+
+	updated, _ = m.Update(relocateBatchDoneMsg{directory: "/tmp/worktree", done: []string{"s1"}})
+	m = updated.(modelState)
+	if len(m.marked) != 0 {
+		t.Fatalf("marks after full success = %v", m.marked)
+	}
+}
