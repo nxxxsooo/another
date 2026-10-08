@@ -220,7 +220,9 @@ Same agent, different working directory: a worktree you just created, a reposito
 
 This is not a migration. Migration rewrites the conversation through a portable format, and tool calls and reasoning are dropped in that step. Relocation runs each agent's own native operation and keeps the content intact: OpenCode V2 calls the official `fork` and `move` endpoints, and Pi copies its own session file line for line, rewriting only the `id` and `cwd` in the header. An agent with no verified native contract reports the action as unsupported rather than passing a rewrite off as a move.
 
-Every relocation is read back before it is reported: OpenCode V2 compares the directory in the session's own row, Pi compares a content digest. Move deletes the original only after the new file verifies, and a fork that cannot be created leaves nothing behind in the source directory. The target directory has to exist — a mistyped path should fail immediately instead of producing a session that points at nothing.
+Every relocation is read back before it is reported: OpenCode V2 compares the directory in the session's own row, Pi compares a content digest. Move deletes the original only after the new file verifies, and a fork that cannot be created leaves nothing behind in the source directory. By default the target directory has to exist — a mistyped path should fail immediately instead of producing a session that points at nothing. When the directory genuinely is not there yet (a worktree you are about to open), press `Enter` a second time in the TUI to create it, or pass `--create` on the command line.
+
+To carry several at once, mark them with `x` (`X` toggles the page) and press `m`: the box acts on the marked set, and sessions whose agent cannot relocate are skipped and counted before you confirm. Each session still goes through its own native operation, so one failure does not stop the rest; failed rows keep their marks, and another `m` retries only those. The command-line form is `another relocate <id> <id>... --to-dir <path>`.
 
 ## Agents
 
@@ -290,8 +292,8 @@ another migrate <session-id> --to codex --context full -y
 another resume <session-id> --to <provider> [--from ID]
 
 # Relocate (same agent, another project directory)
-another relocate <session-id> --to-dir <path> [--from ID] [--dry-run] [-y]
-another relocate <session-id> --to-dir ../feature-worktree --move -y
+another relocate <session-id>... --to-dir <path> [--from ID] [--move] [--create] [--dry-run] [-y]
+another relocate <session-id> --to-dir ../feature-worktree --move --create -y
 
 # Rename (written to the agent's own title store)
 another rename <session-id> --title "0908|Feature|Title policy" [--from ID]
