@@ -188,14 +188,16 @@ TUI 默认按当前项目过滤。Git 仓库的主工作区、所有已登记 wo
 
 ## 换目录
 
-同一个 agent，换一个工作目录继续：新开的 worktree、搬过位置的仓库、或者本来就该在隔壁项目里做的事。按 `m` 输入目标目录，`Tab` 在两种语义之间切换：
+同一个 agent，换一个工作目录继续：新开的 worktree、搬过位置的仓库、或者本来就该在隔壁项目里做的事。按 `m` 输入目标目录——输入框下方会列出当前仓库的 worktree、补全正在输入的路径，并给出最近用过的项目目录；`↑↓` 选中一项，`→` 或 `Enter` 把它填入输入框。`Tab` 在两种语义之间切换：
 
 - **复制**（默认）：原会话留在原地，目标目录里多出一份可以继续的会话；
 - **移动**：会话本身换目录，原目录不再有它。
 
 这不是迁移。迁移会把对话经可移植格式重写一遍，工具调用和 reasoning 会在这一步丢掉；换目录走的是各 agent 自己的原生操作，内容原样保留：OpenCode V2 调用官方的 `fork` 和 `move` 接口，Pi 逐行复制自己的会话文件、只改写文件头里的 `id` 和 `cwd`。没有经过验证的原生契约的 agent 会如实报告不支持，而不是用重写冒充搬家。
 
-每次换目录都会回读校验后才报告成功：OpenCode V2 比对会话行里的目录，Pi 比对内容摘要。移动模式只有在新文件校验通过之后才删除原文件；复制模式如果目标建不起来，不会在源目录留下半个副本。目标目录必须真实存在——写错一个路径应该当场失败，而不是生成一个指向空处的会话。
+每次换目录都会回读校验后才报告成功：OpenCode V2 比对会话行里的目录，Pi 比对内容摘要。移动模式只有在新文件校验通过之后才删除原文件；复制模式如果目标建不起来，不会在源目录留下半个副本。目标目录默认必须真实存在——写错一个路径应该当场失败，而不是生成一个指向空处的会话；目录确实还没建好时（比如正要开的 worktree），TUI 里再按一次 `Enter` 就地创建，命令行加 `--create`。
+
+要一次搬多条，先用 `x` 标记（`X` 切换整页），再按 `m`：弹窗按标记集处理，agent 不支持换目录的会话会在确认前被跳过并计数。每条会话仍走自己的原生操作，一条失败不影响其余；失败行保留标记，再按一次 `m` 只重试它们。命令行形式是 `another relocate <id> <id>... --to-dir <path>`。
 
 ## 支持的 agent
 
@@ -271,8 +273,8 @@ another migrate <session-id> --to codex --context full -y
 another resume <session-id> --to <provider> [--from ID]
 
 # 换目录（同一个 agent，另一个项目目录）
-another relocate <session-id> --to-dir <path> [--from ID] [--dry-run] [-y]
-another relocate <session-id> --to-dir ../feature-worktree --move -y
+another relocate <session-id>... --to-dir <path> [--from ID] [--move] [--create] [--dry-run] [-y]
+another relocate <session-id> --to-dir ../feature-worktree --move --create -y
 
 # 改名（写进该 agent 自己的标题存储）
 another rename <session-id> --title "0908｜功能｜标题策略" [--from ID]

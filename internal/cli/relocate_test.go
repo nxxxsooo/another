@@ -13,7 +13,7 @@ func TestRelocateCommandSurface(t *testing.T) {
 	if err != nil || cmd == root {
 		t.Fatalf("missing relocate command: %v", err)
 	}
-	for _, flag := range []string{"to-dir", "from", "move", "dry-run", "yes", "refresh"} {
+	for _, flag := range []string{"to-dir", "from", "move", "dry-run", "yes", "refresh", "create"} {
 		if cmd.Flags().Lookup(flag) == nil {
 			t.Errorf("missing relocate --%s", flag)
 		}
@@ -23,8 +23,10 @@ func TestRelocateCommandSurface(t *testing.T) {
 	if flag := cmd.Flags().Lookup("move"); flag == nil || flag.DefValue != "false" {
 		t.Fatalf("relocate --move default = %#v", flag)
 	}
-	if err := cmd.Args(cmd, []string{"a", "b"}); err == nil {
-		t.Fatal("relocate accepted two session IDs")
+	// Several sessions can go to one directory in one call, the way a batch
+	// rename takes a marked set.
+	if err := cmd.Args(cmd, []string{"a", "b"}); err != nil {
+		t.Fatalf("relocate refused two session IDs: %v", err)
 	}
 	if err := cmd.Args(cmd, nil); err == nil {
 		t.Fatal("relocate accepted no session ID")
@@ -44,7 +46,8 @@ func TestRelocateRejectsBadTargetsBeforeUsingApp(t *testing.T) {
 		want string
 	}{
 		{"no target", []string{"relocate", "session"}, "--to-dir is required"},
-		{"missing directory", []string{"relocate", "session", "--to-dir", filepath.Join(t.TempDir(), "nope")}, "does not exist"},
+		{"missing directory", []string{"relocate", "session", "--to-dir", filepath.Join(t.TempDir(), "nope")}, "(pass --create to make it)"},
+		{"a file is not created over", []string{"relocate", "session", "--to-dir", file, "--create"}, "is not a directory"},
 		{"a file is not a directory", []string{"relocate", "session", "--to-dir", file}, "is not a directory"},
 		{"empty target", []string{"relocate", "session", "--to-dir", "  "}, "--to-dir is required"},
 	}

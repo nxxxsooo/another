@@ -52,6 +52,8 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onRestoreDone(msg)
 	case relocateDoneMsg:
 		return m.onRelocateDone(msg)
+	case relocateBatchDoneMsg:
+		return m.onRelocateBatchDone(msg)
 	case migrateDoneMsg:
 		return m.onMigrateDone(msg)
 	case indexRefreshedMsg:
@@ -594,34 +596,41 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.relocateMove = !m.relocateMove
 			}
 			return m, nil
+		case "down", "ctrl+n":
+			if m.relocateCursor < len(m.relocateSuggest)-1 {
+				m.relocateCursor++
+			}
+			return m, nil
+		case "up", "ctrl+p":
+			// Up from the first row hands the highlight back to the input.
+			if m.relocateCursor >= 0 {
+				m.relocateCursor--
+			}
+			return m, nil
+		case "right":
+			if m.relocateCursor >= 0 {
+				m.fillRelocateSuggestion()
+				return m, nil
+			}
 		case "enter":
-			if m.selected == nil {
-				m.err = txt.noSessionSelected
+			// A highlighted row is filled, not submitted: the destination
+			// has to be read in the box before anything moves.
+			if m.relocateCursor >= 0 {
+				m.fillRelocateSuggestion()
 				return m, nil
 			}
-			directory, err := util.ResolveExistingDir(m.relocateInput.Value())
-			if err != nil {
-				m.err = err.Error()
-				return m, nil
-			}
-			// Both sides are normalized: a stored path and a typed one can
-			// name the same directory through different symlinks.
-			if directory == util.NormalizeProjectPath(m.selected.summary.ProjectPath) {
-				m.err = txt.relocateSameDirectory
-				return m, nil
-			}
-			mode := provider.RelocateFork
-			if m.relocateMove {
-				mode = provider.RelocateMove
-			}
-			m.relocateInput.Blur()
-			m.loading = true
-			m.err = ""
-			return m, tea.Batch(m.spinner.Tick,
-				relocateSessionCmd(m.ctx, m.reg, m.idx, m.selected.summary, directory, mode))
+			return m.confirmRelocate()
 		}
+		before := m.relocateInput.Value()
 		var cmd tea.Cmd
 		m.relocateInput, cmd = m.relocateInput.Update(msg)
+		if m.relocateInput.Value() != before {
+			m.refreshRelocateSuggestions()
+		}
+		if m.relocateCreatePending && m.relocateInput.Value() != m.relocateCreateFor {
+			m.relocateCreatePending = false
+			m.err = ""
+		}
 		return m, cmd
 	}
 	switch msg.String() {
@@ -1012,6 +1021,9 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Relocate is deliberately its own action rather than a migration to
 		// the same agent: the provider moves or copies its own session, so
 		// nothing is re-rendered and nothing is lost.
+		if len(m.marked) > 0 {
+			return m.openRelocateForMarked()
+		}
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
 				m.err = txt.cannotRelocateRunning
@@ -1030,19 +1042,8 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			sel := it
 			m.selected = &sel
-			m.relocateMove = false
-			m.relocateCanMove = caps.RelocateMove
-			start := m.cwd
-			if start == "" {
-				start = it.summary.ProjectPath
-			}
-			m.relocateInput.SetValue(start)
-			m.relocateInput.CursorEnd()
-			m.relocateInput.Focus()
-			m.overlay = overlayRelocate
-			m.err = ""
-			m.layout()
-			return m, textinput.Blink
+			m.relocateBatch, m.relocateSkipped = nil, 0
+			return m.openRelocateBox(caps.RelocateMove, it.summary.ProjectPath)
 		}
 		return m, nil
 	case "ctrl+t":

@@ -84,6 +84,25 @@ type modelState struct {
 	// relocateCanMove records whether the selected provider owns a native
 	// move, so the toggle is not offered where it cannot be honoured.
 	relocateCanMove bool
+	// relocateBatch is the marked set the box acts on when m was pressed
+	// with marks; empty means the single selected session. relocateSkipped
+	// counts marked sessions dropped up front because their agent cannot
+	// relocate, so the count the box shows is honest.
+	relocateBatch   []model.Summary
+	relocateSkipped int
+	// relocateCreatePending is set after enter on a directory that does not
+	// exist: the next enter on the same text creates it. Any edit clears it.
+	relocateCreatePending bool
+	relocateCreateFor     string
+	// relocateSuggest is the destination list under the input and
+	// relocateCursor the highlighted row, -1 for none. relocateRecent is the
+	// index's project directories, read once when the box opens, and
+	// relocatePrefill the text the box opened with: until it changes, nothing
+	// has been typed and the list is not filtered by it.
+	relocateSuggest []pathSuggestion
+	relocateCursor  int
+	relocateRecent  []string
+	relocatePrefill string
 
 	// titleCfg is empty unless setup picked an agent to write suggestions.
 	titleCfg   titler.Config

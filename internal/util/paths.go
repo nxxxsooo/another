@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -50,11 +51,49 @@ func stripExtendedVolumePrefix(p string) string {
 	return strings.TrimPrefix(p, `\\?\`)
 }
 
+// ErrDirMissing marks a directory that does not exist yet, as opposed to a
+// path that exists and is not a directory. Callers that may create the target
+// on request need to tell the two apart.
+var ErrDirMissing = errors.New("directory does not exist")
+
 // ResolveExistingDir expands ~, resolves the path against the current
 // directory, and requires it to be an existing directory. Relocation targets a
 // place the user will actually run an agent in, so a typo must fail here rather
 // than produce a session pointing at nothing.
 func ResolveExistingDir(path string) (string, error) {
+	return ResolveDir(path, false)
+}
+
+// ResolveDir is ResolveExistingDir with the option to create the directory
+// when it is missing — a session carried into a worktree that is about to be
+// made. A path that exists as something other than a directory still fails.
+func ResolveDir(path string, create bool) (string, error) {
+	trimmed, err := ExpandDir(path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(trimmed)
+	if os.IsNotExist(err) {
+		if !create {
+			return "", fmt.Errorf("%w: %s", ErrDirMissing, trimmed)
+		}
+		if err := os.MkdirAll(trimmed, 0o755); err != nil {
+			return "", err
+		}
+		return NormalizeProjectPath(trimmed), nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s is not a directory", trimmed)
+	}
+	return NormalizeProjectPath(trimmed), nil
+}
+
+// ExpandDir trims a typed directory and expands a leading ~ without touching
+// the filesystem, so a dry run can name a directory it would create.
+func ExpandDir(path string) (string, error) {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" {
 		return "", fmt.Errorf("directory must not be empty")
@@ -66,17 +105,7 @@ func ResolveExistingDir(path string) (string, error) {
 		}
 		trimmed = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(trimmed, "~"), "/"))
 	}
-	info, err := os.Stat(trimmed)
-	if os.IsNotExist(err) {
-		return "", fmt.Errorf("directory %s does not exist", trimmed)
-	}
-	if err != nil {
-		return "", err
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("%s is not a directory", trimmed)
-	}
-	return NormalizeProjectPath(trimmed), nil
+	return trimmed, nil
 }
 
 // TildePath replaces the user home directory prefix with ~.

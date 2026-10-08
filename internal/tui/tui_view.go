@@ -563,15 +563,68 @@ func (m modelState) relocateView() string {
 	if m.relocateMove {
 		hint = txt.relocateMoveHint
 	}
-	if m.height < 18 {
-		return titleStyle.Render(txt.relocateModalTitle) + "\n" +
-			m.relocateInput.View() + "\n" + modes
+	title := txt.relocateModalTitle
+	if n := len(m.relocateBatch); n > 0 {
+		title = fmt.Sprintf(txt.relocateBatchTitleFmt, n)
+		hint = fmt.Sprintf(txt.relocateBatchHintFmt, n)
+		if m.relocateSkipped > 0 {
+			hint += "\n" + fmt.Sprintf(txt.relocateBatchSkippedFmt, m.relocateSkipped)
+		}
 	}
-	return titleStyle.Render(txt.relocateModalTitle) + "\n" +
-		mutedStyle.Render(hint) + "\n\n" +
-		mutedStyle.Render(field(txt.fieldTitle)) + truncateDisplay(sm.Title, 64) + "\n" +
-		mutedStyle.Render(field(txt.fieldDirectory)) + elidePath(util.TildePath(sm.ProjectPath), 64) + "\n\n" +
-		m.relocateInput.View() + "\n\n" + modes
+	var head string
+	switch {
+	case m.height < 18:
+		return titleStyle.Render(title) + "\n" +
+			m.relocateInput.View() + "\n" + modes
+	case len(m.relocateBatch) > 0:
+		head = titleStyle.Render(title) + "\n" +
+			mutedStyle.Render(hint) + "\n\n"
+	default:
+		head = titleStyle.Render(title) + "\n" +
+			mutedStyle.Render(hint) + "\n\n" +
+			mutedStyle.Render(field(txt.fieldTitle)) + truncateDisplay(sm.Title, 64) + "\n" +
+			mutedStyle.Render(field(txt.fieldDirectory)) + elidePath(util.TildePath(sm.ProjectPath), 64) + "\n\n"
+	}
+	tail := "\n\n" + modes
+	base := head + m.relocateInput.View() + tail
+	// The list takes only the rows the pane has left, so the box never
+	// grows past the screen; on a short terminal it simply is not there.
+	room := m.paneOuterHeight() - lipgloss.Height(modalStyle.Render(base))
+	return head + m.relocateInput.View() + m.relocateSuggestView(room) + tail
+}
+
+// relocateSuggestView draws at most rows suggestion lines under the input.
+func (m modelState) relocateSuggestView(rows int) string {
+	rows = min(rows, len(m.relocateSuggest))
+	if rows <= 0 {
+		return ""
+	}
+	// Keep the highlighted row on screen when the room is shorter than the
+	// list.
+	start := max(0, m.relocateCursor-rows+1)
+	width := max(12, modalInnerWidth(m.bandWidth())-14)
+	var b strings.Builder
+	for i := start; i < start+rows; i++ {
+		s := m.relocateSuggest[i]
+		path := elidePath(util.TildePath(s.path), width)
+		tag := ""
+		switch s.kind {
+		case suggestWorktree:
+			tag = txt.relocateTagWorktree
+		case suggestProject:
+			tag = txt.relocateTagProject
+		}
+		b.WriteString("\n")
+		if i == m.relocateCursor {
+			b.WriteString(okStyle.Render("› " + path))
+		} else {
+			b.WriteString("  " + path)
+		}
+		if tag != "" {
+			b.WriteString(mutedStyle.Render("  " + tag))
+		}
+	}
+	return b.String()
 }
 
 // listPosition is where the cursor sits and how far the list goes. One page is
