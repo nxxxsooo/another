@@ -144,15 +144,19 @@ release:
 
     ## Compatibility
 
-    v0.15.9 fixes missing Qwen Code title suggestions on Windows. npm's
-    `qwen.cmd` truncated the multiline prompt at its first newline, so Qwen
-    never received the title rules or the session content. another now sends
-    the complete prompt through stdin, preserving Chinese text, quotes, and
-    shell metacharacters.
+    v0.16.0 extends relocate rather than replacing it. `another relocate`
+    still takes a single session ID exactly as before; it now also accepts
+    several, plus `--create` for a target directory that does not exist yet.
+    Scripts that pass one ID see the same output and exit codes. With several
+    IDs, a failure no longer stops the remaining sessions, and the command
+    exits non-zero when any failed. Relocation is still native-only: Pi and
+    OpenCode V2, as before.
 
-    Existing Qwen authentication and model settings continue to work. Safe
-    mode and disabled chat recording remain enabled; no configuration
-    migration is needed. Script installations can run `another update`.
+    Setup no longer offers Cursor, CommandCode, or Hermes to new users. Their
+    adapters stay registered: a configuration that already enables one keeps
+    indexing it, and setup still shows that row so it can be turned off.
+    No configuration migration is needed. Script installations can run
+    `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
