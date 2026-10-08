@@ -596,11 +596,37 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.relocateMove = !m.relocateMove
 			}
 			return m, nil
+		case "down", "ctrl+n":
+			if m.relocateCursor < len(m.relocateSuggest)-1 {
+				m.relocateCursor++
+			}
+			return m, nil
+		case "up", "ctrl+p":
+			// Up from the first row hands the highlight back to the input.
+			if m.relocateCursor >= 0 {
+				m.relocateCursor--
+			}
+			return m, nil
+		case "right":
+			if m.relocateCursor >= 0 {
+				m.fillRelocateSuggestion()
+				return m, nil
+			}
 		case "enter":
+			// A highlighted row is filled, not submitted: the destination
+			// has to be read in the box before anything moves.
+			if m.relocateCursor >= 0 {
+				m.fillRelocateSuggestion()
+				return m, nil
+			}
 			return m.confirmRelocate()
 		}
+		before := m.relocateInput.Value()
 		var cmd tea.Cmd
 		m.relocateInput, cmd = m.relocateInput.Update(msg)
+		if m.relocateInput.Value() != before {
+			m.refreshRelocateSuggestions()
+		}
 		if m.relocateCreatePending && m.relocateInput.Value() != m.relocateCreateFor {
 			m.relocateCreatePending = false
 			m.err = ""

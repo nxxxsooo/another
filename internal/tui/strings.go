@@ -128,6 +128,8 @@ type uiText struct {
 	relocateBatchMovedFmt     string
 	relocateBatchFailedFmt    string
 	relocateBatchAllFailedFmt string
+	relocateTagWorktree       string
+	relocateTagProject        string
 
 	// Modals.
 	sourceModalTitle   string
@@ -419,6 +421,8 @@ var englishText = uiText{
 	relocateBatchMovedFmt:     "Moved %d to %s",
 	relocateBatchFailedFmt:    "  ·  failed %d: %s · failed rows stay marked, m retries",
 	relocateBatchAllFailedFmt: "Relocate failed on %d: %s · marks kept, m retries",
+	relocateTagWorktree:       "worktree",
+	relocateTagProject:        "project",
 
 	sourceModalTitle:      "Source",
 	sourceModalHint:       "Which agent is this session from?",
@@ -502,8 +506,8 @@ var englishText = uiText{
 	helpListArchive:      "archive it",
 	helpListRelocate:     "send to another directory (marked set if any)",
 	helpListDelete:       "delete it",
-	helpRelocate:         " type a directory · tab fork/move · enter confirm · esc cancel",
-	helpRelocateForkOnly: " type a directory · enter fork · esc cancel",
+	helpRelocate:         " type a directory · ↑↓ pick · → fill · tab fork/move · enter confirm · esc cancel",
+	helpRelocateForkOnly: " type a directory · ↑↓ pick · → fill · enter fork · esc cancel",
 
 	helpModalTitle:   "Keys",
 	helpModalHint:    "Actions the selected agent cannot do are left out.",
@@ -683,6 +687,8 @@ var chineseText = uiText{
 	relocateBatchMovedFmt:     "已移动 %d 条到 %s",
 	relocateBatchFailedFmt:    "  ·  失败 %d 条：%s · 失败行仍有标记，m 重试",
 	relocateBatchAllFailedFmt: "换目录失败 %d 条：%s · 标记保留，m 重试",
+	relocateTagWorktree:       "worktree",
+	relocateTagProject:        "项目",
 
 	sourceModalTitle:      "选择来源",
 	sourceModalHint:       "会话来自哪个 agent？",
@@ -788,8 +794,8 @@ var chineseText = uiText{
 	helpKeyQuit:          "退出",
 	helpKeyGroup:         "分组：关 / 日期 / 目录",
 
-	helpRelocate:         " 输入目录 · tab 复制/移动 · enter 确认 · esc 取消",
-	helpRelocateForkOnly: " 输入目录 · enter 复制 · esc 取消",
+	helpRelocate:         " 输入目录 · ↑↓ 选择 · → 填入 · tab 复制/移动 · enter 确认 · esc 取消",
+	helpRelocateForkOnly: " 输入目录 · ↑↓ 选择 · → 填入 · enter 复制 · esc 取消",
 
 	setupAgentsTitle:      "选择你使用的 agent",
 	setupAgentsHint:       "Space 开关 agent；Shift+↑↓ 调整显示顺序。",

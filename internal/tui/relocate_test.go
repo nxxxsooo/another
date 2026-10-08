@@ -291,6 +291,94 @@ func TestRelocateCreatesTheDirectoryOnSecondEnter(t *testing.T) {
 	}
 }
 
+func relocateSuggestModel(t *testing.T) (modelState, string) {
+	t.Helper()
+	wt, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := relocateReadyModel(t, "pi")
+	m.projectScope.Worktrees = []string{wt}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	return updated.(modelState), wt
+}
+
+func press(m modelState, k tea.KeyType) (modelState, tea.Cmd) {
+	updated, cmd := m.Update(tea.KeyMsg{Type: k})
+	return updated.(modelState), cmd
+}
+
+// The box opens with the worktrees on offer even though the input already
+// holds the launch directory: nothing has been typed to filter by yet.
+func TestRelocateBoxOpensWithSuggestions(t *testing.T) {
+	m, wt := relocateSuggestModel(t)
+	if len(m.relocateSuggest) == 0 || m.relocateSuggest[0].path != wt {
+		t.Fatalf("suggestions = %+v, want the worktree first", m.relocateSuggest)
+	}
+	if m.relocateCursor != -1 {
+		t.Fatalf("a row was highlighted before any arrow: %d", m.relocateCursor)
+	}
+	view := ansi.Strip(m.relocateView())
+	if !strings.Contains(view, filepath.Base(wt)) || !strings.Contains(view, txt.relocateTagWorktree) {
+		t.Fatalf("view hides the suggestion: %q", view)
+	}
+}
+
+// Enter on a highlighted row fills the box and stops there; only a second
+// enter relocates. A glance at a row never moves a session.
+func TestRelocateEnterOnSuggestionFillsWithoutSubmitting(t *testing.T) {
+	m, wt := relocateSuggestModel(t)
+	m, _ = press(m, tea.KeyDown)
+	if m.relocateCursor != 0 {
+		t.Fatalf("down: cursor = %d", m.relocateCursor)
+	}
+	m, cmd := press(m, tea.KeyEnter)
+	if cmd != nil && m.loading {
+		t.Fatal("enter on a suggestion started a relocate")
+	}
+	if got, want := m.relocateInput.Value(), wt+string(filepath.Separator); got != want {
+		t.Fatalf("input = %q, want %q", got, want)
+	}
+	if m.overlay != overlayRelocate || m.relocateCursor != -1 {
+		t.Fatalf("overlay = %d cursor = %d", m.overlay, m.relocateCursor)
+	}
+	m, cmd = press(m, tea.KeyEnter)
+	if cmd == nil || !m.loading {
+		t.Fatalf("second enter did not relocate: err = %q", m.err)
+	}
+}
+
+func TestRelocateArrowsMoveAndRightFills(t *testing.T) {
+	m, wt := relocateSuggestModel(t)
+	m, _ = press(m, tea.KeyDown)
+	m, _ = press(m, tea.KeyUp)
+	if m.relocateCursor != -1 {
+		t.Fatalf("up from the first row should return to the input: %d", m.relocateCursor)
+	}
+	m, _ = press(m, tea.KeyDown)
+	// Tab still toggles fork and move with a row highlighted.
+	m, _ = press(m, tea.KeyTab)
+	if !m.relocateMove {
+		t.Fatal("tab stopped toggling move")
+	}
+	m, _ = press(m, tea.KeyRight)
+	if got := m.relocateInput.Value(); got != wt+string(filepath.Separator) {
+		t.Fatalf("right did not fill: %q", got)
+	}
+}
+
+// Typing narrows the list and drops the highlight, so enter after typing
+// means the typed text.
+func TestRelocateTypingRefiltersAndClearsTheHighlight(t *testing.T) {
+	m, _ := relocateSuggestModel(t)
+	m, _ = press(m, tea.KeyDown)
+	m.relocateInput.SetValue("")
+	m = typeKeys(m, "zzz-nothing-matches")
+	if m.relocateCursor != -1 || len(m.relocateSuggest) != 0 {
+		t.Fatalf("cursor = %d suggestions = %+v", m.relocateCursor, m.relocateSuggest)
+	}
+}
+
 // A batch result unmarks what landed and keeps the failures marked, the way
 // batch rename does, so one more m retries exactly the rows that need it.
 func TestRelocateBatchDoneKeepsFailuresMarked(t *testing.T) {

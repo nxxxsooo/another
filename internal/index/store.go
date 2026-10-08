@@ -787,6 +787,28 @@ func (s *Store) ProjectPathsUnder(root string) ([]string, error) {
 	return paths, rows.Err()
 }
 
+// RecentProjectPaths lists distinct project directories, the most recently
+// active first. Whether each still exists is the caller's question: the index
+// records what agents wrote, not what is on disk now.
+func (s *Store) RecentProjectPaths(limit int) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT project_path FROM sessions WHERE project_path <> ''
+		 GROUP BY project_path ORDER BY MAX(updated_at) DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var paths []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, rows.Err()
+}
+
 func (s *Store) CountByProvider() (map[string]int, error) {
 	return s.CountByProviderFiltered(ListOpts{IncludeSubagents: true})
 }

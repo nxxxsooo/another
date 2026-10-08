@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -80,10 +81,50 @@ func (m modelState) openRelocateBox(canMove bool, fallbackStart string) (tea.Mod
 	m.relocateInput.SetValue(start)
 	m.relocateInput.CursorEnd()
 	m.relocateInput.Focus()
+	m.relocatePrefill = start
+	m.relocateRecent = nil
+	if m.idx != nil {
+		// A local read capped well above what the list shows; a failure
+		// only means fewer suggestions.
+		m.relocateRecent, _ = m.idx.RecentProjectPaths(200)
+	}
+	m.refreshRelocateSuggestions()
 	m.overlay = overlayRelocate
 	m.err = ""
 	m.layout()
 	return m, textinput.Blink
+}
+
+// refreshRelocateSuggestions recomputes the list for the current text and
+// drops the highlight, so enter after any edit means what was typed.
+func (m *modelState) refreshRelocateSuggestions() {
+	typed := m.relocateInput.Value()
+	if typed == m.relocatePrefill {
+		typed = ""
+	}
+	src := suggestSources{
+		home: util.HomeDir(), cwd: m.cwd,
+		worktrees: m.projectScope.Worktrees, recent: m.relocateRecent,
+	}
+	if len(m.relocateBatch) == 0 && m.selected != nil {
+		src.exclude = util.NormalizeProjectPath(m.selected.summary.ProjectPath)
+	}
+	m.relocateSuggest = suggestPaths(typed, src, relocateSuggestLimit)
+	m.relocateCursor = -1
+}
+
+// fillRelocateSuggestion puts the highlighted row in the box with a trailing
+// separator, so the list immediately offers its children.
+func (m *modelState) fillRelocateSuggestion() {
+	if m.relocateCursor < 0 || m.relocateCursor >= len(m.relocateSuggest) {
+		return
+	}
+	path := util.TildePath(m.relocateSuggest[m.relocateCursor].path)
+	m.relocateInput.SetValue(path + string(filepath.Separator))
+	m.relocateInput.CursorEnd()
+	m.relocateCreatePending = false
+	m.err = ""
+	m.refreshRelocateSuggestions()
 }
 
 // confirmRelocate is enter in the box. A directory that does not exist is

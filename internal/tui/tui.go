@@ -94,6 +94,15 @@ type modelState struct {
 	// exist: the next enter on the same text creates it. Any edit clears it.
 	relocateCreatePending bool
 	relocateCreateFor     string
+	// relocateSuggest is the destination list under the input and
+	// relocateCursor the highlighted row, -1 for none. relocateRecent is the
+	// index's project directories, read once when the box opens, and
+	// relocatePrefill the text the box opened with: until it changes, nothing
+	// has been typed and the list is not filtered by it.
+	relocateSuggest []pathSuggestion
+	relocateCursor  int
+	relocateRecent  []string
+	relocatePrefill string
 
 	// titleCfg is empty unless setup picked an agent to write suggestions.
 	titleCfg   titler.Config
