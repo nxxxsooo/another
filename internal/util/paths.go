@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -50,11 +51,23 @@ func stripExtendedVolumePrefix(p string) string {
 	return strings.TrimPrefix(p, `\\?\`)
 }
 
+// ErrDirMissing marks a directory that does not exist yet, as opposed to a
+// path that exists and is not a directory. Callers that may create the target
+// on request need to tell the two apart.
+var ErrDirMissing = errors.New("directory does not exist")
+
 // ResolveExistingDir expands ~, resolves the path against the current
 // directory, and requires it to be an existing directory. Relocation targets a
 // place the user will actually run an agent in, so a typo must fail here rather
 // than produce a session pointing at nothing.
 func ResolveExistingDir(path string) (string, error) {
+	return ResolveDir(path, false)
+}
+
+// ResolveDir is ResolveExistingDir with the option to create the directory
+// when it is missing — a session carried into a worktree that is about to be
+// made. A path that exists as something other than a directory still fails.
+func ResolveDir(path string, create bool) (string, error) {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" {
 		return "", fmt.Errorf("directory must not be empty")
@@ -68,7 +81,13 @@ func ResolveExistingDir(path string) (string, error) {
 	}
 	info, err := os.Stat(trimmed)
 	if os.IsNotExist(err) {
-		return "", fmt.Errorf("directory %s does not exist", trimmed)
+		if !create {
+			return "", fmt.Errorf("%w: %s", ErrDirMissing, trimmed)
+		}
+		if err := os.MkdirAll(trimmed, 0o755); err != nil {
+			return "", err
+		}
+		return NormalizeProjectPath(trimmed), nil
 	}
 	if err != nil {
 		return "", err

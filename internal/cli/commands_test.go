@@ -248,6 +248,48 @@ func TestRelocateForksMovesAndDryRuns(t *testing.T) {
 	wantContains(t, out, "Every indexed directory still exists.")
 }
 
+// --create makes the target on the way in, so a session can be carried into a
+// worktree that does not exist yet.
+func TestRelocateCreatesTargetOnRequest(t *testing.T) {
+	app, alpha, _, _ := seededApp(t)
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(base, "fresh", "worktree")
+	out := mustRun(t, app, "relocate", "alpha-two", "--to-dir", target, "--move", "--create", "--yes")
+	wantContains(t, out, "✅ Moved alpha-two to "+target)
+	if info, err := os.Stat(target); err != nil || !info.IsDir() {
+		t.Fatalf("target not created: %v", err)
+	}
+	conv, err := alpha.read("alpha-two")
+	if err != nil || conv.ProjectPath != target {
+		t.Fatalf("moved project = %q, %v", conv.ProjectPath, err)
+	}
+}
+
+// Several IDs relocate in one call. Each gets its own result line; a failure
+// does not stop the rest and the command exits non-zero at the end.
+func TestRelocateManySessionsReportsEachAndContinuesPastFailures(t *testing.T) {
+	app, alpha, _, _ := seededApp(t)
+	target, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := run(t, app, "relocate", "alpha-one", "no-such", "alpha-two", "--to-dir", target, "--move", "--yes")
+	wantErr(t, err, "1 of 3 sessions failed")
+	wantContains(t, out, "✅ Moved alpha-one to "+target, "✅ Moved alpha-two to "+target, "❌ no-such:")
+	for _, id := range []string{"alpha-one", "alpha-two"} {
+		conv, err := alpha.read(id)
+		if err != nil || conv.ProjectPath != target {
+			t.Fatalf("%s project = %q, %v", id, conv.ProjectPath, err)
+		}
+	}
+
+	out = mustRun(t, app, "relocate", "alpha-one", "alpha-two", "--to-dir", t.TempDir(), "--dry-run")
+	wantContains(t, out, "Dry run OK: would fork alpha-one", "Dry run OK: would fork alpha-two")
+}
+
 func TestIndexStatusUpdateAndRebuild(t *testing.T) {
 	app, _, _, _ := seededApp(t)
 	out := mustRun(t, app, "index", "update")
