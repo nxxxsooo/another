@@ -268,6 +268,17 @@ func TestRelocateCreatesTargetOnRequest(t *testing.T) {
 	}
 }
 
+// A dry run writes nothing, and a directory is something.
+func TestRelocateDryRunDoesNotCreateTheTarget(t *testing.T) {
+	app, _, _, _ := seededApp(t)
+	target := filepath.Join(t.TempDir(), "fresh")
+	out := mustRun(t, app, "relocate", "alpha-two", "--to-dir", target, "--create", "--dry-run")
+	wantContains(t, out, "would create "+target, "Dry run OK: would fork alpha-two")
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("dry run created the target: %v", err)
+	}
+}
+
 // Several IDs relocate in one call. Each gets its own result line; a failure
 // does not stop the rest and the command exits non-zero at the end.
 func TestRelocateManySessionsReportsEachAndContinuesPastFailures(t *testing.T) {

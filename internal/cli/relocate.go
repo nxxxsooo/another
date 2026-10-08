@@ -32,7 +32,17 @@ func (a *App) relocateCmd() *cobra.Command {
 			if strings.TrimSpace(toDir) == "" {
 				return fmt.Errorf("--to-dir is required")
 			}
-			directory, err := util.ResolveDir(toDir, create)
+			// A dry run writes nothing, so a missing target is reported as
+			// the directory --create would make rather than made.
+			directory, err := util.ResolveDir(toDir, create && !dryRun)
+			if errors.Is(err, util.ErrDirMissing) && create && dryRun {
+				expanded, expandErr := util.ExpandDir(toDir)
+				if expandErr != nil {
+					return expandErr
+				}
+				directory, err = util.NormalizeProjectPath(expanded), nil
+				fmt.Printf("Dry run: would create %s\n", directory)
+			}
 			if errors.Is(err, util.ErrDirMissing) {
 				return fmt.Errorf("%w (pass --create to make it)", err)
 			}

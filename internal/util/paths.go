@@ -68,16 +68,9 @@ func ResolveExistingDir(path string) (string, error) {
 // when it is missing — a session carried into a worktree that is about to be
 // made. A path that exists as something other than a directory still fails.
 func ResolveDir(path string, create bool) (string, error) {
-	trimmed := strings.TrimSpace(path)
-	if trimmed == "" {
-		return "", fmt.Errorf("directory must not be empty")
-	}
-	if trimmed == "~" || strings.HasPrefix(trimmed, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			return "", fmt.Errorf("cannot expand ~: home directory is unknown")
-		}
-		trimmed = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(trimmed, "~"), "/"))
+	trimmed, err := ExpandDir(path)
+	if err != nil {
+		return "", err
 	}
 	info, err := os.Stat(trimmed)
 	if os.IsNotExist(err) {
@@ -96,6 +89,23 @@ func ResolveDir(path string, create bool) (string, error) {
 		return "", fmt.Errorf("%s is not a directory", trimmed)
 	}
 	return NormalizeProjectPath(trimmed), nil
+}
+
+// ExpandDir trims a typed directory and expands a leading ~ without touching
+// the filesystem, so a dry run can name a directory it would create.
+func ExpandDir(path string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", fmt.Errorf("directory must not be empty")
+	}
+	if trimmed == "~" || strings.HasPrefix(trimmed, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return "", fmt.Errorf("cannot expand ~: home directory is unknown")
+		}
+		trimmed = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(trimmed, "~"), "/"))
+	}
+	return trimmed, nil
 }
 
 // TildePath replaces the user home directory prefix with ~.
