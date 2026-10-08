@@ -171,12 +171,25 @@ func CLIAvailable(id string) bool {
 // through an end-to-end maintainer pass on every release. They are real
 // providers, not deprecated ones; the tier only decides how prominently setup
 // offers them, so a list of ten does not bury the six that are tested.
-var compatibilityAdapters = map[string]bool{
-	"cursor": true, "commandcode": true, "codem": true, "hermes": true,
-}
+//
+// The map is empty for now: setup offers every listed agent in one flat list
+// and the fold it drives stays dormant. Put an agent back here to fold it.
+var compatibilityAdapters = map[string]bool{}
 
 // IsCompatibilityAdapter reports whether an agent belongs to the second tier.
 func IsCompatibilityAdapter(id string) bool { return compatibilityAdapters[NormalizeID(id)] }
+
+// hiddenFromSetup are the agents setup no longer offers. Their providers stay
+// registered — a saved configuration that already enables one keeps working
+// and still shows the row so it can be turned off — but a fresh run does not
+// list them.
+var hiddenFromSetup = map[string]bool{
+	"cursor": true, "commandcode": true, "hermes": true,
+}
+
+// HiddenFromSetup reports whether setup leaves an agent off the page unless it
+// is already enabled.
+func HiddenFromSetup(id string) bool { return hiddenFromSetup[NormalizeID(id)] }
 
 func DisplayName(reg *Registry, id string) string {
 	id = NormalizeID(id)

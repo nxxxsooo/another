@@ -227,6 +227,12 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 	chosen := initialSetupSelection(initial.EnabledProviders)
 	var items []setupItem
 	for _, p := range reg.All() {
+		// An agent setup has stopped offering is still shown when a saved
+		// configuration enables it: a setting that cannot be seen cannot be
+		// turned off.
+		if registry.HiddenFromSetup(p.ID()) && !chosen[p.ID()] {
+			continue
+		}
 		data := p.Installed()
 		cli := registry.CLIAvailable(p.ID())
 		item := setupItem{

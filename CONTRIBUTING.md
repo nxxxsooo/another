@@ -55,7 +55,7 @@ Scrub fixtures: no absolute home paths that identify a person, no tokens, no pri
 
 ## Provider tiers
 
-Pi, OpenCode, Claude Code, Codex, Antigravity, and Qwen Code are continuously tested and enter every release regression pass. Cursor, CommandCode, CodeM, and Hermes are compatibility adapters: kept working, but not promised an end-to-end maintainer test on every release. A change that would break a compatibility adapter still needs a reason.
+Pi, OpenCode, Claude Code, Codex, Antigravity, and Qwen Code are continuously tested and enter every release regression pass. CodeM is a compatibility adapter: kept working and offered in setup, but not promised an end-to-end maintainer test on every release. Cursor, CommandCode, and Hermes remain in the registry for existing configurations but are no longer offered by setup (`registry.HiddenFromSetup`). A change that would break a compatibility adapter still needs a reason.
 
 ## Pull requests
 

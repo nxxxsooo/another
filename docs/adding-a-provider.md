@@ -92,4 +92,4 @@ another migrate <session> --to <id> --dry-run
 
 ## Tiers
 
-The README distinguishes two tiers. Continuously tested agents go through an end-to-end pass every release. Compatibility adapters are kept working but are not exercised end to end each time; mark those in `compatibilityAdapters` so setup does not bury the tested ones. A new adapter starts as a compatibility adapter unless the maintainer commits to testing it on every release.
+The README distinguishes two tiers. Continuously tested agents go through an end-to-end pass every release. Compatibility adapters are kept working but are not exercised end to end each time; mark those in `compatibilityAdapters` to fold them below the tested ones in setup (the map is currently empty, so the list is flat), or in `hiddenFromSetup` to keep a provider registered without offering it to new users. A new adapter starts as a compatibility adapter unless the maintainer commits to testing it on every release.

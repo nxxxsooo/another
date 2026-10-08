@@ -22,6 +22,24 @@ func TestNormalizeID(t *testing.T) {
 	}
 }
 
+// Setup lists seven agents in one flat list. The three it stopped offering
+// stay registered so a configuration that already names one keeps working.
+func TestSetupHidesRetiredAdaptersButKeepsThemRegistered(t *testing.T) {
+	for _, id := range []string{"cursor", "cursor-agent", "commandcode", "hermes"} {
+		if !registry.HiddenFromSetup(id) {
+			t.Fatalf("%q is still offered by setup", id)
+		}
+		if _, err := registry.New().Get(id); err != nil {
+			t.Fatalf("%q left the registry: %v", id, err)
+		}
+	}
+	for _, id := range []string{"pi", "codex", "claude-code", "opencode", "agy", "qwen", "codem"} {
+		if registry.HiddenFromSetup(id) || registry.IsCompatibilityAdapter(id) {
+			t.Fatalf("%q is hidden or folded in setup", id)
+		}
+	}
+}
+
 func TestNewEnabledKeepsOnlyConfiguredProviders(t *testing.T) {
 	reg := registry.NewEnabled([]string{"pi", "o2", "unknown"})
 	ids := reg.IDs()

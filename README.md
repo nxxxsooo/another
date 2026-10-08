@@ -201,7 +201,7 @@ TUI 默认按当前项目过滤。Git 仓库的主工作区、所有已登记 wo
 
 OpenCode V2 正式版与 V1 历史会话共用一个 `opencode` provider。another 默认向正式 V2 写入，同时继续读取 V1 的 `session` schema 和早期并行安装留下的 `opencode2.db`；列表、筛选和 setup 只出现一个 OpenCode，但恢复、重命名、归档、换目录和删除会按每条会话的真实存储与能力分派。旧配置中的 `opencode2`、`open-code-2` 和 `o2` 会自动映射到 `opencode`，不会移动或改写 agent 自己的数据库。
 
-持续实测范围是 **Pi、OpenCode、Claude Code、Codex、Antigravity 和 Qwen Code**；这六个进入每次发布的回归检查。Cursor、CommandCode、CodeM 和 Hermes 保留兼容适配，但不承诺每个版本都在维护者环境完成端到端实测。首次 setup 不会根据本机残留数据自动全选，必须由用户手动选择要索引和展示的 agent。
+持续实测范围是 **Pi、OpenCode、Claude Code、Codex、Antigravity 和 Qwen Code**；这六个进入每次发布的回归检查。CodeM 保留兼容适配并在 setup 中提供，但不承诺每个版本都在维护者环境完成端到端实测。Cursor、CommandCode 和 Hermes 的适配代码仍在，已有配置可继续使用，但 setup 不再向新用户提供这三项。首次 setup 不会根据本机残留数据自动全选，必须由用户手动选择要索引和展示的 agent。
 
 从 `v0.15.8` 起，agent 数据根目录的环境变量（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`QWEN_HOME` 等）指向系统临时目录正下方时会回落到真实的用户目录。围绕一次 agent 运行搭沙盒的工具——记忆类插件拉起 Claude Code 做会话整理是已知的一例——会把一次性临时目录当成 agent 的家目录，连同你的设置和钩子一起复制进去；沙盒会话结束时，钩子里跑的 another 继承了那套环境，就曾把整个会话列表换成工具自己的内部会话，这些行事后还删不掉。沙盒目录现在不再被当作真实数据根，正常通过环境变量搬家不受影响；被旧版本污染过的列表跑一次 `another index rebuild` 即可恢复。
 
