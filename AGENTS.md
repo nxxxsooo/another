@@ -1,5 +1,11 @@
 # another — Project Instructions
 
+## Development Test Contract
+
+- When Mingjian asks for “dev test” or “test first”, deliver the current changes through `adev` (`another-dev`), not only `./bin/another`. After the relevant automated checks pass, run `make install` to update the development installation.
+- Verify that `another-dev` resolves to the installed development binary, its `--version` carries `+dev`, and it matches the build just tested. Confirm that `adev` points to `another-dev`; if interactive-shell verification is blocked, report that gap rather than claiming the shortcut was tested.
+- Keep the released `another` and its `a` shortcut untouched. Development testing does not authorize a tag, release, publication, or consumer upgrade.
+
 ## Release Contract
 
 Treat implementation, publication, distribution, and maintainer installation as separate states. A change intended for delivery is not complete merely because code and tests pass.
