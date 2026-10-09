@@ -144,17 +144,18 @@ release:
 
     ## Compatibility
 
-    v0.16.1 fixes shell shortcuts being skipped when the shell is slow to
-    start. A cold Windows PowerShell on a busy machine could take more than
-    the 10 seconds another allowed, and the shortcuts were skipped with a
-    bare `exit status 1`. `another aliases install` now waits up to 30
-    seconds, and a timeout is reported as one. The automatic check at TUI
-    launch keeps its 10-second budget, so starting another is no slower.
+    v0.17.0 changes native relocation from fork-by-default to move-by-default.
+    `another relocate ... --to-dir ...` now carries the session itself;
+    the source directory no longer has it after the destination verifies.
+    To keep the original, add `--fork`, or select Fork with Tab in the TUI.
+    Update scripts that relied on the previous default to pass `--fork`.
 
-    Nothing else changes from v0.16.0: multi-session relocate, `--create`,
-    destination suggestions, and setup no longer offering Cursor,
-    CommandCode, or Hermes to new users. No configuration migration is
-    needed. Script installations can run `another update`.
+    Existing `--move` calls still work, and `--move=false` still forks.
+    `--move` and `--fork` cannot be combined. The TUI opens on Move each
+    time unless a selected session supports only Fork. Provider contracts
+    and verification before source removal are unchanged; cross-agent
+    migration still leaves the source untouched. No configuration migration
+    is needed. Script installations can run `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)

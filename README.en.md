@@ -136,7 +136,7 @@ With `~/.local/bin` or your Go bin directory on `PATH`, run:
 another
 ```
 
-The first run opens a Charmtone setup screen. The top of the first page picks the interface language with `←→`: **Auto** (the default, which follows the terminal's locale), **English**, or **中文**. The page redraws as you press, so a wrong choice is visible immediately instead of after saving. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page lists the six continuously tested agents; the four compatibility adapters sit behind one folded row that `Space` opens. The fold starts open when the saved configuration already enables one of them, because a setting you cannot see is a setting you cannot turn off. The second page picks an optional agent for AI title suggestions; it defaults to off. When OpenCode is one of your agents, that page also carries an `OpenCode title plugin` row: `t` turns it on, and only then does another write the plugin into OpenCode's configuration directory. The row names that directory and what is in it already. Run `another setup` any time to change any of these choices.
+The first run opens a Charmtone setup screen. The top of the first page picks the interface language with `←→`: **Auto** (the default, which follows the terminal's locale), **English**, or **中文**. The page redraws as you press, so a wrong choice is visible immediately instead of after saving. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page offers the six continuously tested agents and CodeM in one flat list, with nothing selected on first run. Cursor, CommandCode, and Hermes appear only when already enabled in a saved configuration, so existing users can still turn them off. The second page picks an optional agent for AI title suggestions; it defaults to off. When OpenCode is one of your agents, that page also carries an `OpenCode title plugin` row: `t` turns it on, and only then does another write the plugin into OpenCode's configuration directory. The row names that directory and what is in it already. Run `another setup` any time to change any of these choices.
 
 Ghostty over SSH usually forwards `TERM=xterm-ghostty` without forwarding
 `COLORTERM`. From `v0.13.3`, another recognizes that environment directly and
@@ -215,8 +215,10 @@ The footer carries only the keys every session uses, ending in `?`. That opens t
 
 Same agent, different working directory: a worktree you just created, a repository that moved, or work that belonged in the project next door all along. Press `m` and type the target directory — the box suggests this repository's worktrees, completes the path you are typing, and offers directories you have recently worked in; `↑↓` highlights one and `→` or `Enter` puts it in the box. `Tab` chooses between two readings:
 
-- **Fork** (the default): the original stays where it is, and the target directory gains a session you can continue.
-- **Move:** the session itself changes directory, and the old one no longer has it.
+- **Move** (the default): the session itself changes directory, and the old one no longer has it.
+- **Fork:** the original stays where it is, and the target directory gains a session you can continue.
+
+The CLI defaults to move; pass `--fork` to keep the original. Existing `--move` calls still work, but `--move` and `--fork` cannot be combined. The TUI opens on move every time unless any selected session cannot move, in which case only fork is offered.
 
 This is not a migration. Migration rewrites the conversation through a portable format, and tool calls and reasoning are dropped in that step. Relocation runs each agent's own native operation and keeps the content intact: OpenCode V2 calls the official `fork` and `move` endpoints, and Pi copies its own session file line for line, rewriting only the `id` and `cwd` in the header. An agent with no verified native contract reports the action as unsupported rather than passing a rewrite off as a move.
 
@@ -292,8 +294,8 @@ another migrate <session-id> --to codex --context full -y
 another resume <session-id> --to <provider> [--from ID]
 
 # Relocate (same agent, another project directory)
-another relocate <session-id>... --to-dir <path> [--from ID] [--move] [--create] [--dry-run] [-y]
-another relocate <session-id> --to-dir ../feature-worktree --move --create -y
+another relocate <session-id>... --to-dir <path> [--from ID] [--fork | --move] [--create] [--dry-run] [-y]
+another relocate <session-id> --to-dir ../feature-worktree --create -y
 
 # Rename (written to the agent's own title store)
 another rename <session-id> --title "0908|Feature|Title policy" [--from ID]
@@ -343,7 +345,7 @@ OpenCode writes through the released V2 import/API surface by default. An early 
 - Failed verification removes only the artifact created by that migration.
 - `Ctrl+D` defaults to **Cancel** and shows the provider, title, project, and full session ID.
 - The delete confirmation states whether that agent's delete can be undone, and an undo is offered only where the same session comes back — never as a re-rendered copy.
-- Relocation opens on fork every time; move is an explicit choice, and it deletes the original only after the new location verifies.
+- Relocation defaults to move except for fork-only sessions; it deletes the original only after the new location verifies. To keep the original, select Fork in the TUI or pass `--fork` on the CLI.
 - Exactly identified active sessions are protected from rename, archive, relocate, and delete.
 - The configuration directory is mode `0700`; configuration and SQLite index files are mode `0600`.
 - Disabling an agent in setup removes only its local index rows, never its native sessions.

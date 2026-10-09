@@ -59,40 +59,55 @@ func TestRelocateKeyIsRefusedForProvidersWithoutIt(t *testing.T) {
 	}
 }
 
-// Fork is the default reading of the action, and the destructive one has to be
-// chosen deliberately every time the box opens.
-func TestRelocateOpensOnForkAndTogglesToMove(t *testing.T) {
+// Every opening defaults to move where supported, even after choosing fork.
+func TestRelocateOpensOnMoveAndTogglesToFork(t *testing.T) {
 	m := relocateReadyModel(t, "pi")
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 	m = updated.(modelState)
 	if m.overlay != overlayRelocate {
 		t.Fatalf("m did not open the relocate box: overlay = %d", m.overlay)
 	}
-	if m.relocateMove {
-		t.Fatal("the box opened on move")
+	if !m.relocateMove {
+		t.Fatal("the box did not open on move")
 	}
 	if !m.relocateCanMove {
 		t.Fatal("pi owns a native move but the box hid it")
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(modelState)
-	if !m.relocateMove {
-		t.Fatal("tab did not switch to move")
+	if m.relocateMove {
+		t.Fatal("tab did not switch to fork")
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(modelState)
-	if m.relocateMove {
-		t.Fatal("tab did not switch back to fork")
+	if !m.relocateMove {
+		t.Fatal("tab did not switch back to move")
 	}
-	// Reopening resets to fork rather than remembering the destructive mode.
+	// Reopening resets to move rather than remembering fork.
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(modelState)
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(modelState)
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 	m = updated.(modelState)
+	if !m.relocateMove {
+		t.Fatal("the box remembered fork from the previous time it was open")
+	}
+}
+
+func TestRelocateForkOnlyBoxCannotToggleToMove(t *testing.T) {
+	m := relocateReadyModel(t, "pi")
+	updated, _ := m.openRelocateBox(false, "/tmp/project")
+	m = updated.(modelState)
+	if m.relocateMove || m.relocateCanMove {
+		t.Fatal("fork-only box offered move")
+	}
+	m, _ = press(m, tea.KeyTab)
 	if m.relocateMove {
-		t.Fatal("the box remembered move from the previous time it was open")
+		t.Fatal("tab selected an unsupported move")
+	}
+	if view := ansi.Strip(m.relocateView()); !strings.Contains(view, txt.relocateForkHint) {
+		t.Fatalf("fork-only box hides the source-preserving hint: %q", view)
 	}
 }
 
@@ -235,6 +250,9 @@ func TestRelocateWithMarksTakesTheMarkedSet(t *testing.T) {
 	if !m.relocateCanMove {
 		t.Fatal("every marked agent owns a native move but the toggle was hidden")
 	}
+	if !m.relocateMove {
+		t.Fatal("the marked-set box did not default to move")
+	}
 	if view := ansi.Strip(m.relocateView()); !strings.Contains(view, "3") {
 		t.Fatalf("view does not show the count: %q", view)
 	}
@@ -359,8 +377,8 @@ func TestRelocateArrowsMoveAndRightFills(t *testing.T) {
 	m, _ = press(m, tea.KeyDown)
 	// Tab still toggles fork and move with a row highlighted.
 	m, _ = press(m, tea.KeyTab)
-	if !m.relocateMove {
-		t.Fatal("tab stopped toggling move")
+	if m.relocateMove {
+		t.Fatal("tab did not toggle to fork with a suggestion highlighted")
 	}
 	m, _ = press(m, tea.KeyRight)
 	if got := m.relocateInput.Value(); !fillsTo(got, wt) {

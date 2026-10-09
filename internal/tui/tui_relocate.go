@@ -71,7 +71,7 @@ func (m modelState) openRelocateForMarked() (tea.Model, tea.Cmd) {
 }
 
 func (m modelState) openRelocateBox(canMove bool, fallbackStart string) (tea.Model, tea.Cmd) {
-	m.relocateMove = false
+	m.relocateMove = canMove
 	m.relocateCanMove = canMove
 	m.relocateCreatePending = false
 	start := m.cwd

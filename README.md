@@ -119,7 +119,7 @@ Windows 上解压 `another_*_windows_amd64.zip`，把 `another.exe` 放到 `PATH
 another
 ```
 
-首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。页面默认只列持续实测的六个 agent，四个兼容适配折在末尾一行里，光标移到那行按 `Space` 展开；如果配置里已经启用了其中某个，这行开局就是展开的——看不见的设置没法关掉。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。启用了 OpenCode 时，这一页还有一行 `OpenCode 标题插件`：按 `t` 打开，another 才会把插件写进 OpenCode 的配置目录，那行同时写明将写到哪个目录、目录里现在是什么。之后可随时运行 `another setup` 修改配置。
+首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。持续实测的六个 agent 和 CodeM 在同一列表中平铺，首次运行不预选任何 agent。Cursor、CommandCode 和 Hermes 只在已有配置启用它们时出现，方便老用户继续使用或关闭。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。启用了 OpenCode 时，这一页还有一行 `OpenCode 标题插件`：按 `t` 打开，another 才会把插件写进 OpenCode 的配置目录，那行同时写明将写到哪个目录、目录里现在是什么。之后可随时运行 `another setup` 修改配置。
 
 通过 SSH 使用 Ghostty 时，终端通常只转发 `TERM=xterm-ghostty`，不会转发 `COLORTERM`。`v0.13.3` 起 another 会直接识别这种环境并保留完整配色，同时仍遵守 `NO_COLOR`。
 
@@ -190,8 +190,10 @@ TUI 默认按当前项目过滤。Git 仓库的主工作区、所有已登记 wo
 
 同一个 agent，换一个工作目录继续：新开的 worktree、搬过位置的仓库、或者本来就该在隔壁项目里做的事。按 `m` 输入目标目录——输入框下方会列出当前仓库的 worktree、补全正在输入的路径，并给出最近用过的项目目录；`↑↓` 选中一项，`→` 或 `Enter` 把它填入输入框。`Tab` 在两种语义之间切换：
 
-- **复制**（默认）：原会话留在原地，目标目录里多出一份可以继续的会话；
-- **移动**：会话本身换目录，原目录不再有它。
+- **移动**（默认）：会话本身换目录，原目录不再有它；
+- **复制**：原会话留在原地，目标目录里多出一份可以继续的会话。
+
+命令行默认移动，加 `--fork` 显式复制；原有的 `--move` 仍可使用，但不能与 `--fork` 同时传入。TUI 每次打开都默认移动；选中的会话只要有一条不支持移动，就只提供复制。
 
 这不是迁移。迁移会把对话经可移植格式重写一遍，工具调用和 reasoning 会在这一步丢掉；换目录走的是各 agent 自己的原生操作，内容原样保留：OpenCode V2 调用官方的 `fork` 和 `move` 接口，Pi 逐行复制自己的会话文件、只改写文件头里的 `id` 和 `cwd`。没有经过验证的原生契约的 agent 会如实报告不支持，而不是用重写冒充搬家。
 
@@ -273,8 +275,8 @@ another migrate <session-id> --to codex --context full -y
 another resume <session-id> --to <provider> [--from ID]
 
 # 换目录（同一个 agent，另一个项目目录）
-another relocate <session-id>... --to-dir <path> [--from ID] [--move] [--create] [--dry-run] [-y]
-another relocate <session-id> --to-dir ../feature-worktree --move --create -y
+another relocate <session-id>... --to-dir <path> [--from ID] [--fork | --move] [--create] [--dry-run] [-y]
+another relocate <session-id> --to-dir ../feature-worktree --create -y
 
 # 改名（写进该 agent 自己的标题存储）
 another rename <session-id> --title "0908｜功能｜标题策略" [--from ID]
@@ -324,7 +326,7 @@ OpenCode 默认通过正式 V2 的导入／API 接口写入；仍在使用早期
 - 校验失败时，只删除本次迁移创建的产物。
 - `Ctrl+D` 默认选择 **Cancel**，确认框会显示 provider、标题、项目目录和完整 session ID。
 - 确认框会说明该 agent 的删除能否撤销；只有能把同一个会话原样放回时才提供撤销，绝不用重新渲染的副本冒充。
-- 换目录每次都从「复制」开始，「移动」需要显式切换；移动只在新位置校验通过之后才删除原文件。
+- 换目录默认「移动」，只支持复制的会话除外；移动只在新位置校验通过之后才删除原文件。要保留原会话，在 TUI 中切换到「复制」，或在命令行加 `--fork`。
 - 能被准确识别的活动会话禁止重命名、归档、换目录和删除。
 - 配置目录权限为 `0700`，配置文件和 SQLite 索引权限为 `0600`。
 - 在 setup 中停用 agent 只会移除本地索引记录，不会删除原生会话。

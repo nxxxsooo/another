@@ -16,13 +16,13 @@ import (
 
 func (a *App) relocateCmd() *cobra.Command {
 	var from, toDir string
-	var move, dryRun, yes, refresh, create bool
+	var move, fork, dryRun, yes, refresh, create bool
 	cmd := &cobra.Command{
 		Use:   "relocate <session-id>...",
-		Short: "Fork or move sessions into another project directory",
-		Long: "Fork or move one or more sessions into another project directory, using the\n" +
-			"agent's own native operation. Fork is the default and leaves the source\n" +
-			"session where it is; --move carries the session itself. --create makes the\n" +
+		Short: "Move or fork sessions into another project directory",
+		Long: "Move or fork one or more sessions into another project directory, using the\n" +
+			"agent's own native operation. Move is the default and carries the session\n" +
+			"itself; --fork leaves the source session where it is. --create makes the\n" +
 			"target directory first, for a worktree that does not exist yet. This is not a\n" +
 			"migration: the conversation is never re-rendered, so tool calls and\n" +
 			"reasoning survive.",
@@ -49,9 +49,9 @@ func (a *App) relocateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mode := provider.RelocateFork
-			if move {
-				mode = provider.RelocateMove
+			mode := provider.RelocateMove
+			if fork || !move {
+				mode = provider.RelocateFork
 			}
 			if err := a.ensureIndex(ctx, from, refresh); err != nil {
 				return err
@@ -84,7 +84,9 @@ func (a *App) relocateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&toDir, "to-dir", "", "target project directory (required)")
 	cmd.Flags().StringVar(&from, "from", "", "source provider")
-	cmd.Flags().BoolVar(&move, "move", false, "move the session instead of forking it")
+	cmd.Flags().BoolVar(&move, "move", true, "move the session instead of forking it")
+	cmd.Flags().BoolVar(&fork, "fork", false, "fork the session and leave the source unchanged")
+	cmd.MarkFlagsMutuallyExclusive("move", "fork")
 	cmd.Flags().BoolVar(&create, "create", false, "create the target directory if it does not exist")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate without writing")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "skip confirmation")

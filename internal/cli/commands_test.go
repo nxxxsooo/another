@@ -227,12 +227,12 @@ func TestRelocateForksMovesAndDryRuns(t *testing.T) {
 	wantErr(t, err, "confirmation requires a terminal")
 
 	out := mustRun(t, app, "relocate", "alpha-one", "--to-dir", target, "--dry-run")
-	wantContains(t, out, "Dry run OK: would fork alpha-one to "+target)
+	wantContains(t, out, "Dry run OK: would move alpha-one to "+target)
 	if entries, _ := os.ReadDir(alpha.root); len(entries) != 2 {
 		t.Fatalf("dry run changed the store: %d files", len(entries))
 	}
 
-	out = mustRun(t, app, "relocate", "alpha-one", "--to-dir", target, "--yes")
+	out = mustRun(t, app, "relocate", "alpha-one", "--to-dir", target, "--fork", "--yes")
 	wantContains(t, out, "✅ Forked alpha-one into "+target+" as alpha-one-fork", "Source session alpha-one is unchanged", "Resume: alpha --resume alpha-one-fork")
 	if entries, _ := os.ReadDir(alpha.root); len(entries) != 3 {
 		t.Fatalf("fork should add one file: %d", len(entries))
@@ -273,7 +273,7 @@ func TestRelocateDryRunDoesNotCreateTheTarget(t *testing.T) {
 	app, _, _, _ := seededApp(t)
 	target := filepath.Join(t.TempDir(), "fresh")
 	out := mustRun(t, app, "relocate", "alpha-two", "--to-dir", target, "--create", "--dry-run")
-	wantContains(t, out, "would create "+target, "Dry run OK: would fork alpha-two")
+	wantContains(t, out, "would create "+target, "Dry run OK: would move alpha-two")
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatalf("dry run created the target: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestRelocateManySessionsReportsEachAndContinuesPastFailures(t *testing.T) {
 	}
 
 	out = mustRun(t, app, "relocate", "alpha-one", "alpha-two", "--to-dir", t.TempDir(), "--dry-run")
-	wantContains(t, out, "Dry run OK: would fork alpha-one", "Dry run OK: would fork alpha-two")
+	wantContains(t, out, "Dry run OK: would move alpha-one", "Dry run OK: would move alpha-two")
 }
 
 func TestIndexStatusUpdateAndRebuild(t *testing.T) {

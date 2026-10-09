@@ -77,9 +77,8 @@ type modelState struct {
 	// whole keymap. It resets every time the overlay opens.
 	helpOffset int
 
-	// relocateMove selects move over the default fork. It resets every time
-	// the overlay opens: carrying a session out of its directory is the
-	// destructive reading of this action and never becomes the sticky one.
+	// relocateMove resets to move whenever the overlay opens, provided every
+	// selected session supports it; fork-only selections stay on fork.
 	relocateMove bool
 	// relocateCanMove records whether the selected provider owns a native
 	// move, so the toggle is not offered where it cannot be honoured.
