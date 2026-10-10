@@ -98,4 +98,4 @@ In a Git repository, the main worktree and every registered linked worktree form
 
 ## Configuration
 
-Settings live at `~/.config/another/config.json`: enabled providers and their order, interface language, title agent and model, path aliases, and integration consent. First run without a config opens `another setup`.
+Settings live at `~/.config/another/config.json`: enabled providers and their order, interface language, title agent and model, path aliases, and integration consent, plus the last view the session browser was left on. First run without a config opens `another setup`.

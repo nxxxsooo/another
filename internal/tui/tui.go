@@ -247,8 +247,31 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		cwd = util.NormalizeProjectPath(cwd)
 	}
 	projectScope := util.DiscoverProjectScope(context.Background(), cwd)
+
+	// Settings are read here rather than threaded through every caller: the
+	// suggestion agent is a TUI-only concern and an unreadable config simply
+	// leaves the feature off. The last-used view is read from the same place
+	// so the browser can open where it was left.
+	var titleCfg titler.Config
+	var uiCfg config.UI
+	var last *config.LastView
+	if settings, err := config.LoadSettings(); err == nil {
+		uiCfg = settings.UI
+		last = settings.UI.Last
+		if settings.TitleModel != nil {
+			titleCfg = titler.Config{
+				Provider: settings.TitleModel.Provider,
+				Model:    settings.TitleModel.Model,
+				Language: titler.NormalizeLanguage(titler.Language(settings.TitleModel.Language)),
+			}
+		}
+	}
+	pathBase := configuredPathBase(uiCfg)
+	pathDepth := configuredPathDepth(uiCfg)
+	recentDays := lastRecentDays(last, uiCfg)
+
 	initialOpts := index.ListOpts{IncludeSubagents: false}
-	initialScope := openingScope(projectScope)
+	initialScope := lastScope(last, projectScope)
 	applyProjectScope(&initialOpts, projectScope, initialScope)
 	counts, _ := idx.CountByProviderFiltered(initialOpts)
 
@@ -273,26 +296,6 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	relocate.CharLimit = 1024
 	sp := newWaitSpinner()
 
-	// Settings are read here rather than threaded through every caller: the
-	// suggestion agent is a TUI-only concern and an unreadable config simply
-	// leaves the feature off.
-	var titleCfg titler.Config
-	var pathBase string
-	pathDepth := pathTailDepth
-	recentDays := defaultRecentDays
-	if settings, err := config.LoadSettings(); err == nil {
-		if settings.TitleModel != nil {
-			titleCfg = titler.Config{
-				Provider: settings.TitleModel.Provider,
-				Model:    settings.TitleModel.Model,
-				Language: titler.NormalizeLanguage(titler.Language(settings.TitleModel.Language)),
-			}
-		}
-		pathBase = configuredPathBase(settings.UI)
-		pathDepth = configuredPathDepth(settings.UI)
-		recentDays = configuredRecentDays(settings.UI)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m := modelState{
@@ -301,9 +304,11 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		marked:   marked, folded: map[string]bool{},
 		sessions: sessList, sourceList: sourceList, targets: targetList,
 		preview: vp, searchInput: search, renameInput: rename, relocateInput: relocate, spinner: sp,
-		sources: sources, cwd: cwd, projectScope: projectScope, scopeMode: initialScope,
+		sources: sources, sourceIdx: lastSource(sources, last), cwd: cwd,
+		projectScope: projectScope, scopeMode: initialScope,
 		pathBase: pathBase, pathDepth: pathDepth, recentDays: recentDays,
-		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
+		groupMode: lastGroup(last),
+		indexing:  index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
 		movedAway: movedAwayDirectories(idx, initialOpts.ProjectRoots),
 	}
@@ -311,6 +316,10 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		m.err = txt.cwdUnreadable + err.Error()
 	}
 	m.contentIndexing = !m.indexing
+	// The source drawer is a view of the same selection the header reads;
+	// pointing it at the restored filter keeps the two in step before the
+	// drawer is ever opened.
+	m.sourceList.Select(m.sourceIdx)
 	if initial != nil {
 		sel := sessionItem{summary: *initial}
 		m.selected = &sel
@@ -327,6 +336,12 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		return runErr
 	}
 	done, ok := final.(modelState)
+	if ok {
+		// One write on the way out, before a resume replaces this process, so
+		// the next launch opens where this one was left. A failed write is
+		// not worth stopping the exit over: the browser already worked.
+		saveLastView(done)
+	}
 	if ok && done.launch != "" {
 		// Handing the terminal to another agent: no goodbye screen, or it
 		// lands as noise right before that agent paints its own startup. The

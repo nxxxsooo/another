@@ -210,6 +210,38 @@ func TestPathAliasesRoundTrip(t *testing.T) {
 	}
 }
 
+// A remembered view is written only once the browser has closed, and its
+// no-window stop must survive the round trip: zero is a real value here, which
+// the presence of the ui.last object — not the number — distinguishes from
+// "never chosen". A config that never carried one stays without the key.
+func TestLastViewRoundTripsWithAZeroWindow(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := config.SaveSettings(config.Settings{Version: config.SettingsVersion}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(config.SettingsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "last") {
+		t.Fatalf("saved config invented ui.last: %s", data)
+	}
+	want := config.LastView{Source: "codex", Scope: "project", RecentDays: 0, Group: 1}
+	if err := config.SaveSettings(config.Settings{
+		Version: config.SettingsVersion,
+		UI:      config.UI{Last: &want},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.UI.Last == nil || *settings.UI.Last != want {
+		t.Fatalf("ui.last = %+v, want %+v", settings.UI.Last, want)
+	}
+}
+
 // ui.path_base is a spelling preference for the global column, and an older
 // build's config has no such key: it must save without one and load as home.
 func TestPathBaseRoundTripsAndStaysOutOfTheFileWhenUnset(t *testing.T) {

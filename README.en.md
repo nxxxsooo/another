@@ -329,6 +329,7 @@ The configuration file is `~/.config/another/config.json`:
 - `ui.path_base` — the directory the path column is read against under all projects. Defaults to your home directory (`~`); set it to a workspace root such as `~/Documents/sync` and the column shows only that line's own layers.
 - `ui.path_depth` — how many segments that column keeps. Defaults to `3`; 1–8 are accepted.
 - `ui.recent_days` — list only sessions whose last message is this recent. Defaults to `90`; `0` means no window. It is a **display** range: older sessions stay indexed, and pressing `t` or lowering the number shows them again. Nothing is deleted and no agent's store is rescanned.
+- `ui.last` — the view another writes when the browser closes (the agent filter, project/all scope, the `t` window, the `g` grouping), so the next launch opens the same way. Written by another, not edited by hand; remove it to fall back to the defaults derived from the current directory.
 
 A session belongs to the directory it **started** in. Agents record their working directory on every turn, so moving into a subdirectory, a temporary path, or another repository mid-session does not change the owner; project filtering then covers a directory together with everything below it, and every registered worktree of a Git repository.
 

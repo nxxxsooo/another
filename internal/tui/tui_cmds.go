@@ -186,6 +186,93 @@ func configuredRecentDays(ui config.UI) int {
 	return ui.RecentDays
 }
 
+// lastScope resolves ui.last.scope into an opening scope for this directory.
+// "all" is every project; "project" is the directory's own scope, but only
+// where there is a project to be narrow about — a directory another does not
+// know stays all, the same answer openingScope gives. Any other value, and an
+// absent LastView, leaves the choice to openingScope.
+func lastScope(last *config.LastView, projectScope util.ProjectScope) scopeMode {
+	if last != nil {
+		switch last.Scope {
+		case "all":
+			return scopeModeAll
+		case "project":
+			if projectScope.CWD != "" {
+				return narrowScope(projectScope)
+			}
+			return scopeModeAll
+		}
+	}
+	return openingScope(projectScope)
+}
+
+// lastRecentDays is the window the browser was left on, or the configured
+// default when it was never left on one. Zero is a real value here — the
+// no-window stop — so it is only the presence of LastView that says a window
+// was ever chosen; ui.recent_days seeds the very first launch instead.
+func lastRecentDays(last *config.LastView, ui config.UI) int {
+	if last != nil {
+		return last.RecentDays
+	}
+	return configuredRecentDays(ui)
+}
+
+// lastGroup is the grouping the browser was left on, clamped to the modes that
+// exist so a value written by a future version cannot put the list in a state
+// this one has no bands for.
+func lastGroup(last *config.LastView) int {
+	if last == nil || last.Group < 0 || last.Group >= groupModes {
+		return groupNone
+	}
+	return last.Group
+}
+
+// lastSource is the index of the agent filter the browser was left on, matched
+// by ID so a provider that was added, removed, or reordered since does not
+// silently move the filter to a different agent. An ID no longer present, or
+// the empty all-ID, falls back to the all chip.
+func lastSource(sources []sourceChip, last *config.LastView) int {
+	id := ""
+	if last != nil {
+		id = last.Source
+	}
+	for i := range sources {
+		if sources[i].id == id {
+			return i
+		}
+	}
+	return 0
+}
+
+// lastScopeName is the durable half of a scope: "all" or "project". The two
+// narrower modes — exact for a repository, tree for a plain directory — are
+// both "project", because which one applies is decided by the directory the
+// browser opens in, not by the one it closed in.
+func lastScopeName(mode scopeMode) string {
+	if mode == scopeModeAll {
+		return "all"
+	}
+	return "project"
+}
+
+// saveLastView writes the view the browser closed with to ui.last so the next
+// launch opens the same way. It is best-effort: a config that cannot be read
+// or written leaves the browser's own exit unharmed, and a person who has
+// never saved settings keeps the per-run defaults rather than an empty config.
+func saveLastView(m modelState) {
+	settings, err := config.LoadSettings()
+	if err != nil {
+		return
+	}
+	settings.UI.Last = &config.LastView{
+		Source:     m.sourceID(),
+		Scope:      lastScopeName(m.scopeMode),
+		RecentDays: m.recentDays,
+		Group:      m.groupMode,
+	}
+	_ = config.SaveSettings(settings)
+}
+
 // windowCutoff is the window for the index query, in the unit the index stores
 // a session's time in, or zero for no window at all.
 func (m modelState) windowCutoff() int64 {

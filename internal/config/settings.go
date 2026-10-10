@@ -85,6 +85,29 @@ type UI struct {
 	// behaved before it existed; the t key walks a few presets from whatever
 	// this states.
 	RecentDays int `json:"recent_days,omitempty"`
+	// Last is how the browser was left, so the next launch opens on the same
+	// view instead of the per-run defaults. It is state, not a preference:
+	// another writes it on exit and reads it on open, and a person never
+	// edits it. Absent means a person has not closed the browser since this
+	// existed, and the per-run defaults apply.
+	Last *LastView `json:"last,omitempty"`
+}
+
+// LastView remembers the view the browser closed with. Each field restates a
+// toggle the reader set rather than a guess: the agent filter by its ID (so it
+// survives a provider reordering), the scope as a direction rather than a
+// resolved mode (so "project" still means the directory it opens in), the
+// window in days (zero is the no-window stop), and the grouping as its index.
+type LastView struct {
+	Source string `json:"source,omitempty"`
+	// Scope is "all" or "project". Anything else, including absent, leaves the
+	// opening scope to be derived from the directory as before.
+	Scope string `json:"scope,omitempty"`
+	// RecentDays is written even when zero, because zero is a real stop on the
+	// t key — every session, however old — and only the presence of LastView
+	// says whether it was ever chosen.
+	RecentDays int `json:"recent_days"`
+	Group      int `json:"group,omitempty"`
 }
 
 // TitleModel names an installed agent CLI, not an API credential. another
