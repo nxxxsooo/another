@@ -185,6 +185,7 @@ type uiText struct {
 	batchPartialFmt      string
 	batchRenamedFmt      string
 	batchAllFailedFmt    string
+	batchSetNoneFmt      string
 	batchNoneApplied     string
 	someRowsFailed       string
 	allRowsFailed        string
@@ -496,6 +497,7 @@ var englishText = uiText{
 	batchPartialFmt:      "Renamed %d, failed %d: %s · failed rows stay marked, ctrl+t retries",
 	batchRenamedFmt:      "Renamed %d",
 	batchAllFailedFmt:    "Batch rename failed on %d: %s · marks kept, ctrl+t retries",
+	batchSetNoneFmt:      "%s none: %d failed, %s · marks kept",
 	batchNoneApplied:     "No title change was applied",
 	someRowsFailed:       "some rows failed",
 	allRowsFailed:        "every row failed",
@@ -784,6 +786,7 @@ var chineseText = uiText{
 	batchPartialFmt:      "已重命名 %d 条，失败 %d 条：%s · 失败行仍有标记，ctrl+t 重试",
 	batchRenamedFmt:      "已重命名 %d 条",
 	batchAllFailedFmt:    "批量重命名失败 %d 条：%s · 标记保留，ctrl+t 重试",
+	batchSetNoneFmt:      "%s 0 条：%d 条失败，%s · 标记保留",
 	batchNoneApplied:     "没有应用任何标题变更",
 	someRowsFailed:       "部分行失败",
 	allRowsFailed:        "全部失败",

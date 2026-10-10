@@ -143,7 +143,6 @@ func (m modelState) deleteConfirm() (tea.Model, tea.Cmd) {
 	}
 	m.deleteBatch = split.todo
 	m.deleteBatchSkip = m.skipOf(split.skipped)
-	m.selected = nil
 	m.deleteChoice = 0
 	m.overlay = overlayDelete
 	m.layout()
@@ -267,7 +266,7 @@ func (m modelState) onArchiveBatchDone(msg archiveBatchDoneMsg) (tea.Model, tea.
 		verb = txt.archiveBatchVerbUnarchived
 	}
 	if len(msg.done) == 0 {
-		m.err = fmt.Sprintf(txt.batchAllFailedFmt, verb, len(msg.failed), batchFailureText(msg.failed))
+		m.err = fmt.Sprintf(txt.batchSetNoneFmt, verb, len(msg.failed), batchFailureText(msg.failed))
 		return m, nil
 	}
 	m.status = okStyle.Render(fmt.Sprintf(txt.batchDoneFmt, verb, len(msg.done)))
@@ -280,12 +279,14 @@ func (m modelState) onArchiveBatchDone(msg archiveBatchDoneMsg) (tea.Model, tea.
 
 func (m modelState) onDeleteBatchDone(msg deleteBatchDoneMsg) (tea.Model, tea.Cmd) {
 	m.loading = false
+	m.overlay = overlayNone
+	m.deleteBatch, m.deleteBatchSkip = nil, batchSkip{}
 	m.lastDeleted, m.restoreDeleted = nil, nil
 	for _, id := range msg.done {
 		delete(m.marked, id)
 	}
 	if len(msg.done) == 0 {
-		m.err = fmt.Sprintf(txt.batchAllFailedFmt, txt.batchVerbDeleted, len(msg.failed), batchFailureText(msg.failed))
+		m.err = fmt.Sprintf(txt.batchSetNoneFmt, txt.batchVerbDeleted, len(msg.failed), batchFailureText(msg.failed))
 		return m, nil
 	}
 	m.status = okStyle.Render(fmt.Sprintf(txt.batchDoneFmt, txt.batchVerbDeleted, len(msg.done)))
@@ -359,7 +360,7 @@ func (m modelState) onMigrateBatchDone(msg migrateBatchDoneMsg) (tea.Model, tea.
 	}
 	target := registry.DisplayName(m.reg, msg.targetID)
 	if len(msg.done) == 0 {
-		m.err = fmt.Sprintf(txt.batchAllFailedFmt, txt.migratedPrefix, len(msg.failed), batchFailureText(msg.failed))
+		m.err = fmt.Sprintf(txt.batchSetNoneFmt, txt.migratedPrefix, len(msg.failed), batchFailureText(msg.failed))
 		return m, nil
 	}
 	m.status = okStyle.Render(fmt.Sprintf(txt.batchDoneFmt, txt.migratedPrefix+target, len(msg.done)))

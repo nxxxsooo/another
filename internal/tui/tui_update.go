@@ -714,8 +714,10 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if len(m.deleteBatch) > 0 {
+				// The set stays on the modal while the work runs: clearing it
+				// here left the single-session branch to draw, with nothing
+				// selected, which is what "No session selected" was.
 				todo, skip := m.deleteBatch, m.deleteBatchSkip
-				m.deleteBatch, m.deleteBatchSkip = nil, batchSkip{}
 				m.loading = true
 				m.err = ""
 				return m, tea.Batch(m.spinner.Tick, deleteMarkedCmd(m.ctx, m.reg, m.idx, todo, skip))

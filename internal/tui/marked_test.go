@@ -336,3 +336,44 @@ func TestTheWindowReachesTheQueryAndTheHeader(t *testing.T) {
 		t.Fatalf("the header claims a window that is off: %q", view)
 	}
 }
+
+// The modal keeps saying what it is about to delete while the delete runs, and
+// nothing else draws in its place: clearing the set at the confirm step left
+// the single-session branch to render, which is where "No session selected"
+// came from.
+func TestTheBatchModalKeepsItsSubjectWhileTheWorkRuns(t *testing.T) {
+	m := markedModel(t, 3)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	m = updated.(modelState)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(modelState)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(modelState)
+	if cmd == nil {
+		t.Fatal("confirming the batch dispatched nothing")
+	}
+	if len(m.deleteBatch) != 3 {
+		t.Fatalf("the modal lost its subject while working: %d left", len(m.deleteBatch))
+	}
+	if view := ansi.Strip(m.View()); strings.Contains(view, txt.noSessionSelected) {
+		t.Fatalf("the modal drew the empty-session notice instead of its count:\n%s", view)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "3") {
+		t.Fatalf("the modal does not say how many are going:\n%s", view)
+	}
+
+	// The report for a batch that landed nothing is a sentence, not a format
+	// string: %s none: %d failed, %s.
+	updated, _ = m.Update(deleteBatchDoneMsg{failed: []batchFailure{{id: "one", err: errors.New("agent said no")}}})
+	m = updated.(modelState)
+	report := ansi.Strip(m.err)
+	if strings.Contains(report, "%!") || strings.Contains(report, "%s") {
+		t.Fatalf("the report is unformatted: %q", report)
+	}
+	if !strings.Contains(report, "agent said no") || !strings.Contains(report, "1") {
+		t.Fatalf("the report lost its reason or count: %q", report)
+	}
+	if m.overlay != overlayNone || len(m.deleteBatch) != 0 {
+		t.Fatal("the modal outlived its run")
+	}
+}
