@@ -86,6 +86,9 @@ type uiText struct {
 	copyBatchDoneFmt           string
 	deleteConfirmBatchFmt      string
 	deleteConfirmBatchBody     string
+	migrateNoneMarked          string
+	migrateBatchHintFmt        string
+	migrateSameAgent           string
 
 	// Status and errors.
 	cwdUnreadable        string
@@ -394,6 +397,9 @@ var englishText = uiText{
 	copyBatchDoneFmt:           "Copied %d resume commands",
 	deleteConfirmBatchFmt:      "Delete %d sessions?",
 	deleteConfirmBatchBody:     "Each session is deleted inside its own agent. A batch cannot be undone.",
+	migrateNoneMarked:          "None of the marked sessions can be carried: they are all running now",
+	migrateBatchHintFmt:        "%d marked sessions go to one agent. Nothing changes in the source until the target has them.",
+	migrateSameAgent:           "already in that agent",
 
 	cwdUnreadable:        "Could not read the current directory, showing every session: ",
 	archivedPrefix:       "Archived ",
@@ -672,6 +678,9 @@ var chineseText = uiText{
 	copyBatchDoneFmt:           "已复制 %d 条 resume 命令",
 	deleteConfirmBatchFmt:      "删除 %d 条会话？",
 	deleteConfirmBatchBody:     "每条都在它自己的 agent 里删除。批量删除没有撤销。",
+	migrateNoneMarked:          "标记的会话都无法交接：它们都正在运行",
+	migrateBatchHintFmt:        "已标记的 %d 条会话一起交给同一个 agent。目标拿到之前，来源不会被改动。",
+	migrateSameAgent:           "已在该 agent 中",
 
 	cwdUnreadable:        "无法读取当前目录，已显示全部会话：",
 	archivedPrefix:       "已归档 ",

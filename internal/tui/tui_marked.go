@@ -2,12 +2,14 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/registry"
@@ -262,4 +264,58 @@ func batchFailureText(failures []batchFailure) string {
 		return ""
 	}
 	return failures[0].err.Error()
+}
+
+// migrateBatchDoneMsg reports a marked-set carry. done and failed are disjoint,
+// and the sessions that failed stay marked.
+type migrateBatchDoneMsg struct {
+	targetID string
+	done     []string
+	failed   []batchFailure
+}
+
+// migrateMarked carries each marked session to one target the way the single
+// session flow does. A session already in that agent is not a failure of the
+// carry but it is not carried either, so it is reported rather than passed
+// over: silence would read as success.
+func migrateMarkedCmd(ctx context.Context, engine *migrate.Engine, sessions []model.Summary, to string, contextMode migrate.ContextMode) tea.Cmd {
+	return func() tea.Msg {
+		done := migrateBatchDoneMsg{targetID: to}
+		for _, sm := range sessions {
+			if sm.Provider == to {
+				done.failed = append(done.failed, batchFailure{id: sm.ID, err: errors.New(txt.migrateSameAgent)})
+				continue
+			}
+			res, err := engine.Run(ctx, migrate.Options{
+				SessionID: sm.ID, FromProvider: sm.Provider, ToProvider: to,
+				ContextMode: contextMode,
+			})
+			if err != nil {
+				done.failed = append(done.failed, batchFailure{id: sm.ID, err: err})
+				continue
+			}
+			_ = res
+			done.done = append(done.done, sm.ID)
+		}
+		return done
+	}
+}
+
+func (m modelState) onMigrateBatchDone(msg migrateBatchDoneMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	m.overlay = overlayNone
+	m.migrateBatch = nil
+	for _, id := range msg.done {
+		delete(m.marked, id)
+	}
+	target := registry.DisplayName(m.reg, msg.targetID)
+	if len(msg.done) == 0 {
+		m.err = fmt.Sprintf(txt.batchAllFailedFmt, txt.migratedPrefix, len(msg.failed), batchFailureText(msg.failed))
+		return m, nil
+	}
+	m.status = okStyle.Render(fmt.Sprintf(txt.batchDoneFmt, txt.migratedPrefix+target, len(msg.done)))
+	if len(msg.failed) > 0 {
+		m.status += mutedStyle.Render(fmt.Sprintf(txt.batchFailedSuffixFmt, len(msg.failed), batchFailureText(msg.failed)))
+	}
+	return m, nil
 }

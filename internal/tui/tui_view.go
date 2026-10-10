@@ -170,7 +170,11 @@ func (m modelState) View() string {
 		box := sourceModalStyle.Render(accentStyle.Render(txt.sourceModalTitle) + m.modalSubtitle(txt.sourceModalHint) + "\n\n" + m.sourceList.View())
 		pane = overlay(pane, box, width)
 	case overlayTarget:
-		box := targetModalStyle.Width(targetModalWidth(width)).Render(okStyle.Render(txt.targetModalTitle) + m.modalSubtitle(txt.targetModalHint) + "\n\n" + m.targets.View())
+		hint := txt.targetModalHint
+		if len(m.migrateBatch) > 0 {
+			hint = fmt.Sprintf(txt.migrateBatchHintFmt, len(m.migrateBatch))
+		}
+		box := targetModalStyle.Width(targetModalWidth(width)).Render(okStyle.Render(txt.targetModalTitle) + m.modalSubtitle(hint) + "\n\n" + m.targets.View())
 		pane = overlay(pane, box, width)
 	case overlayPreview:
 		box := modalStyle.Render(m.preview.View())

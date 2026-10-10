@@ -179,3 +179,45 @@ func flattenCmd(t *testing.T, cmd tea.Cmd) []tea.Msg {
 	}
 	return []tea.Msg{msg}
 }
+
+// Carrying a set is the same drawer as carrying one session, opened over the
+// whole marked set, and the modal says how many are about to travel.
+func TestCarryOpensTheTargetDrawerOverTheMarkedSet(t *testing.T) {
+	m := markedModel(t, 3)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(modelState)
+	if m.overlay != overlayTarget {
+		t.Fatalf("right did not open the target drawer: overlay=%v", m.overlay)
+	}
+	if len(m.migrateBatch) != 3 {
+		t.Fatalf("the drawer covers %d sessions, want the three marked", len(m.migrateBatch))
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "3") {
+		t.Fatalf("the drawer does not say how many are travelling: %q", view)
+	}
+}
+
+// A carry that lands clears the mark; one that did not keeps it, which is what
+// makes the next attempt a matter of pressing right again.
+func TestCarryReportsPerSessionAndKeepsFailuresMarked(t *testing.T) {
+	m := markedModel(t, 3)
+	updated, _ := m.Update(migrateBatchDoneMsg{
+		targetID: "pi",
+		done:     []string{"one", "two"},
+		failed:   []batchFailure{{id: "three", err: errors.New("pi refused")}},
+	})
+	m = updated.(modelState)
+	if m.marked["one"] || m.marked["two"] {
+		t.Fatalf("carried sessions stayed marked: %v", m.marked)
+	}
+	if !m.marked["three"] {
+		t.Fatal("a session that did not travel lost its mark")
+	}
+	status := ansi.Strip(m.status)
+	if !strings.Contains(status, "2") || !strings.Contains(status, "pi refused") {
+		t.Fatalf("the report does not name the outcome: %q", status)
+	}
+	if m.overlay != overlayNone {
+		t.Fatal("the drawer stayed open after the carry finished")
+	}
+}

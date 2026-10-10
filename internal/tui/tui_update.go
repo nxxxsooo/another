@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/titler"
 	"github.com/nxxxsooo/another/internal/util"
@@ -56,6 +57,8 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onRelocateBatchDone(msg)
 	case migrateDoneMsg:
 		return m.onMigrateDone(msg)
+	case migrateBatchDoneMsg:
+		return m.onMigrateBatchDone(msg)
 	case archiveBatchDoneMsg:
 		return m.onArchiveBatchDone(msg)
 	case deleteBatchDoneMsg:
@@ -688,8 +691,15 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case overlaySource:
 			return m.applySource()
 		case overlayTarget:
-			if m.selected != nil {
-				if tgt, ok := m.targets.SelectedItem().(targetItem); ok {
+			if tgt, ok := m.targets.SelectedItem().(targetItem); ok {
+				if len(m.migrateBatch) > 0 {
+					todo := m.migrateBatch
+					m.loading = true
+					m.err = ""
+					return m, tea.Batch(m.spinner.Tick,
+						migrateMarkedCmd(m.ctx, m.engine, todo, tgt.id, m.contextMode))
+				}
+				if m.selected != nil {
 					m.loading = true
 					m.err = ""
 					return m, tea.Batch(m.spinner.Tick,
@@ -769,6 +779,9 @@ func (m modelState) openCurrentSession() (tea.Model, tea.Cmd) {
 }
 
 func (m modelState) openTargetDrawer() (tea.Model, tea.Cmd) {
+	if len(m.marked) > 0 {
+		return m.openTargetDrawerForMarked()
+	}
 	if m.lastResume != "" {
 		m.launch = m.lastResume
 		if m.cancel != nil {
@@ -783,6 +796,33 @@ func (m modelState) openTargetDrawer() (tea.Model, tea.Cmd) {
 	sel := it
 	m.selected = &sel
 	m.targets.SetItems(targetItems(m.reg, it.summary.Provider))
+	m.targets.Select(0)
+	m.overlay = overlayTarget
+	m.layout()
+	return m, tea.Batch(tea.HideCursor, tea.ClearScreen)
+}
+
+// openTargetDrawerForMarked is the same drawer over the whole marked set. The
+// target list is read from the first row's agent, which is the one whose
+// sessions the reader was looking at when the set was marked; a member that
+// cannot follow is reported per session rather than hidden here.
+func (m modelState) openTargetDrawerForMarked() (tea.Model, tea.Cmd) {
+	summaries, _ := m.markedSummaries()
+	todo := make([]model.Summary, 0, len(summaries))
+	for _, sm := range summaries {
+		if isCurrentSession(sm) {
+			continue
+		}
+		todo = append(todo, sm)
+	}
+	if len(todo) == 0 {
+		m.err = txt.migrateNoneMarked
+		return m, nil
+	}
+	sel := sessionItem{summary: todo[0]}
+	m.selected = &sel
+	m.migrateBatch = todo
+	m.targets.SetItems(targetItems(m.reg, todo[0].Provider))
 	m.targets.Select(0)
 	m.overlay = overlayTarget
 	m.layout()

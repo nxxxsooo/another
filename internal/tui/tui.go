@@ -198,6 +198,7 @@ type modelState struct {
 	// live only as long as this list does, and only for providers that can put
 	// the very same session back.
 	deleteBatch    []model.Summary
+	migrateBatch   []model.Summary
 	lastDeleted    *model.Summary
 	restoreDeleted provider.SessionRestore
 	contextMode    migrate.ContextMode
