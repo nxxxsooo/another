@@ -199,9 +199,9 @@ On Linux, `c` copies the resume command through `xclip`, `xsel`, or `wl-clipboar
 
 Migration shows the exact resume command first. Press `Enter` to hand the terminal to the target agent, `c` to copy the command, or `Esc` to keep browsing.
 
-The TUI starts scoped to the current project. A Git repository's main worktree, every registered linked worktree, and their subdirectories form one project; outside Git, the scope is an exact current-directory match. The header always shows the active scope, and search keeps that scope. An empty project view stays empty rather than silently switching global; press `f` to view all projects. At the same window width, switching scope keeps the target button in place, with the session count centered in its reserved area.
+The TUI opens where you are: a Git repository reads as the repository plus every registered linked worktree, and a plain directory reads as itself and everything under it — the projects inside it are part of that one line of work. The header always shows the active scope (`this project` or `this tree`), and search keeps that scope; `f` toggles between here and all projects. A directory holding no session of its own stays empty rather than silently switching global. At the same window width, switching scope keeps the target button in place, with the session count centered in its reserved area.
 
-One project is not one directory. When the listed sessions really do span several — worktrees, a monorepo's subtrees — a directory column appears: a chip in the path's own color, like the agent's, carrying the part of the path below the project root (`.worktrees/delete-undo`, `packages/api`, and the root's own name for a session that started there) so the shared prefix never costs the title its width. Column widths depend on the terminal alone, never on what is loaded: changing scope, filtering by agent, or paging leaves every column where it was, and a title or path that does not fit is cut with an ellipsis. A directory that no longer exists keeps its path and loses its color. With every session in one directory the column stays away.
+One project is not one directory. When the listed sessions really do span several — worktrees, a monorepo's subtrees — a directory column appears: a chip in the path's own color, like the agent's, carrying the part of the path below the project root (`.worktrees/delete-undo`, `packages/api`, and the root's own name for a session that started there) so the shared prefix never costs the title its width. Column widths depend on the terminal alone, never on what is loaded: changing scope, filtering by agent, or paging leaves every column where it was, and a title or path that does not fit is cut with an ellipsis. A directory that no longer exists keeps its path and loses its color. With every session in one directory the column stays away. Under all projects the column reads a whole path instead: it is read against your home directory and keeps the last three segments, and when the column is narrower than that it drops the longest middle segments first — usually a generic name like `projects` — so the project's own name and the layer that owns it survive. Both the base and the count are settings; see Configuration and index.
 
 Press `g` to cycle three views of that list: ungrouped, by date, by worktree. The footer names the one it landed on. Grouping is a view of the page already loaded — no reload, and the session under the cursor stays under it — and the cursor never rests on a heading. A list holding one group is left ungrouped: a single band over everything names what every row already shares.
 
@@ -318,6 +318,11 @@ another paths
 another paths link <old-directory> <new-directory>
 another paths unlink <old-directory>
 ```
+
+The configuration file is `~/.config/another/config.json`:
+
+- `ui.path_base` — the directory the path column is read against under all projects. Defaults to your home directory (`~`); set it to a workspace root such as `~/Documents/sync` and the column shows only that line's own layers.
+- `ui.path_depth` — how many segments that column keeps. Defaults to `3`; 1–8 are accepted.
 
 A session belongs to the directory it **started** in. Agents record their working directory on every turn, so moving into a subdirectory, a temporary path, or another repository mid-session does not change the owner; project filtering then covers a directory together with everything below it, and every registered worktree of a Git repository.
 
