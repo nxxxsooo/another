@@ -370,8 +370,29 @@ func TestGlobalColumnReadsAgainstTheConfiguredBase(t *testing.T) {
 	}
 	out := filepath.Join(home, "Documents", "apps", "ht-canteen-miaoda")
 	cell := ansi.Strip(renderProjectChipCell(out, util.SanitizeDisplay(projectCellText(out, base)), true, 34, false, true, 4))
-	if !strings.Contains(cell, "~/apps/ht-canteen-miaoda") {
-		t.Errorf("cell at depth 4 = %q, want the root kept", cell)
+	sep := string(filepath.Separator)
+	want := "~" + sep + "apps" + sep + "ht-canteen-miaoda"
+	if !strings.Contains(cell, want) {
+		t.Errorf("cell at depth 4 = %q, want %q", cell, want)
+	}
+}
+
+// A stored path carries the platform's separator, and the elisions read paths
+// in segments on every platform: a Windows path is not one long word.
+func TestPathElisionReadsBothSeparators(t *testing.T) {
+	win := `C:\Users\mingjian\Documents\sync\Work\huatu\projects\smart-note`
+	if got := elidePathTail(win, 40, pathTailDepth); got != `huatu\projects\smart-note` {
+		t.Errorf("elidePathTail(%q) = %q, want the last three segments", win, got)
+	}
+	if got := elidePathTail(win, 12, pathTailDepth); got != `smart-note` {
+		t.Errorf("elidePathTail(%q, 12) = %q, want the name", win, got)
+	}
+	got := elidePath(win, 24)
+	if !strings.HasPrefix(got, `C:\…\`) || !strings.HasSuffix(got, `smart-note`) {
+		t.Errorf("elidePath(%q, 24) = %q, want the root kept and the tail", win, got)
+	}
+	if w := ansi.StringWidth(got); w > 24 {
+		t.Errorf("elidePath(%q, 24) is %d cells wide", win, w)
 	}
 }
 

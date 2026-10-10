@@ -24,6 +24,24 @@ func truncateDisplay(s string, n int) string {
 	return ansi.Truncate(s, n, "…")
 }
 
+// pathDisplay expresses a path in "/" segments for the readers below and
+// returns how to put the original separator back.
+//
+// Stored project paths carry the platform's own separator: a Windows session
+// is recorded as C:\Users\... . Both of the elisions here are written in
+// segments, and on a backslash path neither would find one — the whole path
+// would come back as a single segment and be cut mid-word, which is the bug
+// they exist to fix. The separator is translated rather than special-cased at
+// every split.
+func pathDisplay(s string) (string, func(string) string) {
+	if strings.Contains(s, "\\") && !strings.Contains(s, "/") {
+		return strings.ReplaceAll(s, "\\", "/"), func(out string) string {
+			return strings.ReplaceAll(out, "/", "\\")
+		}
+	}
+	return s, func(out string) string { return out }
+}
+
 // elidePath shortens a path from the middle, keeping its root and as much of
 // the tail as fits. Cut from the left instead, every path began with the same
 // "…" and lost the one segment that said which tree it was in:
@@ -43,21 +61,22 @@ func elidePath(s string, n int) string {
 	if ansi.StringWidth(s) <= n {
 		return s
 	}
-	root, rest, found := strings.Cut(s, "/")
+	work, restore := pathDisplay(s)
+	root, rest, found := strings.Cut(work, "/")
 	if !found {
-		return truncateLeft(s, n)
+		return restore(truncateLeft(work, n))
 	}
 	// An absolute path cuts to an empty root, which is still the root: the
 	// leading slash is what says the path did not start at home.
 	parts := strings.Split(rest, "/")
 	for i := 1; i < len(parts); i++ {
 		if candidate := root + "/…/" + strings.Join(parts[i:], "/"); ansi.StringWidth(candidate) <= n {
-			return candidate
+			return restore(candidate)
 		}
 	}
 	// Not even the root and the last segment fit; the tail is what identifies
 	// the project, so it is the part that survives.
-	return truncateLeft(s, n)
+	return restore(truncateLeft(work, n))
 }
 
 // elidePathTail is elidePath for a path with nothing above it to read against:
@@ -94,7 +113,8 @@ func elidePathTail(s string, n, depth int) string {
 	if depth < 1 {
 		depth = 1
 	}
-	parts := strings.Split(s, "/")
+	work, restore := pathDisplay(s)
+	parts := strings.Split(work, "/")
 	if last := len(parts) - 1; last >= 0 && parts[last] == "" {
 		// A trailing separator is not a segment.
 		parts = parts[:last]
@@ -106,11 +126,11 @@ func elidePathTail(s string, n, depth int) string {
 	// path already that shallow keeps its own spelling, root and all.
 	if len(parts) > depth {
 		parts = parts[len(parts)-depth:]
-	} else if ansi.StringWidth(s) <= n {
+	} else if ansi.StringWidth(work) <= n {
 		return s
 	}
 	if joined := strings.Join(parts, "/"); ansi.StringWidth(joined) <= n {
-		return joined
+		return restore(joined)
 	}
 	// Wider than the column: drop the widest segment above the name until it
 	// fits. The name is what identifies the row, so it is the last to go.
@@ -121,10 +141,10 @@ func elidePathTail(s string, n, depth int) string {
 		kept = append(kept, parts[drop+1:]...)
 		parts = kept
 		if joined := strings.Join(parts, "/"); ansi.StringWidth(joined) <= n {
-			return joined
+			return restore(joined)
 		}
 	}
-	return truncateLeft(s, n)
+	return restore(truncateLeft(work, n))
 }
 
 // widestSegment is the index of the widest segment, and of the leftmost one
