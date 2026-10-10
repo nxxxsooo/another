@@ -144,18 +144,23 @@ release:
 
     ## Compatibility
 
-    v0.17.0 changes native relocation from fork-by-default to move-by-default.
-    `another relocate ... --to-dir ...` now carries the session itself;
-    the source directory no longer has it after the destination verifies.
-    To keep the original, add `--fork`, or select Fork with Tab in the TUI.
-    Update scripts that relied on the previous default to pass `--fork`.
+    v0.18.0 changes what a plain directory's scope covers. The narrow scope
+    used to subtract the projects inside a directory; it is now the directory
+    and everything under it, so opening a workspace shows the whole line of
+    work instead of only the folders that are not projects. A repository still
+    reads as the repository plus its registered worktrees, and `f` still
+    toggles between that scope and all projects.
 
-    Existing `--move` calls still work, and `--move=false` still forks.
-    `--move` and `--fork` cannot be combined. The TUI opens on Move each
-    time unless a selected session supports only Fork. Provider contracts
-    and verification before source removal are unchanged; cross-agent
-    migration still leaves the source untouched. No configuration migration
-    is needed. Script installations can run `another update`.
+    That scope is named "this tree" for a plain directory rather than "this
+    project"; a repository keeps "this project". Under all projects the path
+    column now keeps a fixed tail of segments and drops the widest middle ones
+    when the column is narrow, instead of spending whatever width it had. Two
+    settings drive it: `ui.path_base`, the directory the column is read
+    against (your home directory when unset), and `ui.path_depth`, how many
+    segments survive (three when unset).
+
+    No command-line surface changed and no configuration migration is needed.
+    Script installations can run `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
