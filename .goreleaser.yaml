@@ -144,23 +144,22 @@ release:
 
     ## Compatibility
 
-    v0.18.0 changes what a plain directory's scope covers. The narrow scope
-    used to subtract the projects inside a directory; it is now the directory
-    and everything under it, so opening a workspace shows the whole line of
-    work instead of only the folders that are not projects. A repository still
-    reads as the repository plus its registered worktrees, and `f` still
-    toggles between that scope and all projects.
+    v0.19.0 bounds the list by default: only sessions whose own last message is
+    within `ui.recent_days` are listed, and that defaults to 90 days. Older
+    sessions are not deleted and are not dropped from the index — press `t` to
+    step the window to 30 days, to 7, and then to everything, or set
+    `ui.recent_days` to `0` for no window at all. The scope chip says which
+    window is on, because the count beside it counts what the window leaves.
 
-    That scope is named "this tree" for a plain directory rather than "this
-    project"; a repository keeps "this project". Under all projects the path
-    column now keeps a fixed tail of segments and drops the widest middle ones
-    when the column is narrow, instead of spending whatever width it had. Two
-    settings drive it: `ui.path_base`, the directory the column is read
-    against (your home directory when unset), and `ui.path_depth`, how many
-    segments survive (three when unset).
+    Two additions need no migration. `z` folds the group the cursor is in, and
+    the actions that make sense on several sessions at once now act on the
+    marked set — `a` archive, `Ctrl+D` delete, `c` copy resume commands,
+    `m` move, and `→` carry to another agent — each reporting what landed and
+    leaving the rows that failed marked for a retry. `Ctrl+T` still retitles
+    the set.
 
-    No command-line surface changed and no configuration migration is needed.
-    Script installations can run `another update`.
+    No command-line surface changed. Script installations can run
+    `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
