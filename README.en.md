@@ -179,11 +179,12 @@ Ctrl+R    rename in the source agent's native title store
 Ctrl+L    redraw the screen without resetting your input or selection
 Tab       accept the AI title suggestion, when one is configured and arrives
 m         fork or move the session into another project directory
-a         archive the current session; press a again to archive the next
+a         archive the current session (the whole marked set when there is one); press a again to archive the next
 x / X     mark the row under the cursor / mark or clear the whole page
 Ctrl+D    delete after an explicit confirmation
 u         undo the latest archive or reversible delete; Esc dismisses the offer
 /         search titles and normalized conversation text
+t         narrow the window: 90 days → 30 → 7 → everything
 r         refresh the local index
 Esc       close a picker or dismiss transient state
 q         quit
@@ -327,6 +328,7 @@ The configuration file is `~/.config/another/config.json`:
 
 - `ui.path_base` — the directory the path column is read against under all projects. Defaults to your home directory (`~`); set it to a workspace root such as `~/Documents/sync` and the column shows only that line's own layers.
 - `ui.path_depth` — how many segments that column keeps. Defaults to `3`; 1–8 are accepted.
+- `ui.recent_days` — list only sessions whose last message is this recent. Defaults to `90`; `0` means no window. It is a **display** range: older sessions stay indexed, and pressing `t` or lowering the number shows them again. Nothing is deleted and no agent's store is rescanned.
 
 A session belongs to the directory it **started** in. Agents record their working directory on every turn, so moving into a subdirectory, a temporary path, or another repository mid-session does not change the owner; project filtering then covers a directory together with everything below it, and every registered worktree of a Git repository.
 
