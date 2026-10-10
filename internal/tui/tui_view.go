@@ -350,6 +350,7 @@ func (m modelState) keyHelpColumns() (left, right []keyGroup) {
 			{"←", txt.helpKeySource},
 			{"f", txt.helpKeyScope},
 			{"g", txt.helpKeyGroup},
+			{"z", txt.helpKeyFold},
 			{"/", txt.helpKeySearch},
 			{"r", txt.helpKeyRefresh},
 			{"ctrl+l", txt.helpKeyRedraw},

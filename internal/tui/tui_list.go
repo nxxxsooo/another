@@ -123,7 +123,7 @@ func (sessionDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	width := max(20, m.Width())
 	if header, ok := listItem.(groupHeader); ok {
-		fmt.Fprint(w, d.renderGroupHeader(header, width))
+		fmt.Fprint(w, d.renderGroupHeader(header, width, index == m.Index()))
 		return
 	}
 	it, ok := listItem.(sessionItem)

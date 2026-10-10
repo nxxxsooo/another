@@ -30,9 +30,21 @@ type groupHeader struct {
 	// time borrowing one would claim to be a place.
 	label string
 	count int
+	// folded is set while the sessions under this band are hidden. The band
+	// stays, saying how many it holds, and says that it is closed.
+	folded bool
 }
 
 func (h groupHeader) FilterValue() string { return h.path }
+
+// foldKey is what folding remembers about a band, and it has to be the same
+// across a regroup: a tree band is its directory, a date band its own name.
+func (h groupHeader) foldKey() string {
+	if h.path != "" {
+		return h.path
+	}
+	return h.label
+}
 
 // groupKeyFor is the tree a session belongs to. Sessions are recorded in the
 // directory the agent ran in, which inside a worktree is often a subdirectory of
@@ -182,12 +194,43 @@ func (m modelState) projectBase() string {
 func (m modelState) groupedItems() []list.Item {
 	switch m.groupMode {
 	case groupTree:
-		return groupSessions(m.ungrouped, m.groupRoots(), m.projectBase())
+		return m.foldedBands(groupSessions(m.ungrouped, m.groupRoots(), m.projectBase()))
 	case groupDate:
-		return groupSessionsByDate(m.ungrouped, time.Now())
+		return m.foldedBands(groupSessionsByDate(m.ungrouped, time.Now()))
 	default:
 		return m.ungrouped
 	}
+}
+
+// foldedBands hides the sessions of every band the reader closed and marks
+// those bands, so a heading keeps saying how many it holds. Every band may be
+// closed — a list of headings is a legitimate summary of what is there — and
+// the cursor then rests on one of them, where the key that opens it is aimed.
+func (m modelState) foldedBands(items []list.Item) []list.Item {
+	if len(m.folded) == 0 || !hasGroupHeaders(items) {
+		return items
+	}
+	kept := make([]list.Item, 0, len(items))
+	for i := 0; i < len(items); i++ {
+		head, isHead := items[i].(groupHeader)
+		if !isHead {
+			kept = append(kept, items[i])
+			continue
+		}
+		head.folded = m.folded[head.foldKey()]
+		kept = append(kept, head)
+		if !head.folded {
+			continue
+		}
+		// A band's sessions run until the next heading.
+		for i+1 < len(items) {
+			if _, next := items[i+1].(groupHeader); next {
+				break
+			}
+			i++
+		}
+	}
+	return kept
 }
 
 // setSessionItems is the one way a page of sessions enters the list: it records
@@ -214,13 +257,16 @@ func (m *modelState) selectSession(id string) {
 	m.skipGroupHeader(true)
 }
 
-// skipGroupHeader moves the cursor to the nearest session in the direction the
-// user was already travelling. A band is a label, not a destination: stopping
-// on one would make ↑↓ pause on a row that enter, space, and x all ignore.
+// skipGroupHeader moves the cursor to the nearest row it can act from in the
+// direction the user was already travelling. An open band is a label, not a
+// destination: stopping on one would make ↑↓ pause on a row that enter, space,
+// and x all ignore.
 //
-// A header is always followed by at least one session, so a downward scan ends
-// on a row. An upward scan can run off the top — the first band — and turns
-// around there rather than sitting on it.
+// A closed band is the one exception, and it has to be: its sessions are not in
+// the list, so resting on the band is the only way back to them, and z is aimed
+// at what the cursor is on. Nothing is selected while it rests there — the
+// resume command belongs to a session — so those keys do nothing rather than
+// acting on a session the reader can no longer see.
 func (m *modelState) skipGroupHeader(downward bool) {
 	items := m.sessions.Items()
 	if len(items) == 0 {
@@ -231,18 +277,74 @@ func (m *modelState) skipGroupHeader(downward bool) {
 	if !downward {
 		step = -1
 	}
+	rest := func(i int) {
+		m.sessions.Select(i)
+		if _, isHeader := items[i].(groupHeader); isHeader {
+			m.lastResume = ""
+		}
+	}
 	for i := idx; i >= 0 && i < len(items); i += step {
-		if _, isHeader := items[i].(groupHeader); !isHeader {
-			m.sessions.Select(i)
+		if head, isHeader := items[i].(groupHeader); !isHeader || head.folded {
+			rest(i)
 			return
 		}
 	}
 	for i := range items {
-		if _, isHeader := items[i].(groupHeader); !isHeader {
-			m.sessions.Select(i)
+		if head, isHeader := items[i].(groupHeader); !isHeader || head.folded {
+			rest(i)
 			return
 		}
 	}
+}
+
+// toggleFold closes or opens the band the cursor is in. Folding is aimed at a
+// band but driven from where the reader already is: the cursor sits on a
+// session inside the band, or on a closed band itself, and never has to be
+// walked onto a heading that is open.
+func (m modelState) toggleFold() modelState {
+	key, ok := m.bandAtCursor()
+	if !ok {
+		return m
+	}
+	if m.folded == nil {
+		// A model built without one still folds: the set is a view, and a view
+		// that needs a constructor to exist is a trap for the next caller.
+		m.folded = map[string]bool{}
+	}
+	selected, hadRow := m.sessions.SelectedItem().(sessionItem)
+	if m.folded[key] {
+		delete(m.folded, key)
+	} else {
+		m.folded[key] = true
+	}
+	m.sessions.SetItems(m.groupedItems())
+	if hadRow {
+		m.selectSession(selected.summary.ID)
+	} else {
+		m.sessions.Select(m.sessions.Index())
+	}
+	m.skipGroupHeader(true)
+	m.applySessionDelegate()
+	return m
+}
+
+// bandAtCursor is the band the cursor is in: the heading the cursor is on when
+// it rests on a closed one, or the last heading it passed otherwise.
+func (m modelState) bandAtCursor() (string, bool) {
+	items := m.sessions.Items()
+	idx := m.sessions.Index()
+	if idx >= len(items) {
+		return "", false
+	}
+	if head, ok := items[idx].(groupHeader); ok {
+		return head.foldKey(), true
+	}
+	for i := idx - 1; i >= 0; i-- {
+		if head, ok := items[i].(groupHeader); ok {
+			return head.foldKey(), true
+		}
+	}
+	return "", false
 }
 
 // headerSkipUpward reports which way the cursor was moving, so it leaves a band
@@ -260,7 +362,7 @@ func headerSkipUpward(key string) bool {
 // how many sessions it holds. It is laid out from the same measured columns the
 // session rows use, so the band starts where a row starts and ends where a row
 // ends rather than floating over the list.
-func (d sessionDelegate) renderGroupHeader(h groupHeader, width int) string {
+func (d sessionDelegate) renderGroupHeader(h groupHeader, width int, selected bool) string {
 	c := d.columns(width)
 	label, ink, tint := txt.groupNoProject, twinTheme.textSubtle, twinTheme.border
 	switch {
@@ -288,7 +390,19 @@ func (d sessionDelegate) renderGroupHeader(h groupHeader, width int) string {
 		shown = ansi.Truncate(label, room, "…")
 	}
 	chip := projectChip(shown, ink, tint)
-	head := c.leftInset + strings.Repeat(" ", rowGutterWidth) + chip
+	// The gutter is the same three cells a session row uses: the cursor, then
+	// the mark column. A closed band rests its own cursor there — its sessions
+	// are gone, so the band is the only place left to put it — and says it is
+	// closed in the mark column, which no band can otherwise use.
+	cursor := " "
+	if selected {
+		cursor = selectedRow.Render("›")
+	}
+	mark := " "
+	if h.folded {
+		mark = "▸"
+	}
+	head := c.leftInset + cursor + mark + " " + chip
 	count := mutedStyle.Render(sessionCountText(h.count))
 	// The rule is what makes a label a band. It is dropped rather than
 	// squeezed: two dashes between a chip and a count read as damage, while a

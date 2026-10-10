@@ -185,7 +185,11 @@ type modelState struct {
 	// ungrouped is the page as the index returned it, in recency order, kept so
 	// turning grouping off restores that order rather than the order the bands
 	// left behind.
-	groupMode    int
+	groupMode int
+	// folded holds the bands whose sessions are hidden, keyed by the band's own
+	// identity so a fold survives a regroup. It is a view of the page already
+	// loaded, like grouping itself.
+	folded       map[string]bool
 	ungrouped    []list.Item
 	pageGen      uint64
 	lastResume   string
@@ -284,7 +288,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	m := modelState{
 		reg: reg, idx: idx, engine: engine,
 		titleCfg: titleCfg,
-		marked:   marked,
+		marked:   marked, folded: map[string]bool{},
 		sessions: sessList, sourceList: sourceList, targets: targetList,
 		preview: vp, searchInput: search, renameInput: rename, relocateInput: relocate, spinner: sp,
 		sources: sources, cwd: cwd, projectScope: projectScope, scopeMode: initialScope,

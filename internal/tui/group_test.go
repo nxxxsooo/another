@@ -427,3 +427,189 @@ func TestGroupingOutsideGitFallsBackToDirectories(t *testing.T) {
 		t.Fatalf("bands = %v, want %v", labels, wantBands)
 	}
 }
+
+// Folding is a view of the page in hand: the band stays, saying how many it
+// holds, and its sessions are out of the list until it is opened again. The
+// cursor is never left on nothing — it moves onto the band it closed, which is
+// the only place the key that opens it can be aimed at.
+func TestFoldingABandHidesItsSessionsAndKeepsTheBand(t *testing.T) {
+	m := sampleModel(t, 132, 32)
+	m.groupMode = groupTree
+	m.ungrouped = sampleSessions()
+	m.sessions.SetItems(m.groupedItems())
+	m.applySessionDelegate()
+	m.layout()
+
+	band, ok := bandAt(m, m.sessions.Index())
+	if !ok {
+		t.Fatal("the cursor is not in a band")
+	}
+	before := len(m.sessions.Items())
+	rowsBefore := countSessionRows(m.sessions.Items())
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	m = updated.(modelState)
+
+	if rows := countSessionRows(m.sessions.Items()); rows >= rowsBefore {
+		t.Fatalf("folding hid nothing: %d rows before, %d after", rowsBefore, rows)
+	}
+	if len(m.sessions.Items()) >= before {
+		t.Fatalf("the list did not shrink: %d items before, %d after", before, len(m.sessions.Items()))
+	}
+	head, isHead := m.sessions.Items()[foldedHeaderIndex(t, m)].(groupHeader)
+	if !isHead || !head.folded {
+		t.Fatalf("the band at %s is not marked folded", band)
+	}
+	if head.count == 0 {
+		t.Fatal("the band stopped saying how many it holds")
+	}
+	if item, ok := m.sessions.SelectedItem().(sessionItem); ok {
+		t.Fatalf("the cursor stayed on %s inside the band it just closed", item.summary.ID)
+	}
+	if line := ansi.Strip(m.View()); !strings.Contains(line, "▸") {
+		t.Fatalf("the closed band is not marked: %q", line)
+	}
+
+	// z again, from the band itself, opens it.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	m = updated.(modelState)
+	if rows := countSessionRows(m.sessions.Items()); rows != rowsBefore {
+		t.Fatalf("opening the band did not restore its rows: %d, want %d", rows, rowsBefore)
+	}
+	if len(m.folded) != 0 {
+		t.Fatalf("the fold survived its own undo: %v", m.folded)
+	}
+}
+
+func bandAt(m modelState, index int) (string, bool) {
+	items := m.sessions.Items()
+	if index >= len(items) {
+		return "", false
+	}
+	if head, ok := items[index].(groupHeader); ok {
+		return head.foldKey(), true
+	}
+	for i := index - 1; i >= 0; i-- {
+		if head, ok := items[i].(groupHeader); ok {
+			return head.foldKey(), true
+		}
+	}
+	return "", false
+}
+
+func countSessionRows(items []list.Item) int {
+	rows := 0
+	for _, item := range items {
+		if _, ok := item.(sessionItem); ok {
+			rows++
+		}
+	}
+	return rows
+}
+
+func foldedHeaderIndex(t *testing.T, m modelState) int {
+	t.Helper()
+	for i, item := range m.sessions.Items() {
+		if head, ok := item.(groupHeader); ok && head.folded {
+			return i
+		}
+	}
+	t.Fatal("no folded band in the list")
+	return -1
+}
+
+// Every band can be closed, and a list of headings is a legitimate summary of
+// what is there. The cursor then rests on one of them and has to be visible
+// there — otherwise the band it is aimed at looks like every other band — and
+// the keys bound to a session do nothing rather than reaching for one that is
+// no longer on screen.
+func TestEveryBandCanBeClosed(t *testing.T) {
+	m := sampleModel(t, 132, 32)
+	m.groupMode = groupTree
+	m.ungrouped = sampleSessions()
+	m.sessions.SetItems(m.groupedItems())
+	m.applySessionDelegate()
+	m.layout()
+
+	m.folded = map[string]bool{}
+	for _, key := range bandKeys(m.sessions.Items()) {
+		m.folded[key] = true
+	}
+	m.sessions.SetItems(m.groupedItems())
+	m.skipGroupHeader(true)
+	m.applySessionDelegate()
+	m.layout()
+
+	if rows := countSessionRows(m.sessions.Items()); rows != 0 {
+		t.Fatalf("%d sessions are still listed with every band closed", rows)
+	}
+	if !hasGroupHeaders(m.sessions.Items()) {
+		t.Fatal("closing every band took the bands away too")
+	}
+	if _, ok := m.sessions.SelectedItem().(groupHeader); !ok {
+		t.Fatal("the cursor did not come to rest on a band")
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "›") {
+		t.Fatalf("the cursor is invisible while it rests on a band:\n%s", view)
+	}
+	if head, ok := m.sessions.SelectedItem().(groupHeader); !ok || !head.folded {
+		t.Fatal("the band under the cursor is not the closed one")
+	}
+
+	// A key that needs a session does nothing while the cursor is on a band.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m = updated.(modelState)
+	if m.overlay == overlayDelete {
+		t.Fatal("delete was armed with no session selected")
+	}
+
+	// Opening the band puts the cursor back on a session in it.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	m = updated.(modelState)
+	if _, ok := m.sessions.SelectedItem().(sessionItem); !ok {
+		t.Fatal("opening a band left the cursor on the band")
+	}
+}
+
+// bandKeys are the bands a grouped list draws, in the order it draws them.
+func bandKeys(items []list.Item) []string {
+	keys := make([]string, 0, 8)
+	for _, item := range items {
+		if head, ok := item.(groupHeader); ok {
+			keys = append(keys, head.foldKey())
+		}
+	}
+	return keys
+}
+
+// A fold belongs to the band it was made on, not to the list's position: a
+// regroup has to find the same band closed.
+func TestAFoldSurvivesARegroup(t *testing.T) {
+	m := sampleModel(t, 132, 32)
+	m.groupMode = groupTree
+	m.ungrouped = sampleSessions()
+	m.sessions.SetItems(m.groupedItems())
+	m.applySessionDelegate()
+	m.layout()
+
+	band, ok := bandAt(m, m.sessions.Index())
+	if !ok {
+		t.Fatal("the cursor is not in a band")
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	m = updated.(modelState)
+
+	// tree -> off -> date -> tree: three presses of the same key, and the band
+	// that comes back has to come back closed.
+	for range 3 {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+		m = updated.(modelState)
+	}
+	if !m.folded[band] {
+		t.Fatalf("the band %s lost its fold across a regroup: %v", band, m.folded)
+	}
+	if _, isHead := m.sessions.Items()[foldedHeaderIndex(t, m)].(groupHeader); !isHead {
+		t.Fatal("a folded band is missing from the list")
+	}
+}

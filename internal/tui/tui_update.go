@@ -881,6 +881,12 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, m.searchQuery), providerCountOpts(m)))
 		}
 		return dispatchPageLoadModel(m)
+	case "z":
+		// Folding is a view of the page in hand, like grouping: nothing is
+		// queried, and every session is still there behind a band that keeps
+		// saying how many it holds.
+		m = m.toggleFold()
+		return m, nil
 	case "g":
 		// Grouping is a view of the page already loaded, not another query:
 		// every session the list can show is in hand, so the bands appear

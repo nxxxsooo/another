@@ -251,6 +251,7 @@ type uiText struct {
 	helpKeyBatch     string
 	helpKeyQuit      string
 	helpKeyGroup     string
+	helpKeyFold      string
 
 	// Setup, page one.
 	setupAgentsTitle string
@@ -530,6 +531,7 @@ var englishText = uiText{
 	helpKeyBatch:     "retitle the marked ones",
 	helpKeyQuit:      "quit",
 	helpKeyGroup:     "group: off, date, dir",
+	helpKeyFold:      "fold the group it is in",
 
 	setupAgentsTitle:      "Choose your agents",
 	setupAgentsHint:       "Space toggles an agent; Shift+↑↓ reorders them.",
@@ -793,6 +795,7 @@ var chineseText = uiText{
 	helpKeyBatch:         "给标记的会话重起标题",
 	helpKeyQuit:          "退出",
 	helpKeyGroup:         "分组：关 / 日期 / 目录",
+	helpKeyFold:          "折叠它所在的分组",
 
 	helpRelocate:         " 输入目录 · ↑↓ 选择 · → 填入 · tab 复制/移动 · enter 确认 · esc 取消",
 	helpRelocateForkOnly: " 输入目录 · ↑↓ 选择 · → 填入 · enter 复制 · esc 取消",
