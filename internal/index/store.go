@@ -500,7 +500,6 @@ type ListOpts struct {
 	ProjectExact     string
 	ProjectCWD       string   // sessions whose project_path equals this directory exactly
 	ProjectRoots     []string // sessions at or below any root (used for one Git repository's worktrees)
-	ExcludeRoots     []string // sessions at or below any root are removed, applied after ProjectRoots
 	Limit            int
 	Offset           int
 	Query            string
@@ -558,19 +557,6 @@ func (s *Store) listWhere(opts ListOpts) (string, []any) {
 			q += `0`
 		}
 		q += `)`
-		// A plain folder covers what is under it, but a descendant that is its
-		// own repository is its own project. Subtracting those here keeps the
-		// folder rule intact instead of narrowing it back to an exact match.
-		seenExcluded := make(map[string]bool)
-		for _, root := range opts.ExcludeRoots {
-			root = util.NormalizeProjectPath(root)
-			if root == "" || seenExcluded[root] {
-				continue
-			}
-			q += ` AND NOT (project_path = ? OR project_path LIKE ? ESCAPE '\')`
-			args = append(args, root, util.EscapeLikeChildPrefix(root))
-			seenExcluded[root] = true
-		}
 	} else if opts.ProjectCWD != "" {
 		norm := util.NormalizeProjectPath(opts.ProjectCWD)
 		home := util.HomeDir()

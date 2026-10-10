@@ -36,7 +36,7 @@ func groupWorktrees() []string {
 func groupModel(rows ...list.Item) modelState {
 	m := layoutTestModel()
 	m.cwd = groupRoot
-	m.projectOnly = true
+	m.scopeMode = scopeModeExact
 	m.projectScope = util.ProjectScope{
 		CWD: groupRoot, Root: groupRoot, Git: true, Worktrees: groupWorktrees(),
 	}
@@ -343,7 +343,7 @@ func TestGroupedLayoutSample(t *testing.T) {
 			m := layoutTestModel()
 			m.status = ""
 			m.cwd = sampleRepo
-			m.projectOnly = true
+			m.scopeMode = scopeModeExact
 			m.projectScope = util.ProjectScope{
 				CWD: sampleRepo, Root: sampleRepo, Git: true, Worktrees: sampleWorktreeRoots(),
 			}
@@ -414,7 +414,7 @@ func TestGroupingOutsideGitFallsBackToDirectories(t *testing.T) {
 	notes := filepath.FromSlash("/notes")
 	m := layoutTestModel()
 	m.cwd = notes
-	m.projectOnly = true
+	m.scopeMode = scopeModeExact
 	m.projectScope = util.ProjectScope{CWD: notes, Root: notes}
 	m.groupMode = groupTree
 	m.setSessionItems([]list.Item{

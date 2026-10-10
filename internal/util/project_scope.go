@@ -8,18 +8,13 @@ import (
 )
 
 // ProjectScope describes the paths that belong to the project containing CWD.
-// Git worktrees that share one repository are one project. Outside Git, the
-// caller should use CWD as an exact directory filter.
+// Git worktrees that share one repository are one project; outside Git the
+// project is CWD and everything under it.
 type ProjectScope struct {
 	CWD       string
 	Root      string
 	Worktrees []string
 	Git       bool
-	// Excluded holds repository roots strictly below a non-Git CWD. They are
-	// their own projects, so the folder rule covers everything under CWD except
-	// these. It is empty for a Git scope, where Worktrees already say precisely
-	// which trees belong.
-	Excluded []string
 }
 
 // DiscoverProjectScope reads Git's registered worktree set without changing it.

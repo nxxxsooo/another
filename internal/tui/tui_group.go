@@ -151,7 +151,7 @@ func projectsBelowGroups(items []list.Item, roots []string) bool {
 // repository whose worktrees they could be read against, so each directory is
 // its own group.
 func (m modelState) groupRoots() []string {
-	if m.projectOnly && m.projectScope.Git {
+	if m.scopeMode == scopeModeExact && m.projectScope.Git {
 		return m.projectScope.Worktrees
 	}
 	return nil
@@ -160,9 +160,14 @@ func (m modelState) groupRoots() []string {
 // projectBase is the directory paths are shown relative to, for the project
 // column and for a group's label alike. The two must agree: a band and the rows
 // under it are the same path written once and once per row.
+//
+// The global scope has no project to be read against, so it reads against
+// ui.path_base instead — the prefix its rows would otherwise repeat — and home
+// when that is unset. Base is spelling, never filtering: the scope still holds
+// every session there is.
 func (m modelState) projectBase() string {
-	if !m.projectOnly {
-		return ""
+	if m.scopeMode == scopeModeAll {
+		return m.pathBase
 	}
 	if m.projectScope.Root != "" {
 		return m.projectScope.Root
@@ -272,8 +277,13 @@ func (d sessionDelegate) renderGroupHeader(h groupHeader, width int) string {
 		return ""
 	}
 	// A path is shortened from the middle so its root survives; a band's name
-	// is a phrase, and a phrase is cut at the end like any other sentence.
+	// is a phrase, and a phrase is cut at the end like any other sentence. In
+	// the global scope the label is a whole path, or the part of one below
+	// ui.path_base, and it takes the same fixed tail the rows below it do.
 	shown := elidePath(label, room)
+	if d.global {
+		shown = elidePathTail(label, room, d.pathDepth)
+	}
 	if h.label != "" {
 		shown = ansi.Truncate(label, room, "…")
 	}

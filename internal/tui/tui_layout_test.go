@@ -161,20 +161,47 @@ func TestSearchKeyFocusesInput(t *testing.T) {
 func TestScopeKeyTogglesProjectFilter(t *testing.T) {
 	m := layoutTestModel()
 	m.cwd = "/repo"
-	m.projectOnly = true
+	m.scopeMode = scopeModeExact
 	m.projectScope = util.ProjectScope{CWD: "/repo", Root: "/repo", Git: true, Worktrees: []string{"/repo", "/tmp/feature"}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(modelState)
-	if m.projectOnly || cmd == nil {
-		t.Fatalf("scope did not switch to all: projectOnly=%v cmd=%v", m.projectOnly, cmd)
+	if m.scopeMode != scopeModeAll || cmd == nil {
+		t.Fatalf("scope did not switch to all: scopeMode=%v cmd=%v", m.scopeMode, cmd)
 	}
 	updated, _ = m.Update(sessionsPageMsg{gen: m.pageGen})
 	m = updated.(modelState)
 	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(modelState)
-	if !m.projectOnly || cmd == nil {
-		t.Fatalf("scope did not switch back to project: projectOnly=%v cmd=%v", m.projectOnly, cmd)
+	if m.scopeMode != scopeModeExact || cmd == nil {
+		t.Fatalf("scope did not switch back to project: scopeMode=%v cmd=%v", m.scopeMode, cmd)
 	}
+}
+
+func TestScopeKeyCyclesNonGitProjectFilter(t *testing.T) {
+	m := layoutTestModel()
+	m.cwd = "/Users/someone/Documents/sync/Work/huatu"
+	// A plain directory opens on its tree; f walks between that and everything.
+	m.scopeMode = scopeModeTree
+	m.projectScope = util.ProjectScope{CWD: m.cwd, Root: m.cwd, Git: false}
+
+	// 1st press: the tree -> everything
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = updated.(modelState)
+	if m.scopeMode != scopeModeAll || cmd == nil {
+		t.Fatalf("scope did not switch to all: scopeMode=%v", m.scopeMode)
+	}
+
+	// simulate page loaded
+	updated, _ = m.Update(sessionsPageMsg{gen: m.pageGen})
+	m = updated.(modelState)
+
+	// 2nd press: everything -> the tree
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = updated.(modelState)
+	if m.scopeMode != scopeModeTree || cmd == nil {
+		t.Fatalf("scope did not switch back to the tree: scopeMode=%v", m.scopeMode)
+	}
+
 }
 
 func TestScopeKeyRerunsActiveSearch(t *testing.T) {
@@ -182,17 +209,18 @@ func TestScopeKeyRerunsActiveSearch(t *testing.T) {
 	m.cwd = "/repo"
 	m.searchQuery = "needle"
 	m.projectScope = util.ProjectScope{CWD: "/repo", Root: "/repo", Git: true, Worktrees: []string{"/repo"}}
+	m.scopeMode = scopeModeExact
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(modelState)
-	if !m.projectOnly || !m.loading || cmd == nil {
-		t.Fatalf("active search was not rerun: projectOnly=%v loading=%v cmd=%v", m.projectOnly, m.loading, cmd)
+	if m.scopeMode != scopeModeAll || !m.loading || cmd == nil {
+		t.Fatalf("active search was not rerun: scopeMode=%v loading=%v cmd=%v", m.scopeMode, m.loading, cmd)
 	}
 }
 
 func TestHeaderAndEmptyViewExposeProjectScope(t *testing.T) {
 	m := layoutTestModel()
 	m.width, m.height = 100, 24
-	m.projectOnly = true
+	m.scopeMode = scopeModeExact
 	m.projectScope = util.ProjectScope{CWD: "/repo", Root: "/repo", Git: true, Worktrees: []string{"/repo"}}
 	header := ansi.Strip(m.headerView())
 	if !strings.Contains(header, txt.scopeThis) || !strings.Contains(header, "/repo") {
@@ -1332,7 +1360,7 @@ func TestProjectColumnReturnsWhenAProjectSpansDirectories(t *testing.T) {
 		m := layoutTestModel()
 		m.width, m.height = 120, 40
 		m.cwd, m.projectScope = root, util.ProjectScope{CWD: root, Root: root, Git: true}
-		m.projectOnly = true
+		m.scopeMode = scopeModeExact
 		items := make([]list.Item, 0, len(paths))
 		for i, path := range paths {
 			items = append(items, sessionItem{summary: model.Summary{
@@ -1360,7 +1388,7 @@ func TestProjectColumnReturnsWhenAProjectSpansDirectories(t *testing.T) {
 
 	// The global scope is unchanged: full paths, always shown.
 	global := rowsIn(root, root)
-	global.projectOnly = false
+	global.scopeMode = scopeModeAll
 	if d := sessionDelegateFor(&global); !d.showProject || d.projectBase != "" {
 		t.Fatalf("global scope changed: showProject=%v base=%q", d.showProject, d.projectBase)
 	}
@@ -1782,7 +1810,7 @@ func TestProjectColumnSurvivesASourceFilter(t *testing.T) {
 	root := "/Users/mingjian/Documents/sync/GitHub/another"
 	m := layoutTestModel()
 	m.width, m.height = 140, 40
-	m.projectOnly = true
+	m.scopeMode = scopeModeExact
 	m.projectScope.Root = root
 	// What the scope holds: the root plus a worktree under it.
 	m.scopeProjects = 2
@@ -1859,12 +1887,12 @@ func TestTargetChipDoesNotMoveWithTheListItDescribes(t *testing.T) {
 				if width < contentBandFloor {
 					totals = []int{1, 59, 361}
 				}
-				for _, scoped := range []bool{true, false} {
+				for _, scoped := range []scopeMode{scopeModeExact, scopeModeTree, scopeModeAll} {
 					for _, total := range totals {
 						for _, cursor := range []int{0, 4, 9} {
 							for _, source := range []int{0, 1} {
 								m := sampleModel(t, width, 24)
-								m.projectOnly = scoped
+								m.scopeMode = scoped
 								m.totalSessions = total
 								m.sources = []sourceChip{{id: "", name: "all"}, {id: "claude-code", name: "Claude Code"}}
 								m.sourceIdx = source

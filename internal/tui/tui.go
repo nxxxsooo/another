@@ -55,6 +55,14 @@ const (
 	groupModes
 )
 
+type scopeMode int
+
+const (
+	scopeModeAll   scopeMode = iota // all projects
+	scopeModeExact                  // this project (Git) or this folder (non-Git)
+	scopeModeTree                   // all subfolders (non-Git only)
+)
+
 type modelState struct {
 	reg    *registry.Registry
 	idx    *index.Store
@@ -165,7 +173,13 @@ type modelState struct {
 	cwd             string
 	movedAway       []string
 	projectScope    util.ProjectScope
-	projectOnly     bool
+	scopeMode       scopeMode
+	// pathBase is what a globally-listed row is read against, from
+	// ui.path_base, and pathDepth is how many segments of it a row keeps, from
+	// ui.path_depth. Both are display only: neither ever filters a row out, so
+	// the global scope stays global and only the spelling of a path changes.
+	pathBase  string
+	pathDepth int
 	// groupMode bands the list: by tree, one band per worktree with sessions
 	// under the band they started in, or by date, one band per stretch of time.
 	// ungrouped is the page as the index returned it, in recency order, kept so
@@ -221,9 +235,9 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		cwd = util.NormalizeProjectPath(cwd)
 	}
 	projectScope := util.DiscoverProjectScope(context.Background(), cwd)
-	resolveNestedRepos(idx, &projectScope)
 	initialOpts := index.ListOpts{IncludeSubagents: false}
-	applyProjectScope(&initialOpts, projectScope)
+	initialScope := openingScope(projectScope)
+	applyProjectScope(&initialOpts, projectScope, initialScope)
 	counts, _ := idx.CountByProviderFiltered(initialOpts)
 
 	// One map instance is shared with the delegate; see sessionDelegate.
@@ -251,12 +265,18 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	// suggestion agent is a TUI-only concern and an unreadable config simply
 	// leaves the feature off.
 	var titleCfg titler.Config
-	if settings, err := config.LoadSettings(); err == nil && settings.TitleModel != nil {
-		titleCfg = titler.Config{
-			Provider: settings.TitleModel.Provider,
-			Model:    settings.TitleModel.Model,
-			Language: titler.NormalizeLanguage(titler.Language(settings.TitleModel.Language)),
+	var pathBase string
+	pathDepth := pathTailDepth
+	if settings, err := config.LoadSettings(); err == nil {
+		if settings.TitleModel != nil {
+			titleCfg = titler.Config{
+				Provider: settings.TitleModel.Provider,
+				Model:    settings.TitleModel.Model,
+				Language: titler.NormalizeLanguage(titler.Language(settings.TitleModel.Language)),
+			}
 		}
+		pathBase = configuredPathBase(settings.UI)
+		pathDepth = configuredPathDepth(settings.UI)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -267,7 +287,8 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		marked:   marked,
 		sessions: sessList, sourceList: sourceList, targets: targetList,
 		preview: vp, searchInput: search, renameInput: rename, relocateInput: relocate, spinner: sp,
-		sources: sources, cwd: cwd, projectScope: projectScope, projectOnly: cwd != "",
+		sources: sources, cwd: cwd, projectScope: projectScope, scopeMode: initialScope,
+		pathBase: pathBase, pathDepth: pathDepth,
 		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
 		movedAway: movedAwayDirectories(idx, initialOpts.ProjectRoots),

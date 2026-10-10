@@ -870,7 +870,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.err = txt.projectUnknown
 			return m, nil
 		}
-		m.projectOnly = !m.projectOnly
+		m.scopeMode = m.nextScopeMode()
 		m.applySessionDelegate()
 		m.err = ""
 		m.status = ""
@@ -1101,4 +1101,18 @@ func (m *modelState) clearSuggestion() {
 	m.suggestion = ""
 	m.suggestErr = ""
 	m.suggestFor = ""
+}
+
+// nextScopeMode is the next scope this directory offers, wrapping around. The
+// list comes from the directory rather than from a fixed cycle: a home or a
+// repository has two states, and walking a third that is not there would step
+// off the end of what the directory can say.
+func (m modelState) nextScopeMode() scopeMode {
+	modes := scopeModes(m.projectScope)
+	for i, mode := range modes {
+		if mode == m.scopeMode {
+			return modes[(i+1)%len(modes)]
+		}
+	}
+	return modes[0]
 }

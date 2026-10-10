@@ -53,7 +53,7 @@ func TestRenderProbe(t *testing.T) {
 	cwd, _ := os.Getwd()
 	project := util.DiscoverProjectScope(t.Context(), cwd)
 	opts := index.ListOpts{Limit: 12}
-	applyProjectScope(&opts, project)
+	applyProjectScope(&opts, project, scopeModeExact)
 	counts, _ := idx.CountByProviderFiltered(opts)
 	summaries, err := idx.List(opts)
 	if err != nil {
@@ -75,7 +75,7 @@ func TestRenderProbe(t *testing.T) {
 		totalSessions: sources[0].count,
 		cwd:           project.CWD,
 		projectScope:  project,
-		projectOnly:   true,
+		scopeMode:     scopeModeExact,
 	}
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: probeWidth(), Height: probeHeight()})
 	shown := updated.(modelState)
@@ -84,7 +84,7 @@ func TestRenderProbe(t *testing.T) {
 	// The project column only exists in the global scope, so the probe has to
 	// show both or it never shows that column at all.
 	global := shown
-	global.projectOnly = false
+	global.scopeMode = scopeModeAll
 	global.layout()
 	fmt.Println("======== list (all projects)")
 	fmt.Println(global.View())

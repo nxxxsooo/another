@@ -22,13 +22,37 @@ func TestScopeToggleKeepsTargetAtTheSameColumn(t *testing.T) {
 				}
 				return ansi.StringWidth(header[:at])
 			}
-			m.projectOnly = true
+			m.scopeMode = scopeModeExact
 			project := column()
-			m.projectOnly = false
+			m.scopeMode = scopeModeTree
+			if tree := column(); tree != project {
+				t.Errorf("%s width %d: target moved from %d to %d in tree", lang, width, project, tree)
+			}
+			m.scopeMode = scopeModeAll
 			if all := column(); all != project {
-				t.Errorf("%s width %d: target moved from %d to %d", lang, width, project, all)
+				t.Errorf("%s width %d: target moved from %d to %d in all", lang, width, project, all)
 			}
 		}
 		applyLanguage(previous)
+	}
+}
+
+func TestAllProjectsHeaderOmitsPathTail(t *testing.T) {
+	m := sampleModel(t, 160, 24)
+	m.projectScope.Root = "/Users/example/Documents/sync/Docs"
+	m.scopeMode = scopeModeAll
+	header := ansi.Strip(m.headerView())
+	if strings.Contains(header, "Docs") {
+		t.Fatalf("global all projects header should not contain root path tail: %q", header)
+	}
+	if !strings.Contains(header, txt.scopeAll) {
+		t.Fatalf("global all projects header missing %q: %q", txt.scopeAll, header)
+	}
+
+	// But exact mode should contain root path tail when wide enough
+	m.scopeMode = scopeModeExact
+	exactHeader := ansi.Strip(m.headerView())
+	if !strings.Contains(exactHeader, "Docs") {
+		t.Fatalf("exact scope header should contain root path tail when room allows: %q", exactHeader)
 	}
 }

@@ -727,19 +727,27 @@ func (m modelState) headerView() string {
 	tight := mutedStyle.Render(" " + slot + " ")
 	// Choose one layout for both scopes. The scope label changes when f is
 	// pressed, but must not decide whether the prefix loses its brand or gaps.
-	other := m
-	other.projectOnly = !m.projectOnly
 	scopeFits := func(showPath bool) string {
-		current, alternate := m.scopeView(showPath), other.scopeView(showPath)
-		return padRight(current, max(ansi.StringWidth(current), ansi.StringWidth(alternate)))
+		maxWidth := 0
+		modes := scopeModes(m.projectScope)
+		for _, mode := range modes {
+			variant := m
+			variant.scopeMode = mode
+			w := ansi.StringWidth(variant.scopeView(showPath))
+			if w > maxWidth {
+				maxWidth = w
+			}
+		}
+		return padRight(m.scopeView(showPath), maxWidth)
 	}
+	compactSep := mutedStyle.Render(" │ ")
 	first := ""
 	for _, candidate := range []string{
 		left + position + right + separator + scopeFits(true),
 		left + position + right + separator + scopeFits(false),
 		bare + position + right + separator + scopeFits(false),
-		bare + position + right + " " + scopeFits(false),
-		bare + tight + right + " " + scopeFits(false),
+		bare + position + right + compactSep + scopeFits(false),
+		bare + tight + right + compactSep + scopeFits(false),
 		bare + position + right,
 	} {
 		if ansi.StringWidth(candidate) <= width {
@@ -771,13 +779,20 @@ func (m modelState) scopeView(showPath bool) string {
 	// Not the source chip's violet. Violet means source in this interface, and
 	// the scope is a filter over directories, not an agent — painted the same
 	// way, the header showed two identical chips that meant different things.
-	var line string
-	if m.projectOnly {
-		line = scopeChipStyle.Render(txt.scopeThis)
-	} else {
-		line = scopeChipStyle.Render(txt.scopeAll)
+	// Two labels for two states: where you are, and everywhere. The narrow one
+	// names the directory's own shape — a repository, or the tree under a plain
+	// directory — because that is the difference between the two cases.
+	var label string
+	switch {
+	case m.scopeMode == scopeModeAll:
+		label = txt.scopeAll
+	case m.projectScope.Git:
+		label = txt.scopeThis
+	default:
+		label = txt.scopeTree
 	}
-	if showPath && path != "" {
+	line := scopeChipStyle.Render(label)
+	if showPath && path != "" && m.scopeMode != scopeModeAll {
 		line += mutedStyle.Render("  ·  " + path)
 	}
 	return line
@@ -805,7 +820,7 @@ func (m modelState) emptySessionsView() string {
 	if m.searchQuery != "" {
 		return mutedStyle.Render(txt.emptySearch)
 	}
-	if m.projectOnly {
+	if m.scopeMode != scopeModeAll {
 		body := txt.emptyProject
 		// A project that was renamed or relocated looks empty here while its
 		// sessions sit under the directory the agents recorded.

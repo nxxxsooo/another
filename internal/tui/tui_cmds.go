@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
@@ -123,46 +124,99 @@ func listOptsFor(m modelState) index.ListOpts {
 		Limit:            maxShowAllPage,
 		IncludeSubagents: false,
 	}
-	if m.projectOnly {
-		applyProjectScope(&opts, m.projectScope)
+	if m.scopeMode != scopeModeAll {
+		applyProjectScope(&opts, m.projectScope, m.scopeMode)
 	}
 	return opts
 }
 
-// resolveNestedRepos fills in the repositories a non-Git scope must not absorb.
-// A Git scope already names its trees exactly, and a failed lookup leaves the
-// scope as it was: showing a folder's whole subtree is the previous behaviour,
-// not a reason to refuse to draw a list.
-func resolveNestedRepos(idx *index.Store, scope *util.ProjectScope) {
-	scope.Excluded = nil
-	if scope == nil || scope.Git || scope.CWD == "" || idx == nil {
-		return
-	}
-	paths, err := idx.ProjectPathsUnder(scope.CWD)
+// configuredPathBase resolves ui.path_base into the directory the global
+// column is read against. It is a preference about spelling, so anything it
+// cannot resolve — an empty value, a bad tilde, home itself — leaves the base
+// unset rather than failing a startup over a column's worth of cells.
+func configuredPathBase(ui config.UI) string {
+	expanded, err := util.ExpandDir(ui.PathBase)
 	if err != nil {
-		return
+		return ""
 	}
-	scope.Excluded = util.NestedRepoRoots(scope.CWD, paths)
+	expanded = util.NormalizeProjectPath(expanded)
+	if expanded == "" || expanded == util.HomeDir() {
+		return ""
+	}
+	return expanded
 }
 
-func applyProjectScope(opts *index.ListOpts, scope util.ProjectScope) {
+// configuredPathDepth is ui.path_depth, or the default. A width is what the
+// number is spent on, so a value outside the range a column could ever hold is
+// clamped rather than refused: an unusable preference should not take the
+// screen down with it.
+func configuredPathDepth(ui config.UI) int {
+	switch {
+	case ui.PathDepth <= 0:
+		return pathTailDepth
+	case ui.PathDepth > maxPathDepth:
+		return maxPathDepth
+	default:
+		return ui.PathDepth
+	}
+}
+
+// maxPathDepth is the deepest a row is allowed to be spelled. Past a handful
+// of segments the value is a whole path, which is what the preview is for.
+const maxPathDepth = 8
+
+// narrowScope is the scope that means "here" for a directory: a repository and
+// its worktrees, or a plain directory and the work below it. Agents record the
+// directory they ran in rather than its parent, so "here" cannot be an exact
+// match outside Git — it would hide whole trees — and it cannot be the tree
+// inside a repository, where the worktrees are the boundary.
+func narrowScope(projectScope util.ProjectScope) scopeMode {
+	if projectScope.Git {
+		return scopeModeExact
+	}
+	return scopeModeTree
+}
+
+// scopeModes is the scopes a directory can be read at, in the order f walks
+// them. There are two, because a directory is either a project or a container
+// and never both: the sessions run in the directory itself are the whole story
+// for one and a footnote to the other. Offering both narrower states offered
+// the same list twice, and at home — where everything under it is nearly
+// everything on the machine — under a longer name as well.
+func scopeModes(projectScope util.ProjectScope) []scopeMode {
+	return []scopeMode{narrowScope(projectScope), scopeModeAll}
+}
+
+// openingScope is the scope the browser opens on: the directory it was started
+// in, which is a choice a person made. Nothing is guessed at from session
+// counts, because an empty directory is a true answer — this is where I am,
+// and nothing has run here yet.
+func openingScope(projectScope util.ProjectScope) scopeMode {
+	if projectScope.CWD == "" {
+		return scopeModeAll
+	}
+	return narrowScope(projectScope)
+}
+
+func applyProjectScope(opts *index.ListOpts, scope util.ProjectScope, mode scopeMode) {
+	if mode == scopeModeAll {
+		return
+	}
 	if scope.Git && len(scope.Worktrees) > 0 {
 		opts.ProjectRoots = append([]string(nil), scope.Worktrees...)
 		return
 	}
-	// Outside Git a directory means that directory and what is under it. An
-	// exact match hid entire trees: opening another in ~/Documents/sync/Work/
-	// huatu showed nothing at all while 79 sessions sat in its subfolders,
-	// because agents record the directory they ran in, not its parent.
-	//
-	// Descendants that are their own repository are subtracted. Without that,
-	// a folder holding several checkouts reports all of them as one project:
-	// opening another in ~/Documents/sync claimed 476 sessions spanning a
-	// dozen unrelated repos.
-	if scope.CWD != "" {
-		opts.ProjectRoots = []string{scope.CWD}
-		opts.ExcludeRoots = append([]string(nil), scope.Excluded...)
+	if scope.CWD == "" {
+		return
 	}
+	// Outside Git the scope is this directory and what is under it: the whole
+	// tree, subprojects included, because a line of work is read as one thing.
+	// An exact match hid entire trees — opening huatu showed nothing at all
+	// while 79 sessions sat in its subfolders — and subtracting the projects
+	// below hid the rest: a workspace is not a folder of unrelated checkouts,
+	// and "huatu" that omits huatu's own subprojects is not the answer anyone
+	// opening huatu was asking for.
+	opts.ProjectRoots = []string{scope.CWD}
 }
 
 func providerCountOpts(m modelState) index.ListOpts {
@@ -223,9 +277,9 @@ func contentIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Sto
 
 func searchOptsFor(m modelState, query string) index.SearchOpts {
 	opts := index.SearchOpts{Query: query, Provider: m.sourceID(), Limit: maxShowAllPage}
-	if m.projectOnly {
+	if m.scopeMode != scopeModeAll {
 		listOpts := index.ListOpts{}
-		applyProjectScope(&listOpts, m.projectScope)
+		applyProjectScope(&listOpts, m.projectScope, m.scopeMode)
 		opts.ProjectExact = listOpts.ProjectExact
 		opts.ProjectRoots = listOpts.ProjectRoots
 	}
@@ -264,9 +318,6 @@ func refreshIndexCmd(ctx context.Context, reg *registry.Registry, idx *index.Sto
 		var project *util.ProjectScope
 		if scopeCWD != "" {
 			discovered := util.DiscoverProjectScope(ctx, scopeCWD)
-			// A refresh is where a checkout created since startup appears, so
-			// the nested set is recomputed rather than carried over.
-			resolveNestedRepos(idx, &discovered)
 			project = &discovered
 		}
 		return indexRefreshedMsg{counts: counts, project: project, err: err, updated: n, reloadPage: reloadPage}
