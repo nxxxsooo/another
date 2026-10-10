@@ -361,8 +361,14 @@ func TestGlobalColumnReadsAgainstTheConfiguredBase(t *testing.T) {
 		}
 	}
 	// At depth 4 the same row is still the deepest one in the column, and the
-	// root it keeps is what says it is the one the base does not hold.
-	out := "/Users/mingjian/Documents/apps/ht-canteen-miaoda"
+	// root it keeps is what says it is the one the base does not hold. The path
+	// is built from this machine's home, so the test reads the same wherever it
+	// runs: the "~" only appears for a directory that is really under home.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory to build the outside path from")
+	}
+	out := filepath.Join(home, "Documents", "apps", "ht-canteen-miaoda")
 	cell := ansi.Strip(renderProjectChipCell(out, util.SanitizeDisplay(projectCellText(out, base)), true, 34, false, true, 4))
 	if !strings.Contains(cell, "~/apps/ht-canteen-miaoda") {
 		t.Errorf("cell at depth 4 = %q, want the root kept", cell)
