@@ -622,12 +622,42 @@ func (p *Provider) delete(ctx context.Context, sessionID string) error {
 	// deletion another believes in but the server refused would be reported as
 	// a cleaned-up session that is still there.
 	return p.withSessionDirectory(sessionID, func() error {
-		cmd := exec.CommandContext(ctx, p.command, "api", "DELETE", "/api/session/"+sessionID)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("OpenCode delete: %w: %s", err, strings.TrimSpace(string(out)))
+		out, err := p.deleteCall(ctx, sessionID)
+		if err != nil {
+			if sessionNotFound(out) {
+				// The server has nothing to delete. That is the goal state
+				// rather than a failure: a list can hold a row the server has
+				// already let go, and calling that a failed delete sends the
+				// reader to remove something that is not there. Whether the
+				// record is really gone is the database's answer, which
+				// awaitGone reads.
+				return p.awaitGone(ctx, sessionID)
+			}
+			// A refusal another cannot explain is worth one more ask. A delete
+			// is idempotent, so a second call cannot do harm the first did not,
+			// and a server that was mid-restart answers the second.
+			if out, err = p.deleteCall(ctx, sessionID); err != nil {
+				if sessionNotFound(out) {
+					return p.awaitGone(ctx, sessionID)
+				}
+				return fmt.Errorf("OpenCode delete: %w: %s", err, strings.TrimSpace(out))
+			}
 		}
 		return p.awaitGone(ctx, sessionID)
 	})
+}
+
+// deleteCall is one DELETE through the agent's own CLI.
+func (p *Provider) deleteCall(ctx context.Context, sessionID string) (string, error) {
+	cmd := exec.CommandContext(ctx, p.command, "api", "DELETE", "/api/session/"+sessionID)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// sessionNotFound reports the server's own "no such session", the one refusal
+// that means there is nothing left to remove.
+func sessionNotFound(out string) bool {
+	return strings.Contains(out, "SessionNotFoundError")
 }
 
 // SupportsRelocate reports both modes: OpenCode V2 owns a native fork and a
@@ -808,7 +838,7 @@ func (p *Provider) awaitGone(ctx context.Context, sessionID string) error {
 			return fmt.Errorf("OpenCode delete: %w", err)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("OpenCode delete: OpenCode V2 refused the deletion, session %s is still there; a session whose directory no longer exists cannot be deleted", sessionID)
+			return fmt.Errorf("OpenCode delete: OpenCode V2 refused the deletion, session %s is still in its database", sessionID)
 		}
 		select {
 		case <-ctx.Done():
