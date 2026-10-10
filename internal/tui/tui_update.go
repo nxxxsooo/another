@@ -693,11 +693,11 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case overlayTarget:
 			if tgt, ok := m.targets.SelectedItem().(targetItem); ok {
 				if len(m.migrateBatch) > 0 {
-					todo := m.migrateBatch
+					todo, skip := m.migrateBatch, m.migrateBatchSkip
 					m.loading = true
 					m.err = ""
 					return m, tea.Batch(m.spinner.Tick,
-						migrateMarkedCmd(m.ctx, m.engine, todo, tgt.id, m.contextMode))
+						migrateMarkedCmd(m.ctx, m.engine, todo, tgt.id, m.contextMode, skip))
 				}
 				if m.selected != nil {
 					m.loading = true
@@ -714,11 +714,11 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if len(m.deleteBatch) > 0 {
-				todo := m.deleteBatch
-				m.deleteBatch = nil
+				todo, skip := m.deleteBatch, m.deleteBatchSkip
+				m.deleteBatch, m.deleteBatchSkip = nil, batchSkip{}
 				m.loading = true
 				m.err = ""
-				return m, tea.Batch(m.spinner.Tick, deleteMarkedCmd(m.ctx, m.reg, m.idx, todo))
+				return m, tea.Batch(m.spinner.Tick, deleteMarkedCmd(m.ctx, m.reg, m.idx, todo, skip))
 			}
 			if m.selected != nil {
 				m.loading = true
@@ -807,21 +807,16 @@ func (m modelState) openTargetDrawer() (tea.Model, tea.Cmd) {
 // sessions the reader was looking at when the set was marked; a member that
 // cannot follow is reported per session rather than hidden here.
 func (m modelState) openTargetDrawerForMarked() (tea.Model, tea.Cmd) {
-	summaries, _ := m.markedSummaries()
-	todo := make([]model.Summary, 0, len(summaries))
-	for _, sm := range summaries {
-		if isCurrentSession(sm) {
-			continue
-		}
-		todo = append(todo, sm)
-	}
-	if len(todo) == 0 {
+	split := m.markedSplit(func(model.Summary) bool { return true })
+	if len(split.todo) == 0 {
 		m.err = txt.migrateNoneMarked
 		return m, nil
 	}
+	todo := split.todo
 	sel := sessionItem{summary: todo[0]}
 	m.selected = &sel
 	m.migrateBatch = todo
+	m.migrateBatchSkip = m.skipOf(split.skipped)
 	m.targets.SetItems(targetItems(m.reg, todo[0].Provider))
 	m.targets.Select(0)
 	m.overlay = overlayTarget

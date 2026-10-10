@@ -29,11 +29,13 @@ type archiveBatchDoneMsg struct {
 	archived bool
 	done     []string
 	failed   []batchFailure
+	skip     batchSkip
 }
 
 type deleteBatchDoneMsg struct {
 	done   []string
 	failed []batchFailure
+	skip   batchSkip
 }
 
 type copyBatchDoneMsg struct {
@@ -41,19 +43,58 @@ type copyBatchDoneMsg struct {
 	err   error
 }
 
-// markedEligible is the marked set prepared for one action: the sessions it can
-// act on, and how many it cannot. A session that cannot be acted on is counted
-// rather than dropped silently — the reader marked it deliberately.
-func (m modelState) markedEligible(can func(model.Summary) bool) []model.Summary {
+// markedSplit is the marked set prepared for one action: the sessions it can act
+// on, and the ones it cannot. Nothing is dropped in silence — the reader marked
+// those rows deliberately, so the report has to say they were passed over and
+// who passed them over.
+type markedSplit struct {
+	todo    []model.Summary
+	skipped []model.Summary
+}
+
+// batchSkip is what a marked-set action could not take, carried into the run
+// and back out again so the report can say so.
+type batchSkip struct {
+	count  int
+	agents string
+}
+
+func (s batchSkip) text() string {
+	if s.count == 0 {
+		return ""
+	}
+	return fmt.Sprintf(txt.batchSkippedSuffixFmt, s.count, s.agents)
+}
+
+func (m modelState) markedSplit(can func(model.Summary) bool) markedSplit {
 	summaries, _ := m.markedSummaries()
-	todo := make([]model.Summary, 0, len(summaries))
+	var split markedSplit
 	for _, sm := range summaries {
 		if isCurrentSession(sm) || !can(sm) {
+			split.skipped = append(split.skipped, sm)
 			continue
 		}
-		todo = append(todo, sm)
+		split.todo = append(split.todo, sm)
 	}
-	return todo
+	return split
+}
+
+// skipOf is the skip a report needs: how many, and which agents could not do it.
+func (m modelState) skipOf(skipped []model.Summary) batchSkip {
+	if len(skipped) == 0 {
+		return batchSkip{}
+	}
+	seen := map[string]bool{}
+	agents := make([]string, 0, 4)
+	for _, sm := range skipped {
+		name := registry.DisplayName(m.reg, sm.Provider)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		agents = append(agents, name)
+	}
+	return batchSkip{count: len(skipped), agents: strings.Join(agents, ", ")}
 }
 
 // canArchive and canDelete ask the source agent, which is the only one that can
@@ -78,25 +119,30 @@ func (m modelState) canDelete(sm model.Summary) bool {
 // does, one native call each. One failure does not stop the rest, and the index
 // is refreshed once per agent afterwards.
 func (m modelState) archiveMarked() (tea.Model, tea.Cmd) {
-	todo := m.markedEligible(m.canArchive)
-	if len(todo) == 0 {
-		m.err = txt.archiveNoneMarked
+	split := m.markedSplit(m.canArchive)
+	if len(split.todo) == 0 {
+		// Naming the agent is the difference between "it cannot be archived"
+		// and knowing which store to look at: OpenCode archives its legacy
+		// V1 sessions and has no archive for the current store.
+		m.err = fmt.Sprintf(txt.noneEligibleFmt, txt.batchVerbArchive, m.skipOf(split.skipped).agents)
 		return m, nil
 	}
 	m.loading = true
 	m.err = ""
-	return m, tea.Batch(m.spinner.Tick, archiveMarkedCmd(m.ctx, m.reg, m.idx, todo, true))
+	return m, tea.Batch(m.spinner.Tick,
+		archiveMarkedCmd(m.ctx, m.reg, m.idx, split.todo, true, m.skipOf(split.skipped)))
 }
 
 // deleteConfirm is the batch delete's decision point: the same overlay as a
 // single delete, carrying how many sessions are about to go.
 func (m modelState) deleteConfirm() (tea.Model, tea.Cmd) {
-	todo := m.markedEligible(m.canDelete)
-	if len(todo) == 0 {
-		m.err = txt.deleteNoneMarked
+	split := m.markedSplit(m.canDelete)
+	if len(split.todo) == 0 {
+		m.err = fmt.Sprintf(txt.noneEligibleFmt, txt.batchVerbDelete, m.skipOf(split.skipped).agents)
 		return m, nil
 	}
-	m.deleteBatch = todo
+	m.deleteBatch = split.todo
+	m.deleteBatchSkip = m.skipOf(split.skipped)
 	m.selected = nil
 	m.deleteChoice = 0
 	m.overlay = overlayDelete
@@ -133,9 +179,9 @@ func (m modelState) copyMarked() (tea.Model, tea.Cmd) {
 
 // archiveMarkedCmd carries each session in turn with the same native call the
 // single flow uses.
-func archiveMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sessions []model.Summary, archived bool) tea.Cmd {
+func archiveMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sessions []model.Summary, archived bool, skip batchSkip) tea.Cmd {
 	return func() tea.Msg {
-		done := archiveBatchDoneMsg{archived: archived}
+		done := archiveBatchDoneMsg{archived: archived, skip: skip}
 		touched := map[string]bool{}
 		for _, sm := range sessions {
 			p, err := reg.Get(sm.Provider)
@@ -170,9 +216,9 @@ func archiveMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 // one-step offer restores a single session, and a row that comes back without
 // its neighbours is not the state the person had. The confirmation says so
 // before anything is deleted.
-func deleteMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sessions []model.Summary) tea.Cmd {
+func deleteMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sessions []model.Summary, skip batchSkip) tea.Cmd {
 	return func() tea.Msg {
-		done := deleteBatchDoneMsg{}
+		done := deleteBatchDoneMsg{skip: skip}
 		touched := map[string]bool{}
 		for _, sm := range sessions {
 			p, err := reg.Get(sm.Provider)
@@ -228,6 +274,7 @@ func (m modelState) onArchiveBatchDone(msg archiveBatchDoneMsg) (tea.Model, tea.
 	if len(msg.failed) > 0 {
 		m.status += mutedStyle.Render(fmt.Sprintf(txt.batchFailedSuffixFmt, len(msg.failed), batchFailureText(msg.failed)))
 	}
+	m.status += mutedStyle.Render(msg.skip.text())
 	return m, nil
 }
 
@@ -245,6 +292,7 @@ func (m modelState) onDeleteBatchDone(msg deleteBatchDoneMsg) (tea.Model, tea.Cm
 	if len(msg.failed) > 0 {
 		m.status += mutedStyle.Render(fmt.Sprintf(txt.batchFailedSuffixFmt, len(msg.failed), batchFailureText(msg.failed)))
 	}
+	m.status += mutedStyle.Render(msg.skip.text())
 	return m, nil
 }
 
@@ -272,15 +320,16 @@ type migrateBatchDoneMsg struct {
 	targetID string
 	done     []string
 	failed   []batchFailure
+	skip     batchSkip
 }
 
 // migrateMarked carries each marked session to one target the way the single
 // session flow does. A session already in that agent is not a failure of the
 // carry but it is not carried either, so it is reported rather than passed
 // over: silence would read as success.
-func migrateMarkedCmd(ctx context.Context, engine *migrate.Engine, sessions []model.Summary, to string, contextMode migrate.ContextMode) tea.Cmd {
+func migrateMarkedCmd(ctx context.Context, engine *migrate.Engine, sessions []model.Summary, to string, contextMode migrate.ContextMode, skip batchSkip) tea.Cmd {
 	return func() tea.Msg {
-		done := migrateBatchDoneMsg{targetID: to}
+		done := migrateBatchDoneMsg{targetID: to, skip: skip}
 		for _, sm := range sessions {
 			if sm.Provider == to {
 				done.failed = append(done.failed, batchFailure{id: sm.ID, err: errors.New(txt.migrateSameAgent)})
@@ -317,5 +366,6 @@ func (m modelState) onMigrateBatchDone(msg migrateBatchDoneMsg) (tea.Model, tea.
 	if len(msg.failed) > 0 {
 		m.status += mutedStyle.Render(fmt.Sprintf(txt.batchFailedSuffixFmt, len(msg.failed), batchFailureText(msg.failed)))
 	}
+	m.status += mutedStyle.Render(msg.skip.text())
 	return m, nil
 }

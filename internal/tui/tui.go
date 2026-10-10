@@ -197,13 +197,15 @@ type modelState struct {
 	// lastDeleted and restoreDeleted are the one-step undo for a delete. They
 	// live only as long as this list does, and only for providers that can put
 	// the very same session back.
-	deleteBatch    []model.Summary
-	migrateBatch   []model.Summary
-	lastDeleted    *model.Summary
-	restoreDeleted provider.SessionRestore
-	contextMode    migrate.ContextMode
-	err            string
-	status         string
+	deleteBatch      []model.Summary
+	deleteBatchSkip  batchSkip
+	migrateBatch     []model.Summary
+	migrateBatchSkip batchSkip
+	lastDeleted      *model.Summary
+	restoreDeleted   provider.SessionRestore
+	contextMode      migrate.ContextMode
+	err              string
+	status           string
 	// launch is the resume command the caller should exec after the program
 	// exits. Running it from inside bubbletea would fight over the terminal.
 	launch         string

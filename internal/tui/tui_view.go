@@ -965,6 +965,12 @@ func (m modelState) help() string {
 	if m.lastDeleted != nil {
 		return txt.helpDeleted
 	}
+	if m.selectedFoldedBand() {
+		// The cursor rests on a closed band, where the keys bound to a session
+		// do nothing. The footer says what does work instead of advertising
+		// keys this screen cannot use.
+		return txt.helpFoldedBand
+	}
 	// A fixed line. Assembled from capabilities it reached 175 cells, which no
 	// ordinary terminal can show: the truncation fell exactly on the tail, so
 	// the keys it grew to advertise pushed search and batch off the screen
@@ -1027,6 +1033,13 @@ func capabilitiesFor(p provider.Provider, sm model.Summary) provider.SessionCapa
 }
 
 func isCurrentSession(sm model.Summary) bool { return provider.IsCurrentSession(sm) }
+
+// selectedFoldedBand reports whether the cursor is resting on a closed band,
+// which is the one place the session actions do nothing.
+func (m modelState) selectedFoldedBand() bool {
+	head, ok := m.sessions.SelectedItem().(groupHeader)
+	return ok && head.folded
+}
 
 // caveatText strips the sentinel from a partial result so the status line reads
 // as the one sentence that matters rather than as a wrapped error chain.

@@ -221,3 +221,65 @@ func TestCarryReportsPerSessionAndKeepsFailuresMarked(t *testing.T) {
 		t.Fatal("the drawer stayed open after the carry finished")
 	}
 }
+
+// The footer is the surface that says what this screen can do, so it has to
+// follow the state it is in: a closed band offers to open it, and a marked list
+// names the verbs that will act on all of it.
+func TestTheFooterFollowsTheStateItIsIn(t *testing.T) {
+	m := markedModel(t, 3)
+	if got := ansi.Strip(m.markStatus()); !strings.Contains(got, "archive") || !strings.Contains(got, "move") {
+		t.Fatalf("the marked footer does not name the set verbs: %q", got)
+	}
+	// The line is truncated with an ellipsis at the band's width, so it has to
+	// stay inside what the rest of the footer is allowed to use.
+	if w := ansi.StringWidth(ansi.Strip(m.markStatus())); w > 72 {
+		t.Fatalf("the marked footer is %d cells, which truncates on ordinary terminals", w)
+	}
+
+	grouped := sampleModel(t, 132, 32)
+	grouped.groupMode = groupTree
+	grouped.ungrouped = sampleSessions()
+	grouped.folded = map[string]bool{}
+	for _, key := range bandKeys(grouped.groupedItems()) {
+		grouped.folded[key] = true
+	}
+	grouped.sessions.SetItems(grouped.groupedItems())
+	grouped.skipGroupHeader(true)
+	grouped.applySessionDelegate()
+	grouped.layout()
+	if !grouped.selectedFoldedBand() {
+		t.Fatal("the cursor is not on a closed band")
+	}
+	if got := grouped.help(); !strings.Contains(got, "z") {
+		t.Fatalf("the footer on a closed band does not offer z: %q", got)
+	}
+}
+
+// A set the agent cannot act on has to say which agent, because "its agent"
+// hides the one fact that explains it: OpenCode archives its legacy V1 sessions
+// and has no archive for the store its current sessions live in.
+func TestABlanketRefusalNamesTheAgent(t *testing.T) {
+	m := layoutTestModel()
+	m.reg = registry.NewWith(noArchiveProvider{})
+	first := m.sessions.SelectedItem().(sessionItem)
+	row := first
+	row.summary.ID = "only"
+	row.summary.Provider = "codex"
+	row.summary.StoragePath = "/tmp/only"
+	m.marked["only"] = true
+	m.sessions.SetItems([]list.Item{row})
+	m.sessions.Select(0)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(modelState)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = updated.(modelState)
+	if !strings.Contains(ansi.Strip(m.err), "Codex") {
+		t.Fatalf("the refusal does not name the agent: %q", ansi.Strip(m.err))
+	}
+}
+
+type noArchiveProvider struct{ provider.Provider }
+
+func (noArchiveProvider) ID() string          { return "codex" }
+func (noArchiveProvider) DisplayName() string { return "Codex" }

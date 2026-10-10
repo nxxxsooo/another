@@ -87,6 +87,10 @@ type uiText struct {
 	deleteConfirmBatchFmt      string
 	deleteConfirmBatchBody     string
 	migrateNoneMarked          string
+	batchSkippedSuffixFmt      string
+	noneEligibleFmt            string
+	batchVerbArchive           string
+	batchVerbDelete            string
 	migrateBatchHintFmt        string
 	migrateSameAgent           string
 
@@ -233,6 +237,7 @@ type uiText struct {
 	helpResume           string
 	helpArchived         string
 	helpDeleted          string
+	helpFoldedBand       string
 	helpListBase         string
 	helpListRename       string
 	helpListArchive      string
@@ -385,7 +390,7 @@ var englishText = uiText{
 	indexing:                   "indexing…",
 	sessionCountFmt:            "%d sessions",
 	sessionCountOneFmt:         "%d session",
-	markedFmt:                  "%d marked  ·  ctrl+t retitle · m move · a archive · ctrl+d delete · c copy · esc clears",
+	markedFmt:                  "%d marked · m move · a archive · ctrl+d delete · → carry · esc clears",
 	archiveNoneMarked:          "None of the marked sessions can be archived by its agent",
 	deleteNoneMarked:           "None of the marked sessions can be deleted by its agent",
 	copyNoneMarked:             "None of the marked sessions could be turned into a resume command",
@@ -398,6 +403,10 @@ var englishText = uiText{
 	deleteConfirmBatchFmt:      "Delete %d sessions?",
 	deleteConfirmBatchBody:     "Each session is deleted inside its own agent. A batch cannot be undone.",
 	migrateNoneMarked:          "None of the marked sessions can be carried: they are all running now",
+	batchSkippedSuffixFmt:      "  ·  %d skipped: %s could not",
+	noneEligibleFmt:            "None of the marked sessions can be %s: %s could not",
+	batchVerbArchive:           "archived",
+	batchVerbDelete:            "deleted",
 	migrateBatchHintFmt:        "%d marked sessions go to one agent. Nothing changes in the source until the target has them.",
 	migrateSameAgent:           "already in that agent",
 
@@ -530,6 +539,7 @@ var englishText = uiText{
 	helpResume:           " enter open that agent · c copy command · esc keep browsing · q quit",
 	helpArchived:         " a archive next · u undo · esc close · q quit",
 	helpDeleted:          " u undo delete · esc keep it deleted · ↑↓ keep browsing",
+	helpFoldedBand:       " z opens the group · ↑↓ move · ? keys",
 	helpListBase:         " ↑↓ session · enter open · → other agent · space preview · / search · ? keys",
 	helpListRename:       "rename the session",
 	helpListArchive:      "archive it",
@@ -666,7 +676,7 @@ var chineseText = uiText{
 	indexing:                   "正在建立索引…",
 	sessionCountFmt:            "%d 个会话",
 	sessionCountOneFmt:         "%d 个会话",
-	markedFmt:                  "已标记 %d 个会话  ·  ctrl+t 改名 · m 换目录 · a 归档 · ctrl+d 删除 · c 复制 · esc 清除",
+	markedFmt:                  "已标记 %d 个 · m 换目录 · a 归档 · ctrl+d 删除 · → 交接 · esc 清除",
 	archiveNoneMarked:          "标记的会话里没有能被其 agent 归档的",
 	deleteNoneMarked:           "标记的会话里没有能被其 agent 删除的",
 	copyNoneMarked:             "标记的会话都没能生成 resume 命令",
@@ -679,6 +689,10 @@ var chineseText = uiText{
 	deleteConfirmBatchFmt:      "删除 %d 条会话？",
 	deleteConfirmBatchBody:     "每条都在它自己的 agent 里删除。批量删除没有撤销。",
 	migrateNoneMarked:          "标记的会话都无法交接：它们都正在运行",
+	batchSkippedSuffixFmt:      "  ·  跳过 %d 条：%s 做不到",
+	noneEligibleFmt:            "标记的会话都无法%s：%s 做不到",
+	batchVerbArchive:           "归档",
+	batchVerbDelete:            "删除",
 	migrateBatchHintFmt:        "已标记的 %d 条会话一起交给同一个 agent。目标拿到之前，来源不会被改动。",
 	migrateSameAgent:           "已在该 agent 中",
 
@@ -811,6 +825,7 @@ var chineseText = uiText{
 	helpResume:           " enter 进入该 agent · c 复制命令 · esc 继续浏览 · q 退出",
 	helpArchived:         " a 继续归档 · u 撤销 · esc 返回列表 · q 退出",
 	helpDeleted:          " u 撤销删除 · esc 保持删除 · ↑↓ 继续浏览",
+	helpFoldedBand:       " z 展开该分组 · ↑↓ 移动 · ? 快捷键",
 	helpListBase:         " ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · / 搜索 · ? 快捷键",
 	helpListRename:       "重命名会话",
 	helpListArchive:      "归档",
