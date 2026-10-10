@@ -180,6 +180,10 @@ type modelState struct {
 	// the global scope stays global and only the spelling of a path changes.
 	pathBase  string
 	pathDepth int
+	// recentDays is the display window: sessions whose last message is older
+	// are not listed, and are not deleted either. 0 is no window. It is a view
+	// of the index, the way scope and grouping are, so widening it is instant.
+	recentDays int
 	// groupMode bands the list: by tree, one band per worktree with sessions
 	// under the band they started in, or by date, one band per stretch of time.
 	// ungrouped is the page as the index returned it, in recency order, kept so
@@ -275,6 +279,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	var titleCfg titler.Config
 	var pathBase string
 	pathDepth := pathTailDepth
+	recentDays := defaultRecentDays
 	if settings, err := config.LoadSettings(); err == nil {
 		if settings.TitleModel != nil {
 			titleCfg = titler.Config{
@@ -285,6 +290,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		}
 		pathBase = configuredPathBase(settings.UI)
 		pathDepth = configuredPathDepth(settings.UI)
+		recentDays = configuredRecentDays(settings.UI)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -296,7 +302,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		sessions: sessList, sourceList: sourceList, targets: targetList,
 		preview: vp, searchInput: search, renameInput: rename, relocateInput: relocate, spinner: sp,
 		sources: sources, cwd: cwd, projectScope: projectScope, scopeMode: initialScope,
-		pathBase: pathBase, pathDepth: pathDepth,
+		pathBase: pathBase, pathDepth: pathDepth, recentDays: recentDays,
 		indexing: index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
 		movedAway: movedAwayDirectories(idx, initialOpts.ProjectRoots),

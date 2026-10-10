@@ -355,6 +355,7 @@ func (m modelState) keyHelpColumns() (left, right []keyGroup) {
 			{"f", txt.helpKeyScope},
 			{"g", txt.helpKeyGroup},
 			{"z", txt.helpKeyFold},
+			{"t", txt.helpKeyWindow},
 			{"/", txt.helpKeySearch},
 			{"r", txt.helpKeyRefresh},
 			{"ctrl+l", txt.helpKeyRedraw},
@@ -831,6 +832,11 @@ func (m modelState) scopeView(showPath bool) string {
 		label = txt.scopeTree
 	}
 	line := scopeChipStyle.Render(label)
+	// The count in the header is the count of what the window leaves, so the
+	// window has to be part of what explains it.
+	if m.recentDays > 0 {
+		line += mutedStyle.Render("  ·  " + fmt.Sprintf(txt.recentWindowChipFmt, m.recentDays))
+	}
 	if showPath && path != "" && m.scopeMode != scopeModeAll {
 		line += mutedStyle.Render("  ·  " + path)
 	}

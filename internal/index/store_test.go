@@ -867,3 +867,52 @@ func TestUpdateIncrementalRereadsRowsIndexedUnderAnOlderAttributionRule(t *testi
 		t.Fatalf("ProjectPath = %q, want the unchanged file to stay skipped", items[0].ProjectPath)
 	}
 }
+
+// A display window is a filter on a session's own last message, not on the file
+// that holds it: a session moved yesterday is still as old as the conversation
+// in it, so the window means the same thing after a relocate.
+func TestListWindowFiltersByLastMessageTime(t *testing.T) {
+	dir := t.TempDir()
+	store, err := index.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+
+	now := time.Now()
+	for _, row := range []struct {
+		id    string
+		age   time.Duration
+		title string
+	}{
+		{"fresh", 2 * time.Hour, "fresh work"},
+		{"midway", 45 * 24 * time.Hour, "older than a month, younger than two"},
+		{"ancient", 400 * 24 * time.Hour, "ancient work"},
+	} {
+		if err := store.Upsert(model.Summary{
+			ID: row.id, Provider: "codex", Title: row.title, ProjectPath: "/tmp/p",
+			UpdatedAt: now.Add(-row.age), StoragePath: "/tmp/" + row.id, SourceMtime: now.Unix(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cutoff := now.AddDate(0, 0, -30).Unix()
+	rows, err := store.List(index.ListOpts{Since: cutoff})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != "fresh" {
+		t.Fatalf("a 30-day window listed %d sessions: %+v", len(rows), rows)
+	}
+	if n, err := store.Count(index.ListOpts{Since: cutoff}); err != nil || n != 1 {
+		t.Fatalf("the windowed count = %d err=%v, want 1", n, err)
+	}
+	// Widening is the same query with a different cut, not a re-index.
+	if rows, err := store.List(index.ListOpts{Since: now.AddDate(0, 0, -60).Unix()}); err != nil || len(rows) != 2 {
+		t.Fatalf("a 60-day window listed %d sessions err=%v, want 2", len(rows), err)
+	}
+	if rows, err := store.List(index.ListOpts{}); err != nil || len(rows) != 3 {
+		t.Fatalf("no window listed %d sessions err=%v, want all three", len(rows), err)
+	}
+}

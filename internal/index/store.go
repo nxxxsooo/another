@@ -495,11 +495,15 @@ WHERE provider = ? AND kind = ? AND COALESCE(parent_id, '') <> ''
 }
 
 type ListOpts struct {
-	Provider         string
-	ProjectFilter    string
-	ProjectExact     string
-	ProjectCWD       string   // sessions whose project_path equals this directory exactly
-	ProjectRoots     []string // sessions at or below any root (used for one Git repository's worktrees)
+	Provider      string
+	ProjectFilter string
+	ProjectExact  string
+	ProjectCWD    string   // sessions whose project_path equals this directory exactly
+	ProjectRoots  []string // sessions at or below any root (used for one Git repository's worktrees)
+	// Since drops sessions whose last message is older than it, which is what a
+	// display window means. Zero is no window. It is Unix seconds, the unit the
+	// column it compares against is stored in.
+	Since            int64
 	Limit            int
 	Offset           int
 	Query            string
@@ -535,6 +539,13 @@ func (s *Store) listWhere(opts ListOpts) (string, []any) {
 	}
 	if !opts.IncludeSubagents {
 		q += ` AND kind = 'root'`
+	}
+	if opts.Since > 0 {
+		// A session's time is its own last message, so a window is about the
+		// work rather than about the file: a session moved yesterday is still
+		// as old as the conversation in it.
+		q += ` AND updated_at >= ?`
+		args = append(args, opts.Since)
 	}
 	if len(opts.ProjectRoots) > 0 {
 		q += ` AND (`

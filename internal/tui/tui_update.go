@@ -931,6 +931,20 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, m.searchQuery), providerCountOpts(m)))
 		}
 		return dispatchPageLoadModel(m)
+	case "t":
+		// The window is a view of the index, like scope and grouping: nothing
+		// is deleted and nothing is re-fetched from an agent, so narrowing and
+		// widening are both instant. Presses narrow first.
+		m.recentDays = nextRecentWindow(m.recentDays)
+		m.err = ""
+		m.status = ""
+		m.lastResume = ""
+		if m.searchQuery != "" {
+			m.loading = true
+			return m, tea.Batch(m.spinner.Tick,
+				searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, m.searchQuery), providerCountOpts(m)))
+		}
+		return dispatchPageLoadModel(m)
 	case "z":
 		// Folding is a view of the page in hand, like grouping: nothing is
 		// queried, and every session is still there behind a band that keeps

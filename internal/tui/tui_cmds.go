@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -127,6 +128,9 @@ func listOptsFor(m modelState) index.ListOpts {
 	if m.scopeMode != scopeModeAll {
 		applyProjectScope(&opts, m.projectScope, m.scopeMode)
 	}
+	if cutoff := m.windowCutoff(); cutoff > 0 {
+		opts.Since = cutoff
+	}
 	return opts
 }
 
@@ -144,6 +148,51 @@ func configuredPathBase(ui config.UI) string {
 		return ""
 	}
 	return expanded
+}
+
+// recentWindowPresets is what the t key walks, in the order it walks them: the
+// window narrows first, because looking further back is the rare direction, and
+// the last stop is no window at all.
+var recentWindowPresets = []int{90, 30, 7, 0}
+
+// defaultRecentDays is the window a configuration that states none opens with.
+// It is wide enough that nothing on an ordinary index disappears by surprise —
+// it bounds how far the list can grow, rather than trimming what is there.
+const defaultRecentDays = 90
+
+// nextRecentWindow is the next preset below the current window, wrapping to the
+// widest once there is nothing narrower left. A window that is not a preset —
+// ui.recent_days can state any number — steps to the first preset below it, so
+// the key always means "narrow this".
+func nextRecentWindow(current int) int {
+	for _, preset := range recentWindowPresets {
+		if preset < current {
+			return preset
+		}
+	}
+	return recentWindowPresets[0]
+}
+
+// configuredRecentDays is ui.recent_days, or the default. A negative value is
+// not a window: it is a configuration mistake, and the honest reading of "show
+// me less than nothing" is to show everything.
+func configuredRecentDays(ui config.UI) int {
+	if ui.RecentDays < 0 || ui.RecentDays == 0 {
+		if ui.RecentDays == 0 {
+			return defaultRecentDays
+		}
+		return 0
+	}
+	return ui.RecentDays
+}
+
+// windowCutoff is the window for the index query, in the unit the index stores
+// a session's time in, or zero for no window at all.
+func (m modelState) windowCutoff() int64 {
+	if m.recentDays <= 0 {
+		return 0
+	}
+	return time.Now().AddDate(0, 0, -m.recentDays).Unix()
 }
 
 // configuredPathDepth is ui.path_depth, or the default. A width is what the
@@ -283,6 +332,7 @@ func searchOptsFor(m modelState, query string) index.SearchOpts {
 		opts.ProjectExact = listOpts.ProjectExact
 		opts.ProjectRoots = listOpts.ProjectRoots
 	}
+	opts.Since = m.windowCutoff()
 	return opts
 }
 

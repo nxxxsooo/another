@@ -238,6 +238,8 @@ type uiText struct {
 	helpArchived         string
 	helpDeleted          string
 	helpFoldedBand       string
+	helpKeyWindow        string
+	recentWindowChipFmt  string
 	helpListBase         string
 	helpListRename       string
 	helpListArchive      string
@@ -540,6 +542,8 @@ var englishText = uiText{
 	helpArchived:         " a archive next · u undo · esc close · q quit",
 	helpDeleted:          " u undo delete · esc keep it deleted · ↑↓ keep browsing",
 	helpFoldedBand:       " z opens the group · ↑↓ move · ? keys",
+	helpKeyWindow:        "window: 90 / 30 / 7 days, then all",
+	recentWindowChipFmt:  "last %d days",
 	helpListBase:         " ↑↓ session · enter open · → other agent · space preview · / search · ? keys",
 	helpListRename:       "rename the session",
 	helpListArchive:      "archive it",
@@ -826,6 +830,8 @@ var chineseText = uiText{
 	helpArchived:         " a 继续归档 · u 撤销 · esc 返回列表 · q 退出",
 	helpDeleted:          " u 撤销删除 · esc 保持删除 · ↑↓ 继续浏览",
 	helpFoldedBand:       " z 展开该分组 · ↑↓ 移动 · ? 快捷键",
+	helpKeyWindow:        "时间窗：90 / 30 / 7 天，再按全部",
+	recentWindowChipFmt:  "最近 %d 天",
 	helpListBase:         " ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · / 搜索 · ? 快捷键",
 	helpListRename:       "重命名会话",
 	helpListArchive:      "归档",

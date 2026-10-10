@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/registry"
 )
@@ -283,3 +284,55 @@ type noArchiveProvider struct{ provider.Provider }
 
 func (noArchiveProvider) ID() string          { return "codex" }
 func (noArchiveProvider) DisplayName() string { return "Codex" }
+
+// The window narrows first, because looking further back is the rare direction,
+// and it ends in no window at all. A configured number that is not a preset
+// still steps down, so the key always means the same thing.
+func TestTheWindowKeyNarrowsThenOpensEverything(t *testing.T) {
+	for _, tc := range []struct{ from, want int }{
+		{90, 30}, {30, 7}, {7, 0}, {0, 90},
+		{180, 90}, {45, 30}, {1, 0},
+	} {
+		if got := nextRecentWindow(tc.from); got != tc.want {
+			t.Errorf("nextRecentWindow(%d) = %d, want %d", tc.from, got, tc.want)
+		}
+	}
+	if got := configuredRecentDays(config.UI{}); got != defaultRecentDays {
+		t.Errorf("an unstated window = %d, want the %d-day default", got, defaultRecentDays)
+	}
+	if got := configuredRecentDays(config.UI{RecentDays: -1}); got != 0 {
+		t.Errorf("a negative window = %d, want no window", got)
+	}
+	if got := configuredRecentDays(config.UI{RecentDays: 14}); got != 14 {
+		t.Errorf("a stated window = %d, want it honored", got)
+	}
+}
+
+// The window is a filter on the index, so it reaches the fetch, the count, and
+// search the same way the scope does; and the header says which window is on,
+// because it is what the count is a count of.
+func TestTheWindowReachesTheQueryAndTheHeader(t *testing.T) {
+	m := markedModel(t, 0)
+	m.recentDays = 30
+	cutoff := m.windowCutoff()
+	if cutoff <= 0 {
+		t.Fatal("a 30-day window produced no cutoff")
+	}
+	if got := listOptsFor(m).Since; got != cutoff {
+		t.Fatalf("list opts cutoff = %d, want %d", got, cutoff)
+	}
+	if got := searchOptsFor(m, "needle").Since; got != cutoff {
+		t.Fatalf("search opts cutoff = %d, want %d", got, cutoff)
+	}
+	if view := ansi.Strip(m.scopeView(true)); !strings.Contains(view, "30") {
+		t.Fatalf("the header does not say which window is on: %q", view)
+	}
+
+	m.recentDays = 0
+	if got := listOptsFor(m).Since; got != 0 {
+		t.Fatalf("no window still filtered the fetch: %d", got)
+	}
+	if view := ansi.Strip(m.scopeView(true)); strings.Contains(view, "days") {
+		t.Fatalf("the header claims a window that is off: %q", view)
+	}
+}

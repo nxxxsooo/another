@@ -79,6 +79,12 @@ type UI struct {
 	// anyway. Absent means 3. When the column cannot hold that many, the
 	// generic segments go before the name or the owner do.
 	PathDepth int `json:"path_depth,omitempty"`
+	// RecentDays is the display window: sessions whose last message is older
+	// than this are not listed, while staying indexed and reachable by
+	// widening the window. Absent means no window, which is how another
+	// behaved before it existed; the t key walks a few presets from whatever
+	// this states.
+	RecentDays int `json:"recent_days,omitempty"`
 }
 
 // TitleModel names an installed agent CLI, not an API credential. another
