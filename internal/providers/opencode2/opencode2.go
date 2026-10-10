@@ -130,7 +130,14 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 			continue
 		}
 		var count int
-		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM session_message WHERE session_id = ? AND type IN ('user','assistant')`, row.id).Scan(&count)
+		var lastMsgTime sql.NullInt64
+		_ = db.QueryRowContext(ctx, `SELECT COUNT(*), MAX(time_created) FROM session_message WHERE session_id = ? AND type IN ('user','assistant')`, row.id).Scan(&count, &lastMsgTime)
+		updated := row.updated
+		if lastMsgTime.Valid && lastMsgTime.Int64 > 0 {
+			updated = lastMsgTime.Int64
+		} else if row.created > 0 {
+			updated = row.created
+		}
 		title := strings.TrimSpace(row.title)
 		if title == "" {
 			title = p.firstUserTitle(db, row.id)
@@ -144,7 +151,7 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		}
 		out = append(out, model.Summary{
 			ID: row.id, Provider: ProviderID, ProjectPath: row.project, Title: title,
-			CreatedAt: time.UnixMilli(row.created), UpdatedAt: time.UnixMilli(row.updated),
+			CreatedAt: time.UnixMilli(row.created), UpdatedAt: time.UnixMilli(updated),
 			MessageCount: count, StoragePath: p.dbPath + "#" + row.id,
 			SourceMtime: stamp.UnixNano(), SourceSize: size, Kind: kind, ParentID: row.parent,
 			Migration: p.migration(db, row.id),
@@ -227,9 +234,17 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	if err != nil {
 		return nil, provider.ErrNotFound
 	}
+	var lastMsgTime sql.NullInt64
+	_ = db.QueryRowContext(ctx, `SELECT MAX(time_created) FROM session_message WHERE session_id = ? AND type IN ('user','assistant')`, ref.ID).Scan(&lastMsgTime)
+	updated := row.updated
+	if lastMsgTime.Valid && lastMsgTime.Int64 > 0 {
+		updated = lastMsgTime.Int64
+	} else if row.created > 0 {
+		updated = row.created
+	}
 	conv := &model.Conversation{
 		ID: ref.ID, Provider: ProviderID, ProjectPath: row.project, Title: row.title,
-		CreatedAt: time.UnixMilli(row.created), UpdatedAt: time.UnixMilli(row.updated),
+		CreatedAt: time.UnixMilli(row.created), UpdatedAt: time.UnixMilli(updated),
 		StoragePath: p.dbPath + "#" + ref.ID, Migration: p.migration(db, ref.ID),
 	}
 	rows, err := db.QueryContext(ctx, `SELECT type, time_created, data FROM session_message WHERE session_id = ? ORDER BY seq`, ref.ID)
