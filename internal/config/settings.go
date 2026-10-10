@@ -63,6 +63,22 @@ type TitlePolicy struct {
 // locale; absent means auto.
 type UI struct {
 	Language string `json:"language,omitempty"`
+	// PathBase is the directory a globally-listed row is read against. With
+	// every session on screen the rows come from unrelated trees, and what
+	// they share is stated on each one: a column of "Documents/sync/…" spends
+	// its width on a prefix the reader already lives in. Naming that prefix
+	// once lets a row say "huatu/projects/smart-note" instead. It is a
+	// person's decision like a path alias, not something another infers from
+	// whatever the list happens to hold — an inferred base moves when the
+	// list does, and a path that renames itself while it is being read is
+	// worse than a long one. Absent or "~" means home.
+	PathBase string `json:"path_base,omitempty"`
+	// PathDepth is how many segments a globally-listed row keeps. Three says
+	// whose project a path is as well as what it is called; four adds the
+	// workspace above that, which is what a person working in one tree reads
+	// anyway. Absent means 3. When the column cannot hold that many, the
+	// generic segments go before the name or the owner do.
+	PathDepth int `json:"path_depth,omitempty"`
 }
 
 // TitleModel names an installed agent CLI, not an API credential. another

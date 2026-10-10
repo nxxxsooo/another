@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/util"
 )
@@ -38,6 +39,96 @@ func TestElidedPathsKeepTheirRootAndTail(t *testing.T) {
 		if w := ansi.StringWidth(got); w > tc.width {
 			t.Errorf("elidePath(%q, %d) is %d cells wide", tc.path, tc.width, w)
 		}
+	}
+}
+
+// A path with nothing above it is read in a column of paths from unrelated
+// trees, so it is shortened to one depth rather than to whatever the column
+// happens to hold. Told at its own depth, "~/…/sync/GitHub/another" beside
+// "~/…/projects/smart-note" made two projects look like two kinds of thing.
+//
+// The cut is not marked. Nearly every row in this column is cut, so a leading
+// "…" is the same constant on all of them — the prefix that was just removed —
+// and a shallow path still reads as one without it.
+func TestGlobalPathsAreShortenedToAFixedDepth(t *testing.T) {
+	for _, tc := range []struct {
+		path  string
+		width int
+		want  string
+	}{
+		{"~/Documents/sync/GitHub/another", 27, "sync/GitHub/another"},
+		{"~/Documents/sync/Tuning", 27, "Documents/sync/Tuning"},
+		{"~/Documents/sync/Work/fit/projects/fit-infra", 27, "fit/projects/fit-infra"},
+		{"~/Documents/sync/Work/huatu/projects/smart-note", 27, "huatu/projects/smart-note"},
+		{"/opt/homebrew/var/log", 27, "homebrew/var/log"},
+		// A path already at the fixed depth, or shorter, is its own tail and
+		// keeps its own spelling.
+		{"~/Documents", 27, "~/Documents"},
+		{"~/Documents", 6, "…ments"},
+		{"~", 27, "~"},
+		{"/", 27, "/"},
+		// Too narrow for the window: the bucket goes and the owner stays,
+		// then the name alone.
+		{"~/Documents/sync/Work/fit/projects/fit-infra", 20, "fit/fit-infra"},
+		{"~/Documents/sync/Work/huatu/projects/smart-note", 20, "huatu/smart-note"},
+		{"/Users/mingjian/Documents/apps/ht-canteen-miaoda", 24, "apps/ht-canteen-miaoda"},
+		// Two ancestors of equal width: the parent stays, because it reads as
+		// the name's own prefix.
+		{"~/Documents/sync/Work/huatu", 10, "Work/huatu"},
+		{"~/Documents/sync/Work/huatu", 8, "huatu"},
+		{"~/Documents/sync/Work/fit/work", 10, "fit/work"},
+		{"~/Documents/sync/Work/fit/projects/fit-infra", 12, "fit-infra"},
+		{"~/Documents/sync/Work/fit/projects/fit-infra", 5, "…nfra"},
+	} {
+		got := elidePathTail(tc.path, tc.width, pathTailDepth)
+		if got != tc.want {
+			t.Errorf("elidePathTail(%q, %d) = %q, want %q", tc.path, tc.width, got, tc.want)
+		}
+		if w := ansi.StringWidth(got); w > tc.width {
+			t.Errorf("elidePathTail(%q, %d) is %d cells wide", tc.path, tc.width, w)
+		}
+	}
+}
+
+// Depth is a preference (ui.path_depth), so the same path is asked for at
+// several: the window widens with it, and what a narrow column spends is still
+// the generic segments before the owner or the name.
+func TestGlobalPathDepthIsAPreference(t *testing.T) {
+	const path = "~/Documents/sync/Work/huatu/projects/smart-note"
+	for _, tc := range []struct {
+		width int
+		depth int
+		want  string
+	}{
+		{60, 1, "smart-note"},
+		{60, 2, "projects/smart-note"},
+		{60, 3, "huatu/projects/smart-note"},
+		{60, 4, "Work/huatu/projects/smart-note"},
+		{60, 5, "sync/Work/huatu/projects/smart-note"},
+		{60, 6, "Documents/sync/Work/huatu/projects/smart-note"},
+		{60, 7, "~/Documents/sync/Work/huatu/projects/smart-note"},
+		{60, 99, "~/Documents/sync/Work/huatu/projects/smart-note"},
+		// A depth the column cannot hold gives up its buckets, not its owner.
+		{24, 4, "Work/huatu/smart-note"},
+		// Narrow enough that a proper name is the widest thing left, which is
+		// the point at which the choice stops mattering.
+		{18, 4, "Work/smart-note"},
+		{0, 4, ""},
+		// Depth zero is not a spelling; the caller that forgot one still gets
+		// the default rather than a blank column.
+	} {
+		got := elidePathTail(path, tc.width, tc.depth)
+		if got != tc.want {
+			t.Errorf("elidePathTail(%q, %d, depth %d) = %q, want %q", path, tc.width, tc.depth, got, tc.want)
+		}
+		if tc.width > 0 {
+			if w := ansi.StringWidth(got); w > tc.width {
+				t.Errorf("elidePathTail(%q, %d, depth %d) is %d cells wide", path, tc.width, tc.depth, w)
+			}
+		}
+	}
+	if got := pathDepthOr(0); got != pathTailDepth {
+		t.Errorf("pathDepthOr(0) = %d, want the default %d", got, pathTailDepth)
 	}
 }
 
@@ -228,6 +319,111 @@ func TestSessionItemsResolveEachDirectoryOnce(t *testing.T) {
 		row := item.(sessionItem)
 		if row.missingDir != want[row.summary.ID] {
 			t.Fatalf("session %s missingDir = %v", row.summary.ID, row.missingDir)
+		}
+	}
+}
+
+// The global scope has no project root, so it is read against ui.path_base —
+// the prefix every row would otherwise repeat. The base is spelling only: it
+// never decides which sessions are listed, and a row it does not cover is
+// still shown, written from home and marked with the root it kept.
+func TestGlobalColumnReadsAgainstTheConfiguredBase(t *testing.T) {
+	base := "/Users/mingjian/Documents/sync"
+	m := modelState{scopeMode: scopeModeAll, pathBase: base, cwd: base + "/Work/huatu"}
+	if got := m.projectBase(); got != base {
+		t.Fatalf("projectBase = %q, want the configured base", got)
+	}
+	d := sessionDelegateFor(&m)
+	if !d.global {
+		t.Fatal("the global scope did not mark its column global")
+	}
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{base, "sync"},
+		{base + "/Tuning", "Tuning"},
+		{base + "/GitHub/another", "GitHub/another"},
+		{base + "/Work/fit/projects/fit-infra", "fit/projects/fit-infra"},
+		{base + "/Work/huatu/projects/smart-note", "huatu/projects/smart-note"},
+		// Outside the base. Read at the default depth the window leaves the
+		// root behind, and what it shows is the part of the path the base has
+		// no spelling for; one segment deeper and the "~" comes back with it.
+		{"/Users/mingjian/Documents/apps/ht-canteen-miaoda", "Documents/apps/ht-canteen-miaoda"},
+		{"/tmp/project", "/tmp/project"},
+	} {
+		cell := ansi.Strip(renderProjectChipCell(tc.path, util.SanitizeDisplay(projectCellText(tc.path, base)), true, 34, false, true, pathTailDepth))
+		if !strings.Contains(cell, tc.want) {
+			t.Errorf("cell for %q = %q, want it to carry %q", tc.path, cell, tc.want)
+		}
+		if strings.Contains(cell, "Documents/sync") {
+			t.Errorf("cell for %q spent its width on the base: %q", tc.path, cell)
+		}
+	}
+	// At depth 4 the same row is still the deepest one in the column, and the
+	// root it keeps is what says it is the one the base does not hold.
+	out := "/Users/mingjian/Documents/apps/ht-canteen-miaoda"
+	cell := ansi.Strip(renderProjectChipCell(out, util.SanitizeDisplay(projectCellText(out, base)), true, 34, false, true, 4))
+	if !strings.Contains(cell, "~/apps/ht-canteen-miaoda") {
+		t.Errorf("cell at depth 4 = %q, want the root kept", cell)
+	}
+}
+
+// Without a base the column is read from home, and that is what an unset
+// ui.path_base means: the spelling every path already starts at.
+func TestGlobalColumnWithoutABaseKeepsReadingFromHome(t *testing.T) {
+	m := modelState{scopeMode: scopeModeAll}
+	if got := m.projectBase(); got != "" {
+		t.Fatalf("projectBase = %q, want home (an empty base)", got)
+	}
+	cell := ansi.Strip(renderProjectChipCell(
+		"/Users/mingjian/Documents/sync/Work/huatu/projects/smart-note",
+		util.TildePath("/Users/mingjian/Documents/sync/Work/huatu/projects/smart-note"),
+		true, 34, false, true, pathTailDepth))
+	if !strings.Contains(cell, "huatu/projects/smart-note") {
+		t.Fatalf("cell = %q, want the fixed tail from home", cell)
+	}
+}
+
+// ui.path_base goes through the same resolution as any other directory a
+// person types: a tilde expands, a value that is home or empty means home, and
+// a value that cannot be resolved leaves the base unset instead of failing.
+func TestConfiguredPathBaseResolvesOrFallsBackToHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory to resolve against")
+	}
+	if got := configuredPathBase(config.UI{PathBase: "~/Documents/sync"}); got != filepath.Join(home, "Documents", "sync") {
+		t.Errorf("pathBase = %q, want the expanded directory", got)
+	}
+	for _, ui := range []config.UI{
+		{},
+		{PathBase: "~"},
+		{PathBase: home},
+		{PathBase: ""},
+	} {
+		if got := configuredPathBase(ui); got != "" {
+			t.Errorf("pathBase for %+v = %q, want home (unset)", ui, got)
+		}
+	}
+}
+
+// ui.path_depth is a width preference, so a value outside any width a column
+// could hold is clamped rather than refused: an unusable number should not take
+// the screen down with it, and zero is not a spelling.
+func TestConfiguredPathDepthClampsToWhatAColumnCouldHold(t *testing.T) {
+	for _, tc := range []struct {
+		ui   config.UI
+		want int
+	}{
+		{config.UI{}, pathTailDepth},
+		{config.UI{PathDepth: -1}, pathTailDepth},
+		{config.UI{PathDepth: 1}, 1},
+		{config.UI{PathDepth: 4}, 4},
+		{config.UI{PathDepth: maxPathDepth + 1}, maxPathDepth},
+	} {
+		if got := configuredPathDepth(tc.ui); got != tc.want {
+			t.Errorf("configuredPathDepth(%+v) = %d, want %d", tc.ui, got, tc.want)
 		}
 	}
 }

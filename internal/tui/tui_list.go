@@ -95,6 +95,13 @@ type sessionDelegate struct {
 	// empty outside Git, where every directory is its own group and the column
 	// therefore falls silent entirely.
 	bands bool
+	// global is set in the global scope, where a path is a whole path or the
+	// part of one below ui.path_base rather than the part that differs from a
+	// project root. What is shown there is a tail of fixed depth, ui.path_depth:
+	// see elidePathTail.
+	global bool
+	// pathDepth is how many segments that tail keeps.
+	pathDepth int
 	// dateBands is set while the bands are stretches of time rather than
 	// trees. The band then says which day a row is from, so the column beside
 	// it only has to say where in that day — and a project path is still the
@@ -157,7 +164,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		provText + c.gap + title + c.gap
 	if c.projW > 0 {
 		text, shown := projectCellShown(it.summary.ProjectPath, d.projectBase, d.bands, d.groupRoots)
-		row += renderProjectChipCell(it.summary.ProjectPath, text, shown, c.projW, it.missingDir) + c.gap
+		row += renderProjectChipCell(it.summary.ProjectPath, text, shown, c.projW, it.missingDir, d.global, d.pathDepth) + c.gap
 	}
 	row += mutedStyle.Render(padLeft(msgs, c.msgW)) + c.rightInset
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
@@ -295,6 +302,16 @@ func naturalRowWidth() int {
 		titleColumnCap + projectColumnCap + 4*maxColumnGap
 }
 
+// pathDepthOr keeps a delegate that was not told a depth usable: a row is
+// never spelled with zero segments, so an unset preference means the default
+// rather than a column of blank chips.
+func pathDepthOr(depth int) int {
+	if depth <= 0 {
+		return pathTailDepth
+	}
+	return depth
+}
+
 // projectChipPad is what a chip costs beyond the text it holds: one cell of
 // quiet on each side, the same shape the agent chip is cut to.
 const projectChipPad = 2
@@ -323,7 +340,9 @@ func renderProjectCell(path string, width int) string {
 
 func renderProjectCellState(path, base string, width int, missing bool) string {
 	text, shown := projectCellShown(path, base, false, nil)
-	return renderProjectChipCell(path, text, shown, width, missing)
+	// A cell with no base stands alone, which is the shape the global column
+	// had before ui.path_base existed; it is shortened the way that column is.
+	return renderProjectChipCell(path, text, shown, width, missing, base == "", pathTailDepth)
 }
 
 // projectCellShown is what a row's project column says, and whether it says
@@ -349,7 +368,7 @@ func projectCellShown(path, base string, bands bool, roots []string) (string, bo
 	return util.SanitizeDisplay(projectCellText(path, key)), true
 }
 
-func renderProjectChipCell(path, text string, shown bool, width int, missing bool) string {
+func renderProjectChipCell(path, text string, shown bool, width int, missing bool, global bool, pathDepth int) string {
 	if width <= 0 {
 		return ""
 	}
@@ -365,7 +384,18 @@ func renderProjectChipCell(path, text string, shown bool, width int, missing boo
 	if missing {
 		ink, tint = twinTheme.textSubtle, twinTheme.border
 	}
-	return padRight(projectChip(elidePath(text, width-projectChipPad), ink, tint), width)
+	// A path with a base above it is already the part that differs, so it is
+	// shortened by the same rule as any other one-off path. A global path is
+	// read down a column of unrelated trees, where a fixed tail is what makes
+	// the column scannable, and where a row the base does not hold still says
+	// where it starts: elidePathTail keeps a root when the tail reaches it.
+	var chip string
+	if global {
+		chip = elidePathTail(text, width-projectChipPad, pathDepth)
+	} else {
+		chip = elidePath(text, width-projectChipPad)
+	}
+	return padRight(projectChip(chip, ink, tint), width)
 }
 
 // projectChip is the chip body. It is not bold: the agent code is three
@@ -610,7 +640,7 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 	bands := headers && m.groupMode == groupTree
 	dateBands := headers && m.groupMode == groupDate
 	roots := m.groupRoots()
-	showProject := !m.projectOnly || spread
+	showProject := m.scopeMode != scopeModeExact || spread
 	if bands {
 		showProject = projectsBelowGroups(items, roots)
 	}
@@ -618,6 +648,8 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 		marked:      m.marked,
 		showProject: showProject,
 		projectBase: base,
+		global:      m.scopeMode == scopeModeAll,
+		pathDepth:   pathDepthOr(m.pathDepth),
 		bands:       bands,
 		dateBands:   dateBands,
 		groupRoots:  roots,

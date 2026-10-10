@@ -209,3 +209,64 @@ func TestPathAliasesRoundTrip(t *testing.T) {
 		t.Fatalf("PathAliases = %+v, want %+v", settings.PathAliases, want)
 	}
 }
+
+// ui.path_base is a spelling preference for the global column, and an older
+// build's config has no such key: it must save without one and load as home.
+func TestPathBaseRoundTripsAndStaysOutOfTheFileWhenUnset(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := config.SaveSettings(config.Settings{Version: config.SettingsVersion}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(config.SettingsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "path_base") {
+		t.Fatalf("saved config invented a field: %s", data)
+	}
+	if err := config.SaveSettings(config.Settings{
+		Version: config.SettingsVersion,
+		UI:      config.UI{PathBase: "~/Documents/sync"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.UI.PathBase != "~/Documents/sync" {
+		t.Fatalf("ui.path_base = %q, want the configured directory", settings.UI.PathBase)
+	}
+}
+
+// ui.path_depth is a preference like the base it measures, and a config that
+// never set one must not grow the key back.
+func TestPathDepthRoundTripsAndStaysOutOfTheFileWhenUnset(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := config.SaveSettings(config.Settings{Version: config.SettingsVersion}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(config.SettingsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "path_depth") {
+		t.Fatalf("saved config invented a field: %s", data)
+	}
+	if err := config.SaveSettings(config.Settings{
+		Version: config.SettingsVersion,
+		UI:      config.UI{PathBase: "~/Documents/sync", PathDepth: 4},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.UI.PathDepth != 4 {
+		t.Fatalf("ui.path_depth = %d, want the configured depth", settings.UI.PathDepth)
+	}
+	if settings.UI.PathBase != "~/Documents/sync" {
+		t.Fatalf("ui.path_base = %q, want it kept beside the depth", settings.UI.PathBase)
+	}
+}
