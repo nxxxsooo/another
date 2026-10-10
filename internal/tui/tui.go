@@ -197,6 +197,7 @@ type modelState struct {
 	// lastDeleted and restoreDeleted are the one-step undo for a delete. They
 	// live only as long as this list does, and only for providers that can put
 	// the very same session back.
+	deleteBatch    []model.Summary
 	lastDeleted    *model.Summary
 	restoreDeleted provider.SessionRestore
 	contextMode    migrate.ContextMode

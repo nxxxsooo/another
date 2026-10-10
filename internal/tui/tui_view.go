@@ -512,6 +512,23 @@ func field(label string) string {
 }
 
 func (m modelState) deleteView() string {
+	// A batch asks the same question about a set, so the overlay carries the
+	// count instead of the one title it is about to delete, and promises what
+	// a batch can keep: nothing.
+	if len(m.deleteBatch) > 0 {
+		title := errStyle.Render(fmt.Sprintf(txt.deleteConfirmBatchFmt, len(m.deleteBatch)))
+		cancel := chipActive.Render(txt.choiceCancel)
+		remove := chipMuted.Render(txt.choiceDelete)
+		if m.deleteChoice == 1 {
+			cancel = chipMuted.Render(txt.choiceCancel)
+			remove = dangerChoice.Render(txt.choiceDelete)
+		}
+		if m.height < 18 {
+			return title + "\n" + cancel + "   " + remove
+		}
+		return title + "\n" + mutedStyle.Render(txt.deleteConfirmBatchBody) + "\n\n" +
+			cancel + "   " + remove
+	}
 	if m.selected == nil {
 		return errStyle.Render(txt.noSessionSelected)
 	}
@@ -544,6 +561,23 @@ func (m modelState) deleteView() string {
 }
 
 func (m modelState) relocateView() string {
+	// A batch asks the same question about a set, so the overlay carries the
+	// count instead of the one title it is about to delete, and promises what
+	// a batch can keep: nothing.
+	if len(m.deleteBatch) > 0 {
+		title := errStyle.Render(fmt.Sprintf(txt.deleteConfirmBatchFmt, len(m.deleteBatch)))
+		cancel := chipActive.Render(txt.choiceCancel)
+		remove := chipMuted.Render(txt.choiceDelete)
+		if m.deleteChoice == 1 {
+			cancel = chipMuted.Render(txt.choiceCancel)
+			remove = dangerChoice.Render(txt.choiceDelete)
+		}
+		if m.height < 18 {
+			return title + "\n" + cancel + "   " + remove
+		}
+		return title + "\n" + mutedStyle.Render(txt.deleteConfirmBatchBody) + "\n\n" +
+			cancel + "   " + remove
+	}
 	if m.selected == nil {
 		return errStyle.Render(txt.noSessionSelected)
 	}

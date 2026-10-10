@@ -72,9 +72,20 @@ type uiText struct {
 	// and the singular. English needs both — a band reading "1 sessions" is
 	// the kind of seam that makes an interface look unfinished — while Chinese
 	// counts the same way either way and repeats the one string.
-	sessionCountFmt    string
-	sessionCountOneFmt string
-	markedFmt          string
+	sessionCountFmt            string
+	sessionCountOneFmt         string
+	markedFmt                  string
+	archiveNoneMarked          string
+	deleteNoneMarked           string
+	copyNoneMarked             string
+	archiveBatchVerbArchived   string
+	archiveBatchVerbUnarchived string
+	batchVerbDeleted           string
+	batchDoneFmt               string
+	batchFailedSuffixFmt       string
+	copyBatchDoneFmt           string
+	deleteConfirmBatchFmt      string
+	deleteConfirmBatchBody     string
 
 	// Status and errors.
 	cwdUnreadable        string
@@ -367,11 +378,22 @@ var englishText = uiText{
 	emptyProjectMoved: "  Earlier sessions are still under %s\n  Run `another paths` to follow them here",
 	emptyAll:          "\n  No sessions",
 
-	working:            " working…",
-	indexing:           "indexing…",
-	sessionCountFmt:    "%d sessions",
-	sessionCountOneFmt: "%d session",
-	markedFmt:          "%d marked  ·  ctrl+t batch rename · m relocate · x mark · X all · esc clears",
+	working:                    " working…",
+	indexing:                   "indexing…",
+	sessionCountFmt:            "%d sessions",
+	sessionCountOneFmt:         "%d session",
+	markedFmt:                  "%d marked  ·  ctrl+t retitle · m move · a archive · ctrl+d delete · c copy · esc clears",
+	archiveNoneMarked:          "None of the marked sessions can be archived by its agent",
+	deleteNoneMarked:           "None of the marked sessions can be deleted by its agent",
+	copyNoneMarked:             "None of the marked sessions could be turned into a resume command",
+	archiveBatchVerbArchived:   "Archived",
+	archiveBatchVerbUnarchived: "Unarchived",
+	batchVerbDeleted:           "Deleted",
+	batchDoneFmt:               "%s %d",
+	batchFailedSuffixFmt:       "  ·  failed %d: %s · failed rows stay marked",
+	copyBatchDoneFmt:           "Copied %d resume commands",
+	deleteConfirmBatchFmt:      "Delete %d sessions?",
+	deleteConfirmBatchBody:     "Each session is deleted inside its own agent. A batch cannot be undone.",
 
 	cwdUnreadable:        "Could not read the current directory, showing every session: ",
 	archivedPrefix:       "Archived ",
@@ -634,11 +656,22 @@ var chineseText = uiText{
 	emptyProjectMoved: "  早期会话还留在 %s\n  运行 `another paths` 把它们接回来",
 	emptyAll:          "\n  没有会话",
 
-	working:            " 处理中…",
-	indexing:           "正在建立索引…",
-	sessionCountFmt:    "%d 个会话",
-	sessionCountOneFmt: "%d 个会话",
-	markedFmt:          "已标记 %d 个会话  ·  ctrl+t 批量命名 · m 换目录 · x 标记 · X 全选 · esc 清除",
+	working:                    " 处理中…",
+	indexing:                   "正在建立索引…",
+	sessionCountFmt:            "%d 个会话",
+	sessionCountOneFmt:         "%d 个会话",
+	markedFmt:                  "已标记 %d 个会话  ·  ctrl+t 改名 · m 换目录 · a 归档 · ctrl+d 删除 · c 复制 · esc 清除",
+	archiveNoneMarked:          "标记的会话里没有能被其 agent 归档的",
+	deleteNoneMarked:           "标记的会话里没有能被其 agent 删除的",
+	copyNoneMarked:             "标记的会话都没能生成 resume 命令",
+	archiveBatchVerbArchived:   "已归档",
+	archiveBatchVerbUnarchived: "已取消归档",
+	batchVerbDeleted:           "已删除",
+	batchDoneFmt:               "%s %d",
+	batchFailedSuffixFmt:       "  ·  失败 %d：%s · 失败的行保持标记",
+	copyBatchDoneFmt:           "已复制 %d 条 resume 命令",
+	deleteConfirmBatchFmt:      "删除 %d 条会话？",
+	deleteConfirmBatchBody:     "每条都在它自己的 agent 里删除。批量删除没有撤销。",
 
 	cwdUnreadable:        "无法读取当前目录，已显示全部会话：",
 	archivedPrefix:       "已归档 ",

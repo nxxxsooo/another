@@ -56,6 +56,12 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onRelocateBatchDone(msg)
 	case migrateDoneMsg:
 		return m.onMigrateDone(msg)
+	case archiveBatchDoneMsg:
+		return m.onArchiveBatchDone(msg)
+	case deleteBatchDoneMsg:
+		return m.onDeleteBatchDone(msg)
+	case copyBatchDoneMsg:
+		return m.onCopyBatchDone(msg)
 	case indexRefreshedMsg:
 		return m.onIndexRefreshed(msg)
 	case contentIndexedMsg:
@@ -693,7 +699,16 @@ func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case overlayDelete:
 			if m.deleteChoice == 0 {
 				m.overlay = overlayNone
+				m.deleteBatch = nil
+				m.layout()
 				return m, nil
+			}
+			if len(m.deleteBatch) > 0 {
+				todo := m.deleteBatch
+				m.deleteBatch = nil
+				m.loading = true
+				m.err = ""
+				return m, tea.Batch(m.spinner.Tick, deleteMarkedCmd(m.ctx, m.reg, m.idx, todo))
 			}
 			if m.selected != nil {
 				m.loading = true
@@ -918,6 +933,9 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "c":
+		if len(m.marked) > 0 {
+			return m.copyMarked()
+		}
 		if m.lastResume != "" {
 			// A headless Linux box has no clipboard utility at all, and
 			// atotto/clipboard says so instead of copying. Reporting "copied"
@@ -934,6 +952,11 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Archive and select-all used to sit on a and A, two unrelated actions one
 	// Shift apart, with only one of them in the footer.
 	case "a":
+		// The marked set is the same set the other batch actions take: one
+		// session marked is a set of one, and archive has nothing to preview.
+		if len(m.marked) > 0 {
+			return m.archiveMarked()
+		}
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
 				m.err = txt.cannotArchiveRunning
@@ -1057,6 +1080,9 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// opening it never spends a model call by itself.
 		return m.startBatch()
 	case "ctrl+d":
+		if len(m.marked) > 0 {
+			return m.deleteConfirm()
+		}
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if isCurrentSession(it.summary) {
 				m.err = txt.cannotDeleteRunning
