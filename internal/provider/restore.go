@@ -3,8 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 // SessionRestore puts back exactly the session a reversible delete removed:
@@ -34,31 +32,11 @@ type ReversibleSessionDeleter interface {
 // that came back with today's timestamp would jump to the top of a list sorted
 // by recency and misreport when the work actually happened.
 func snapshotFile(path string) (SessionRestore, error) {
-	data, err := os.ReadFile(path)
+	snap, err := SnapshotFileSession(path)
 	if err != nil {
 		return nil, err
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	mode, modTime := info.Mode().Perm(), info.ModTime()
-	return func(context.Context) error {
-		// Refuse to overwrite. If something is at the path again, the agent has
-		// moved on and the old bytes are no longer the truth there.
-		if _, err := os.Stat(path); err == nil {
-			return fmt.Errorf("restore: %s already exists", path)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return err
-		}
-		if err := os.WriteFile(path, data, mode); err != nil {
-			return err
-		}
-		return os.Chtimes(path, modTime, modTime)
-	}, nil
+	return func(context.Context) error { return RestoreFileSession(snap) }, nil
 }
 
 // DeleteFileSessionReversibly is the shared implementation for providers whose

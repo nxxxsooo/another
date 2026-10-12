@@ -847,6 +847,17 @@ func (p *Provider) DeleteSessionReversibly(ctx context.Context, ref provider.Ses
 	return provider.DeleteFileSessionReversibly(ctx, p, ref, ref.StoragePath)
 }
 
+// SnapshotSession captures the session file so a deletion can be undone after
+// another has exited. pi's session is exactly one file, so the file is the
+// whole snapshot.
+func (p *Provider) SnapshotSession(_ context.Context, ref provider.SessionRef) (*provider.SessionSnapshot, error) {
+	return provider.SnapshotFileSession(ref.StoragePath)
+}
+
+func (p *Provider) RestoreSession(_ context.Context, _ provider.SessionRef, snap *provider.SessionSnapshot) error {
+	return provider.RestoreFileSession(snap)
+}
+
 func (p *Provider) CleanupWrite(_ context.Context, r provider.WriteResult) error {
 	rel, err := filepath.Rel(p.sessionsRoot(), r.StoragePath)
 	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) ||

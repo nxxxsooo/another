@@ -427,6 +427,16 @@ func (p *Provider) DeleteSessionReversibly(ctx context.Context, ref provider.Ses
 	return provider.DeleteFileSessionReversibly(ctx, p, ref, ref.StoragePath)
 }
 
+// SnapshotSession captures the transcript file so a deletion can be undone
+// after another has exited. Claude Code's session is exactly one file.
+func (p *Provider) SnapshotSession(_ context.Context, ref provider.SessionRef) (*provider.SessionSnapshot, error) {
+	return provider.SnapshotFileSession(ref.StoragePath)
+}
+
+func (p *Provider) RestoreSession(_ context.Context, _ provider.SessionRef, snap *provider.SessionSnapshot) error {
+	return provider.RestoreFileSession(snap)
+}
+
 func (p *Provider) CleanupWrite(_ context.Context, r provider.WriteResult) error {
 	rel, err := filepath.Rel(p.projectsRoot(), r.StoragePath)
 	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) || !strings.HasSuffix(rel, ".jsonl") {
