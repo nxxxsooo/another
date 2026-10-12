@@ -144,20 +144,22 @@ release:
 
     ## Compatibility
 
-    v0.19.2 adds an action history. Every archive, delete, and rename another
-    performs is recorded, and `h` opens the list — newest first, one entry per
-    change, with `enter` to reverse the selected one through the agent's own
-    operation. A delete is reversed by putting the removed bytes back exactly
-    as they were, so another now keeps a bounded copy of deleted sessions under
-    `~/.cache/another/history/`: the newest fifty, for thirty days. Past that,
-    the entry stays listed but is marked no longer recoverable. Where an agent
-    cannot hand the bytes back, its delete is still recorded and shown, marked
-    not reversible.
+    v0.19.3 gives Antigravity its own title adapter. The second setup page
+    gains an `Antigravity title hooks` row, or `another integrations install
+    agy` installs the adapter outside setup: another merges a Stop hook into
+    Antigravity's shared `hooks.json` (`~/.gemini/config/hooks.json`) and, at
+    the end of an idle turn, asks the configured title agent to name that
+    conversation under the same MMDD｜Type｜Topic policy every other agent
+    follows. Groups other tools wrote into that file — Hindsight's included —
+    are preserved untouched, and a hook another did not write is reported and
+    never claimed without `--force`.
 
-    Compatibility: the only new key is `h`; there is no migration, no change to
-    any command-line flag, and no change to how sessions are stored inside the
-    agent. Existing installs create the history directory on first use. Script
-    installations can run `another update`.
+    Compatibility: the only new key is the consent field
+    `agy_title_policy` in the settings file. `another rename` gains one new
+    optional flag, `--hook-stdin`, for the hook payload Antigravity pipes to
+    it; every existing command line behaves exactly as before. Nothing in
+    how sessions are stored inside the agent changes, and no migration is
+    needed. Script installations can run `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
