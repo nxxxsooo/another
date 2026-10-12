@@ -144,16 +144,20 @@ release:
 
     ## Compatibility
 
-    v0.19.1 sharpens one thing: a title suggestion now also reads the end of a
-    long session. Suggestions used to see only the opening exchange, which is
-    where intent starts — but a session long enough to overflow the prompt
-    often says what it turned out to be about only at the end. The last
-    messages are now carried alongside the first ones, within the same size
-    budget as before, so suggestions can only get more accurate, never more
-    expensive.
+    v0.19.2 adds an action history. Every archive, delete, and rename another
+    performs is recorded, and `h` opens the list — newest first, one entry per
+    change, with `enter` to reverse the selected one through the agent's own
+    operation. A delete is reversed by putting the removed bytes back exactly
+    as they were, so another now keeps a bounded copy of deleted sessions under
+    `~/.cache/another/history/`: the newest fifty, for thirty days. Past that,
+    the entry stays listed but is marked no longer recoverable. Where an agent
+    cannot hand the bytes back, its delete is still recorded and shown, marked
+    not reversible.
 
-    Nothing else changed: no migration, no command-line surface, no new
-    trigger. Script installations can run `another update`.
+    Compatibility: the only new key is `h`; there is no migration, no change to
+    any command-line flag, and no change to how sessions are stored inside the
+    agent. Existing installs create the history directory on first use. Script
+    installations can run `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
