@@ -26,7 +26,8 @@ func TestAgyConfigDirIsTheConfigSiblingOfTheAgyHome(t *testing.T) {
 	// expected home is the one config actually resolves, because HOME and
 	// USERPROFILE mean different things per platform; the derivation, not
 	// the spelling, is what is under test.
-	_ = os.Unsetenv("AGY_HOME")	wantDefault := filepath.Join(config.HomeDir(), ".gemini", "config")
+	_ = os.Unsetenv("AGY_HOME")
+	wantDefault := filepath.Join(config.HomeDir(), ".gemini", "config")
 	if got := AgyConfigDir(); got != wantDefault {
 		t.Fatalf("AgyConfigDir() = %q, want %q", got, wantDefault)
 	}
