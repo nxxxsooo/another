@@ -458,6 +458,12 @@ func TestApplyIntegrationsFollowsTheRecordedAnswer(t *testing.T) {
 	if versionText("") != "unknown version" {
 		t.Fatal("versionText")
 	}
+	// An adapter with no manifest has no version to report — the agy hook is
+	// a group in a shared file — and "installed (unknown version)" is noise
+	// for exactly that case.
+	if got := integrationStateText(integrations.Status{State: integrations.StateCurrent}); got != "installed" {
+		t.Fatalf("state text without a version = %q, want bare installed", got)
+	}
 }
 
 func TestSetupRequiresATerminal(t *testing.T) {
