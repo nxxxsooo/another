@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -21,11 +22,14 @@ func TestAgyConfigDirIsTheConfigSiblingOfTheAgyHome(t *testing.T) {
 		t.Fatalf("AgyConfigDir() = %q, want the sibling config directory", got)
 	}
 
-	// Without AGY_HOME the default root implies the same sibling.
+	// Without AGY_HOME the default root implies the same sibling. The
+	// expected home is the one config actually resolves, because HOME and
+	// USERPROFILE mean different things per platform; the derivation, not
+	// the spelling, is what is under test.
 	os.Unsetenv("AGY_HOME")
-	t.Setenv("HOME", home)
-	if got := AgyConfigDir(); got != filepath.Join(home, ".gemini", "config") {
-		t.Fatalf("AgyConfigDir() = %q, want ~/.gemini/config under HOME", got)
+	wantDefault := filepath.Join(config.HomeDir(), ".gemini", "config")
+	if got := AgyConfigDir(); got != wantDefault {
+		t.Fatalf("AgyConfigDir() = %q, want %q", got, wantDefault)
 	}
 
 	// The adapter's own override still wins: it exists for an agy another
@@ -108,8 +112,12 @@ func TestAgyInstallMergesWithoutTouchingForeignGroups(t *testing.T) {
 	}
 	// The mode the file had before the install is not another's to widen:
 	// a private hooks.json stays private through an install and a removal.
-	if info, err := os.Stat(hooks); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("mode after removal = %v, %v", info.Mode().Perm(), err)
+	// Windows has no Unix permission bits: the round trip above proves the
+	// content is preserved, and there is no mode to read back.
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(hooks); err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("mode after removal = %v, %v", info.Mode().Perm(), err)
+		}
 	}
 }
 
@@ -224,11 +232,13 @@ func TestAgyInstallCreatesTheFile(t *testing.T) {
 	if !strings.Contains(string(data), "another rename") {
 		t.Fatalf("the installed hook does not call another: %s", data)
 	}
-	info, err := os.Stat(filepath.Join(root, "hooks.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o644 {
-		t.Fatalf("hooks.json mode = %o, want 644", perm)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(root, "hooks.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o644 {
+			t.Fatalf("hooks.json mode = %o, want 644", perm)
+		}
 	}
 }
