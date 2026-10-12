@@ -218,6 +218,12 @@ func printIntegration(adapter integrations.Adapter, status integrations.Status) 
 func integrationStateText(status integrations.Status) string {
 	switch status.State {
 	case integrations.StateCurrent:
+		if status.Version == "" {
+			// An adapter with no manifest — the agy hook is a group in
+			// a shared file — has no version to report, and the bare
+			// state says more than "unknown" would.
+			return "installed"
+		}
 		return "installed (" + versionText(status.Version) + ")"
 	case integrations.StateOutdated:
 		return "outdated (" + versionText(status.Version) + ") — run 'another integrations install'"

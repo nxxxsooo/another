@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 
 func (a *App) renameCmd() *cobra.Command {
 	var from, title string
-	var auto, dryRun, refresh, allowCurrent, skipConforming bool
+	var auto, dryRun, refresh, allowCurrent, skipConforming, hookStdin bool
 	cmd := &cobra.Command{
 		Use:   "rename <session-id>",
 		Short: "Rename a session in its agent's own title store",
@@ -29,12 +30,39 @@ func (a *App) renameCmd() *cobra.Command {
 			"This is the non-interactive form a SessionEnd hook can call. another keeps\n" +
 			"no private display aliases, so the new name is the one the agent itself\n" +
 			"shows on its next launch.",
-		Args: cobra.ExactArgs(1),
+		// The id may arrive on stdin (--hook-stdin) instead of the command
+		// line, so zero arguments is valid at this layer; the sources are
+		// reconciled in RunE where the payload has been read.
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			title = strings.TrimSpace(title)
 			if (title != "") == auto {
 				return fmt.Errorf("pass exactly one of --title or --auto")
+			}
+			if hookStdin && len(args) > 0 {
+				return fmt.Errorf("pass the session id either as an argument or through --hook-stdin, not both")
+			}
+			if hookStdin {
+				payload, err := io.ReadAll(cmd.InOrStdin())
+				if err != nil {
+					return fmt.Errorf("read hook payload: %w", err)
+				}
+				id, idle, err := parseHookPayload(payload)
+				if err != nil {
+					return err
+				}
+				if !idle {
+					// The agent has another invocation queued; renaming now
+					// races the turn still to come. The next idle turn will
+					// name it, and --skip-conforming keeps every later turn
+					// from spending another title call.
+					fmt.Println("Skipped: the agent is still running; the next idle turn names it")
+					return nil
+				}
+				args = []string{id}
+			} else if len(args) == 0 {
+				return fmt.Errorf("pass a session id, or --hook-stdin to read one from a hook payload")
 			}
 			if err := a.ensureIndex(ctx, from, refresh); err != nil {
 				return err
@@ -124,6 +152,7 @@ func (a *App) renameCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "resolve and suggest without writing")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before rename")
 	cmd.Flags().BoolVar(&skipConforming, "skip-conforming", false, "with --auto, leave a title that already follows the policy")
+	cmd.Flags().BoolVar(&hookStdin, "hook-stdin", false, "read the session id from a hook payload on stdin")
 	return cmd
 }
 

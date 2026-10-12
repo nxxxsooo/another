@@ -302,3 +302,40 @@ func TestPathDepthRoundTripsAndStaysOutOfTheFileWhenUnset(t *testing.T) {
 		t.Fatalf("ui.path_base = %q, want it kept beside the depth", settings.UI.PathBase)
 	}
 }
+
+// An adapter consent survives a save and a load, and an adapter nobody
+// consented to invents no key in the file at all.
+func TestIntegrationsConsentRoundTrips(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	want := config.Settings{
+		Version:      config.SettingsVersion,
+		Integrations: config.Integrations{OpenCode2TitlePolicy: true, PiTitlePolicy: true, AgyTitlePolicy: true},
+	}
+	if err := config.SaveSettings(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Integrations != want.Integrations {
+		t.Fatalf("integrations = %+v, want %+v", got.Integrations, want.Integrations)
+	}
+	data, err := os.ReadFile(config.SettingsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"agy_title_policy"`) {
+		t.Fatalf("agy consent missing from the file: %s", data)
+	}
+	if err := config.SaveSettings(config.Settings{Version: config.SettingsVersion}); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(config.SettingsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "agy_title_policy") {
+		t.Fatalf("saved config invented agy consent: %s", data)
+	}
+}
