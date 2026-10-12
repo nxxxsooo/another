@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nxxxsooo/another/internal/config"
 )
 
 // The hook lives in the shared hooks.json agy reads, which is a sibling of the
@@ -171,6 +173,36 @@ func TestAgyInstallRefusesAnUnparseableSharedFile(t *testing.T) {
 	data, readErr := os.ReadFile(hooks)
 	if readErr != nil || string(data) != "{not json" {
 		t.Fatalf("the file changed: %q, %v", data, readErr)
+	}
+}
+
+// The adapter is one of the rows setup, the integrations command, and doctor
+// draw; registration is what makes it appear everywhere at once.
+func TestAgyAdapterIsRegistered(t *testing.T) {
+	adapter, ok := Find(Agy)
+	if !ok {
+		t.Fatal("the agy adapter is not registered")
+	}
+	if adapter.Provider != "agy" {
+		t.Fatalf("Provider = %q, want agy", adapter.Provider)
+	}
+	var saved config.Integrations
+	p := adapter.Consent(&saved)
+	*p = true
+	if !saved.AgyTitlePolicy {
+		t.Fatal("the consent field is not the agy one")
+	}
+	found := false
+	for _, provider := range Providers() {
+		if provider == "agy" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("Providers() does not name agy")
+	}
+	if adapter.Status == nil || adapter.Install == nil || adapter.Remove == nil {
+		t.Fatal("the adapter's operations are not bound")
 	}
 }
 

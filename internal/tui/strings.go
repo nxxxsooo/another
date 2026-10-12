@@ -336,6 +336,7 @@ type uiText struct {
 	// row that prints its own digit cannot leave a stale key behind.
 	setupPluginLabel     string
 	setupPluginLabelPi   string
+	setupPluginLabelAgy  string
 	setupPluginToggleFmt string
 	setupPluginChecking  string
 	setupPluginMissing   string
@@ -643,6 +644,7 @@ var englishText = uiText{
 
 	setupPluginLabel:     "OpenCode title plugin",
 	setupPluginLabelPi:   "Pi title extension",
+	setupPluginLabelAgy:  "Antigravity title hooks",
 	setupPluginToggleFmt: "%d toggles",
 	setupPluginChecking:  "checking",
 	setupPluginMissing:   "not installed",
@@ -949,6 +951,7 @@ var chineseText = uiText{
 
 	setupPluginLabel:     "OpenCode 标题插件",
 	setupPluginLabelPi:   "Pi 标题扩展",
+	setupPluginLabelAgy:  "Antigravity 标题钩子",
 	setupPluginToggleFmt: "%d 切换",
 	setupPluginChecking:  "检测中",
 	setupPluginMissing:   "未安装",

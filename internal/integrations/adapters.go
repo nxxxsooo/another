@@ -53,6 +53,15 @@ var adapters = []Adapter{
 		Remove:    RemovePi,
 		Consent:   func(i *config.Integrations) *bool { return &i.PiTitlePolicy },
 	},
+	{
+		ID:        Agy,
+		Provider:  "agy",
+		ConfigDir: func(context.Context) string { return AgyConfigDir() },
+		Status:    AgyStatus,
+		Install:   InstallAgy,
+		Remove:    RemoveAgy,
+		Consent:   func(i *config.Integrations) *bool { return &i.AgyTitlePolicy },
+	},
 }
 
 // Adapters lists every adapter another ships.

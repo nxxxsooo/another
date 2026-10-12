@@ -514,8 +514,11 @@ func (m setupModel) togglePlugin(nth int) setupModel {
 // agent's name plus what the files do, because this row is the one place a
 // person is told another writes outside its own configuration.
 func pluginLabel(id string) string {
-	if id == integrations.Pi {
+	switch id {
+	case integrations.Pi:
 		return txt.setupPluginLabelPi
+	case integrations.Agy:
+		return txt.setupPluginLabelAgy
 	}
 	return txt.setupPluginLabel
 }

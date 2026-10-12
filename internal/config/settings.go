@@ -44,6 +44,7 @@ type Settings struct {
 type Integrations struct {
 	OpenCode2TitlePolicy bool `json:"opencode2_title_policy,omitempty"`
 	PiTitlePolicy        bool `json:"pi_title_policy,omitempty"`
+	AgyTitlePolicy       bool `json:"agy_title_policy,omitempty"`
 }
 
 // PathAlias redirects sessions recorded under From to where that project lives

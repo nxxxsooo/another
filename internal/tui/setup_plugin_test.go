@@ -44,6 +44,40 @@ func bothPluginsFixture(o2, pi integrations.State) setupModel {
 	return m
 }
 
+// The agy row follows the same rules as the other two: it exists only for
+// someone who manages agy, starts off, and names the shared file it edits.
+func agyPluginFixture(state integrations.State) setupModel {
+	m := pluginFixture(integrations.StateMissing)
+	m.selected["opencode2"] = false
+	m.selected["agy"] = true
+	m.plugins = []SetupPlugin{{
+		Integration: integrations.Agy,
+		Provider:    "agy",
+		Supported:   true,
+		Dir:         "/tmp/agy/config/hooks.json",
+		State:       state,
+	}}
+	return m
+}
+
+func TestAgyPluginRowTogglesAndNamesItsFile(t *testing.T) {
+	m := agyPluginFixture(integrations.StateMissing)
+	if m.wantsPlugin(integrations.Agy) {
+		t.Fatal("the agy hook was going to be installed unasked")
+	}
+	next, _ := m.updateTitlePage(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	m = next.(setupModel)
+	if !m.wantsPlugin(integrations.Agy) {
+		t.Fatal("1 did not turn the agy hook on")
+	}
+	rows := ansi.Strip(m.pluginRows(72, false))
+	for _, want := range []string{txt.setupPluginLabelAgy, "/tmp/agy/config/hooks.json"} {
+		if !strings.Contains(rows, want) {
+			t.Fatalf("rows = %q, want %q", rows, want)
+		}
+	}
+}
+
 // Writing into another agent's configuration directory is not something
 // detection alone may authorise, so a row starts off and stays off until
 // someone turns it on.
