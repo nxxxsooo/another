@@ -144,22 +144,16 @@ release:
 
     ## Compatibility
 
-    v0.19.0 bounds the list by default: only sessions whose own last message is
-    within `ui.recent_days` are listed, and that defaults to 90 days. Older
-    sessions are not deleted and are not dropped from the index — press `t` to
-    step the window to 30 days, to 7, and then to everything, or set
-    `ui.recent_days` to `0` for no window at all. The scope chip says which
-    window is on, because the count beside it counts what the window leaves.
+    v0.19.1 sharpens one thing: a title suggestion now also reads the end of a
+    long session. Suggestions used to see only the opening exchange, which is
+    where intent starts — but a session long enough to overflow the prompt
+    often says what it turned out to be about only at the end. The last
+    messages are now carried alongside the first ones, within the same size
+    budget as before, so suggestions can only get more accurate, never more
+    expensive.
 
-    Two additions need no migration. `z` folds the group the cursor is in, and
-    the actions that make sense on several sessions at once now act on the
-    marked set — `a` archive, `Ctrl+D` delete, `c` copy resume commands,
-    `m` move, and `→` carry to another agent — each reporting what landed and
-    leaving the rows that failed marked for a retry. `Ctrl+T` still retitles
-    the set.
-
-    No command-line surface changed. Script installations can run
-    `another update`.
+    Nothing else changed: no migration, no command-line surface, no new
+    trigger. Script installations can run `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
