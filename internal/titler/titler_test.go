@@ -3,6 +3,7 @@ package titler_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -254,6 +255,36 @@ func TestBuildPromptCapsSessionContent(t *testing.T) {
 	prompt := titler.BuildPrompt(titler.Request{CreatedAt: time.Now(), Messages: msgs}, titler.LangChinese)
 	if n := len([]rune(prompt)); n > 4000 {
 		t.Fatalf("prompt grew to %d runes", n)
+	}
+}
+
+func TestBuildPromptKeepsHeadAndTail(t *testing.T) {
+	var msgs []model.Message
+	for i := 0; i < 40; i++ {
+		msgs = append(msgs, model.Message{Role: model.RoleUser, Content: fmt.Sprintf("message %02d", i)})
+	}
+	prompt := titler.BuildPrompt(titler.Request{CreatedAt: time.Now(), Messages: msgs}, titler.LangChinese)
+	for _, want := range []string{"user: message 00", "user: message 04", "user: message 37", "user: message 39"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	for _, gone := range []string{"message 20", "message 30"} {
+		if strings.Contains(prompt, gone) {
+			t.Fatalf("prompt should drop mid-session %q:\n%s", gone, prompt)
+		}
+	}
+}
+
+func TestBuildPromptReservesRoomForTheTail(t *testing.T) {
+	var msgs []model.Message
+	for i := 0; i < 10; i++ {
+		msgs = append(msgs, model.Message{Role: model.RoleUser, Content: strings.Repeat("长", 500)})
+	}
+	msgs[len(msgs)-1] = model.Message{Role: model.RoleUser, Content: "the real topic was the tail"}
+	prompt := titler.BuildPrompt(titler.Request{CreatedAt: time.Now(), Messages: msgs}, titler.LangChinese)
+	if !strings.Contains(prompt, "the real topic was the tail") {
+		t.Fatalf("head messages crowded the tail out of the prompt:\n%s", prompt)
 	}
 }
 

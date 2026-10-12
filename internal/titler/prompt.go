@@ -31,7 +31,8 @@ const (
 	// Agents that record the working directory land here instead of a real
 	// project, which identifies their leftovers even when the title does not.
 	TempDirPrefix   = "another-titler-"
-	maxMessages     = 8
+	headMessages    = 5
+	tailMessages    = 3
 	maxMessageRunes = 400
 	maxPromptRunes  = 2400
 	maxTitleRunes   = 60
@@ -285,11 +286,14 @@ func projectName(path string) string {
 	return path
 }
 
-// renderMessages keeps the opening exchange, which is where intent lives, and
-// caps total size so a long session cannot blow up the prompt.
+// renderMessages keeps the opening exchange and the last few messages. Intent
+// lives at the start, but a long session often only says what it turned out to
+// be about at its end; the session long enough to hide that behind the caps is
+// exactly the one whose ending matters most. The tail draws its budget off the
+// total first, so a verbose opening cannot crowd the ending out of the prompt,
+// and the mid-session bulk is the part dropped.
 func renderMessages(msgs []model.Message) string {
 	var lines []string
-	used := 0
 	for _, msg := range msgs {
 		if msg.Role != model.RoleUser && msg.Role != model.RoleAssistant {
 			continue
@@ -298,18 +302,44 @@ func renderMessages(msgs []model.Message) string {
 		if text == "" {
 			continue
 		}
-		text = truncateRunes(text, maxMessageRunes)
-		line := string(msg.Role) + ": " + text
-		if used+len([]rune(line)) > maxPromptRunes {
-			break
-		}
-		used += len([]rune(line))
-		lines = append(lines, line)
-		if len(lines) >= maxMessages {
-			break
+		lines = append(lines, string(msg.Role)+": "+truncateRunes(text, maxMessageRunes))
+	}
+	head, tail := splitHeadTail(lines)
+
+	tailRunes := 0
+	for _, line := range tail {
+		tailRunes += len([]rune(line))
+	}
+
+	var out []string
+	used := 0
+	fill := func(group []string, budget int) {
+		for _, line := range group {
+			n := len([]rune(line))
+			if used+n > budget {
+				break
+			}
+			used += n
+			out = append(out, line)
 		}
 	}
-	return strings.Join(lines, "\n")
+	fill(head, maxPromptRunes-tailRunes)
+	fill(tail, maxPromptRunes)
+	return strings.Join(out, "\n")
+}
+
+// splitHeadTail splits eligible message lines into the opening block and the
+// closing block without overlap. A session no longer than the head is all
+// opening; anything longer contributes its first messages and its last ones.
+func splitHeadTail(lines []string) (head, tail []string) {
+	if len(lines) <= headMessages {
+		return lines, nil
+	}
+	tailCount := tailMessages
+	if n := len(lines) - headMessages; n < tailCount {
+		tailCount = n
+	}
+	return lines[:headMessages], lines[len(lines)-tailCount:]
 }
 
 func truncateRunes(s string, limit int) string {
