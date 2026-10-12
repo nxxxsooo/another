@@ -183,6 +183,7 @@ a         archive the current session (the whole marked set when there is one); 
 x / X     mark the row under the cursor / mark or clear the whole page
 Ctrl+D    delete after an explicit confirmation
 u         undo the latest archive or reversible delete; Esc dismisses the offer
+h         open the action history — what another archived, renamed or deleted, newest first; enter reverses one
 /         search titles and normalized conversation text
 t         narrow the window: 90 days → 30 → 7 → everything
 r         refresh the local index
@@ -275,7 +276,7 @@ The second setup page picks the agent and the language; `Enter` opens a third pa
 
 The second setup page picks the title language with `←→`, independently of the interface language on page one: **Auto** (default), **English**, or **中文**. Auto uses Chinese when the first meaningful user message contains a Han character and English otherwise. The date and `｜` separator are identical in every language, and the eight types map one to one: 功能/Feature, 设计/Design, 修复/Fix, 优化/Optimize, 发布/Release, 探索/Explore, 文档/Docs, 研究/Research.
 
-A batch delete keeps no undo — the one-step offer restores a single session, and one row coming back without its neighbours is not the state you had — and its confirmation says the count and that before anything is deleted.
+A batch delete offers no single-step undo — the one-step offer restores a single session, and one row coming back without its neighbours is not the state you had. Each session another can snapshot, however, is listed in the action history (`h`) and can be restored from there one at a time while its bytes are kept; the confirmation states the count before anything is deleted. The history keeps the newest fifty deletes for thirty days: past that a delete stays listed but is marked no longer recoverable, and its bytes are gone from disk.
 
 For more than one title at a time, mark sessions with `x` (`X` toggles the whole page) and press `Ctrl+T`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `Ctrl+T` retries exactly those.
 

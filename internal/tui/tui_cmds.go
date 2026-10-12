@@ -48,6 +48,9 @@ type deleteDoneMsg struct {
 	title      string
 	counts     map[string]int
 	err        error
+	// entryID is the journal entry this delete recorded, so the one-step undo
+	// can mark it reversed rather than leave a stale claim in the history.
+	entryID string
 	// restore is non-nil only when the provider owns the session's bytes and
 	// can put back the same session. It is offered for one keypress, then
 	// dropped; another keeps no trash of its own.
@@ -536,6 +539,7 @@ func archiveSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.S
 		if err := archiver.ArchiveSession(ctx, ref, archived); err != nil {
 			return archiveDoneMsg{summary: sm, archived: archived, err: err}
 		}
+		recordArchive(openJournal(), sm, archived)
 		_, err = index.UpdateIncremental(ctx, reg, idx, sm.Provider)
 		if err != nil {
 			action := "archived"
@@ -569,6 +573,7 @@ func renameSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 			}
 			caveat = err
 		}
+		recordRename(openJournal(), sm, title)
 		if _, err := index.UpdateIncremental(ctx, reg, idx, sm.Provider); err != nil {
 			return renameDoneMsg{providerID: sm.Provider, title: title,
 				err: fmt.Errorf("session renamed, but index refresh failed: %w", err)}
@@ -588,6 +593,13 @@ func deleteSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 			return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, err: fmt.Errorf("%s does not support deletion", p.DisplayName())}
 		}
 		ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+		// Capture the bytes before the destructive step so the delete can be
+		// reversed from the history overlay after another exits.
+		st := openJournal()
+		entry, err := snapshotForDelete(ctx, st, p, sm)
+		if err != nil {
+			return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, entryID: entry.ID, err: err}
+		}
 		// Prefer the reversible path where the provider owns the session's
 		// bytes. Where it does not, the delete stays exactly as final as the
 		// confirmation said it was.
@@ -595,24 +607,27 @@ func deleteSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 		if reversible, ok := p.(provider.ReversibleSessionDeleter); ok {
 			restore, err = reversible.DeleteSessionReversibly(ctx, ref)
 			if err != nil {
-				return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, err: err}
+				dropDeleteSnapshot(st, entry)
+				return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, entryID: entry.ID, err: err}
 			}
 		} else if err := deleter.DeleteSession(ctx, ref); err != nil {
-			return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, err: err}
+			dropDeleteSnapshot(st, entry)
+			return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, entryID: entry.ID, err: err}
 		}
+		recordDelete(st, entry)
 		_, err = index.UpdateIncremental(ctx, reg, idx, sm.Provider)
 		counts, _ := idx.CountByProvider()
 		if err != nil {
 			err = fmt.Errorf("session deleted, but index refresh failed: %w", err)
 		}
-		return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, counts: counts, err: err, restore: restore}
+		return deleteDoneMsg{providerID: sm.Provider, title: sm.Title, counts: counts, err: err, restore: restore, entryID: entry.ID}
 	}
 }
 
 // restoreSessionCmd undoes the delete another just performed. The restore was
 // captured before the deletion, so this writes the agent's own session back
 // rather than re-rendering it through the portable model.
-func restoreSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sm model.Summary, restore provider.SessionRestore) tea.Cmd {
+func restoreSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sm model.Summary, restore provider.SessionRestore, entryID string) tea.Cmd {
 	return func() tea.Msg {
 		if restore == nil {
 			return restoreDoneMsg{title: sm.Title, err: fmt.Errorf("nothing to restore")}
@@ -620,6 +635,7 @@ func restoreSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.S
 		if err := restore(ctx); err != nil {
 			return restoreDoneMsg{title: sm.Title, err: err}
 		}
+		recordDeleteUndo(openJournal(), sm, entryID)
 		_, err := index.UpdateIncremental(ctx, reg, idx, sm.Provider)
 		counts, _ := idx.CountByProvider()
 		if err != nil {

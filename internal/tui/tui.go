@@ -42,6 +42,9 @@ const (
 	// on every session; the rest are here, so a narrow terminal stops
 	// deciding which actions the person is allowed to find out about.
 	overlayHelp
+	// overlayHistory is the action journal: what another archived, renamed,
+	// or deleted, and what can still be reversed.
+	overlayHistory
 )
 
 // The list is either flat, banded by when the work happened, or banded by the
@@ -71,6 +74,7 @@ type modelState struct {
 	sessions      list.Model
 	sourceList    list.Model
 	targets       list.Model
+	historyList   list.Model
 	preview       viewport.Model
 	searchInput   textinput.Model
 	renameInput   textinput.Model
@@ -207,9 +211,13 @@ type modelState struct {
 	migrateBatchSkip batchSkip
 	lastDeleted      *model.Summary
 	restoreDeleted   provider.SessionRestore
-	contextMode      migrate.ContextMode
-	err              string
-	status           string
+	// lastDeletedEntryID is the journal entry the pending delete recorded, so
+	// the one-step undo marks that delete reversed instead of leaving a stale
+	// claim in the history.
+	lastDeletedEntryID string
+	contextMode        migrate.ContextMode
+	err                string
+	status             string
 	// launch is the resume command the caller should exec after the program
 	// exits. Running it from inside bubbletea would fight over the terminal.
 	launch         string
@@ -281,6 +289,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	sources := sourceChips(reg, counts)
 	sourceList := newSourceList(sourceItems(sources))
 	targetList := newTargetList(nil)
+	historyList := newHistoryList(nil)
 
 	vp := viewport.New(64, 20)
 	search := textinput.New()
@@ -303,7 +312,8 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		titleCfg: titleCfg,
 		marked:   marked, folded: map[string]bool{},
 		sessions: sessList, sourceList: sourceList, targets: targetList,
-		preview: vp, searchInput: search, renameInput: rename, relocateInput: relocate, spinner: sp,
+		historyList: historyList,
+		preview:     vp, searchInput: search, renameInput: rename, relocateInput: relocate, spinner: sp,
 		sources: sources, sourceIdx: lastSource(sources, last), cwd: cwd,
 		projectScope: projectScope, scopeMode: initialScope,
 		pathBase: pathBase, pathDepth: pathDepth, recentDays: recentDays,

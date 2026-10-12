@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/index"
+	"github.com/nxxxsooo/another/internal/journal"
 	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
@@ -95,6 +97,15 @@ func (a *App) renameCmd() *cobra.Command {
 					return err
 				}
 				caveat = err
+			}
+			if st, err := journal.Open(); err == nil {
+				now := time.Now()
+				_ = st.Record(journal.Entry{
+					ID: journal.NewID(now), At: now, Action: journal.ActionRename,
+					Provider: sm.Provider, Session: sm.ID, Title: sm.Title,
+					Project: sm.ProjectPath, Storage: sm.StoragePath,
+					Before: sm.Title, After: title, Revertible: true,
+				})
 			}
 			if _, err := index.UpdateIncremental(ctx, a.Registry, a.Index, sm.Provider); err != nil {
 				fmt.Printf("⚠️  Warning: renamed, but index refresh failed: %s\n", err)

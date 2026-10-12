@@ -523,6 +523,7 @@ type applyFailure struct {
 // applyRenames runs the native rename for every row and isolates failures per
 // row: one bad row never takes healthy rows with it.
 func applyRenames(ctx context.Context, lookup providerLookup, byID map[string]model.Summary, rows []titler.BatchResult) (renamed []appliedRename, failed []applyFailure) {
+	st := openJournal()
 	for _, r := range rows {
 		sm, ok := byID[r.SessionID]
 		if !ok {
@@ -544,6 +545,7 @@ func applyRenames(ctx context.Context, lookup providerLookup, byID map[string]mo
 			failed = append(failed, applyFailure{id: r.SessionID, reason: err.Error()})
 			continue
 		}
+		recordRename(st, sm, r.Title)
 		renamed = append(renamed, appliedRename{id: sm.ID, title: r.Title, provider: sm.Provider})
 	}
 	return renamed, failed

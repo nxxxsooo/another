@@ -172,6 +172,22 @@ type uiText struct {
 	choiceCancel          string
 	choiceDelete          string
 
+	// Action history overlay.
+	historyModalTitle        string
+	historyModalHint         string
+	historyEmpty             string
+	historyNotRecoverable    string
+	historyNoSnapshot        string
+	historyRevertUnsupported string
+	historyRevertedFmt       string
+	historyActionArchived    string
+	historyActionUnarchived  string
+	historyActionRenamed     string
+	historyActionDeleted     string
+	historyActionReverted    string
+	historyRecoverable       string
+	historyPruned            string
+
 	// Batch rename.
 	batchNeedsModel      string
 	batchNeedsMarks      string
@@ -239,6 +255,7 @@ type uiText struct {
 	helpArchived         string
 	helpDeleted          string
 	helpFoldedBand       string
+	helpHistory          string
 	helpKeyWindow        string
 	recentWindowChipFmt  string
 	helpListBase         string
@@ -274,6 +291,7 @@ type uiText struct {
 	helpKeyQuit      string
 	helpKeyGroup     string
 	helpKeyFold      string
+	helpKeyHistory   string
 
 	// Setup, page one.
 	setupAgentsTitle string
@@ -404,7 +422,7 @@ var englishText = uiText{
 	batchFailedSuffixFmt:       "  ·  failed %d: %s · failed rows stay marked",
 	copyBatchDoneFmt:           "Copied %d resume commands",
 	deleteConfirmBatchFmt:      "Delete %d sessions?",
-	deleteConfirmBatchBody:     "Each session is deleted inside its own agent. A batch cannot be undone.",
+	deleteConfirmBatchBody:     "Each session is deleted inside its own agent. Sessions another can restore are listed in the action history (h).",
 	migrateNoneMarked:          "None of the marked sessions can be carried: they are all running now",
 	batchSkippedSuffixFmt:      "  ·  %d skipped: %s could not",
 	noneEligibleFmt:            "None of the marked sessions can be %s: %s could not",
@@ -478,12 +496,27 @@ var englishText = uiText{
 	suggestionFailed:      "no suggestion: ",
 	deleteConfirmTitle:    "Delete session?",
 	deleteConfirmBody:     "This deletes the original session inside the source agent. It cannot be undone.",
-	deleteConfirmBodyUndo: "This deletes the original session inside the source agent. Press u to undo it, until you leave this list.",
+	deleteConfirmBodyUndo: "This deletes the original session inside the source agent. Press u to undo it now, or restore it later from the action history (h).",
 	fieldSource:           "Source",
 	fieldTitle:            "Title",
 	fieldDirectory:        "Directory",
 	choiceCancel:          "Cancel",
 	choiceDelete:          "Delete",
+
+	historyModalTitle:        "Action history",
+	historyModalHint:         "Newest first. enter reverts the selected change.",
+	historyEmpty:             "Nothing has been archived, renamed or deleted yet.",
+	historyNotRecoverable:    "This change can no longer be reversed.",
+	historyNoSnapshot:        "The deleted session's bytes are gone; it cannot be brought back.",
+	historyRevertUnsupported: "This agent cannot reverse that change.",
+	historyRevertedFmt:       "Reverted %s",
+	historyActionArchived:    "archived",
+	historyActionUnarchived:  "unarchived",
+	historyActionRenamed:     "renamed",
+	historyActionDeleted:     "deleted",
+	historyActionReverted:    "reverted",
+	historyRecoverable:       "reversible",
+	historyPruned:            "no longer recoverable",
 
 	batchNeedsModel:      "Configure a title model in setup before renaming in bulk",
 	batchNeedsMarks:      "Mark sessions with x, then press ctrl+t",
@@ -544,6 +577,7 @@ var englishText = uiText{
 	helpArchived:         " a archive next · u undo · esc close · q quit",
 	helpDeleted:          " u undo delete · esc keep it deleted · ↑↓ keep browsing",
 	helpFoldedBand:       " z opens the group · ↑↓ move · ? keys",
+	helpHistory:          " ↑↓ change · enter revert · esc close",
 	helpKeyWindow:        "window: 90 / 30 / 7 days, then all",
 	recentWindowChipFmt:  "last %d days",
 	helpListBase:         " ↑↓ session · enter open · → other agent · space preview · / search · ? keys",
@@ -576,6 +610,7 @@ var englishText = uiText{
 	helpKeyQuit:      "quit",
 	helpKeyGroup:     "group: off, date, dir",
 	helpKeyFold:      "fold the group it is in",
+	helpKeyHistory:   "action history",
 
 	setupAgentsTitle:      "Choose your agents",
 	setupAgentsHint:       "Space toggles an agent; Shift+↑↓ reorders them.",
@@ -693,7 +728,7 @@ var chineseText = uiText{
 	batchFailedSuffixFmt:       "  ·  失败 %d：%s · 失败的行保持标记",
 	copyBatchDoneFmt:           "已复制 %d 条 resume 命令",
 	deleteConfirmBatchFmt:      "删除 %d 条会话？",
-	deleteConfirmBatchBody:     "每条都在它自己的 agent 里删除。批量删除没有撤销。",
+	deleteConfirmBatchBody:     "每条都在它自己的 agent 里删除。another 能恢复的那些会出现在操作历史（h）中。",
 	migrateNoneMarked:          "标记的会话都无法交接：它们都正在运行",
 	batchSkippedSuffixFmt:      "  ·  跳过 %d 条：%s 做不到",
 	noneEligibleFmt:            "标记的会话都无法%s：%s 做不到",
@@ -767,12 +802,27 @@ var chineseText = uiText{
 	suggestionFailed:      "建议不可用：",
 	deleteConfirmTitle:    "删除会话？",
 	deleteConfirmBody:     "该操作会删除来源 agent 中的原始会话，无法撤销。",
-	deleteConfirmBodyUndo: "该操作会删除来源 agent 中的原始会话。离开列表之前，按 u 可以撤销。",
+	deleteConfirmBodyUndo: "该操作会删除来源 agent 中的原始会话。现在按 u 可撤销，之后也可以在操作历史（h）里恢复。",
 	fieldSource:           "来源",
 	fieldTitle:            "标题",
 	fieldDirectory:        "目录",
 	choiceCancel:          "取消",
 	choiceDelete:          "删除",
+
+	historyModalTitle:        "操作历史",
+	historyModalHint:         "最新在前。回车撤销所选改动。",
+	historyEmpty:             "还没有归档、重命名或删除过。",
+	historyNotRecoverable:    "这条改动已无法撤销。",
+	historyNoSnapshot:        "被删除会话的字节已不在，无法恢复。",
+	historyRevertUnsupported: "该 agent 无法撤销这条改动。",
+	historyRevertedFmt:       "已撤销 %s",
+	historyActionArchived:    "归档",
+	historyActionUnarchived:  "取消归档",
+	historyActionRenamed:     "重命名",
+	historyActionDeleted:     "删除",
+	historyActionReverted:    "已撤销",
+	historyRecoverable:       "可撤销",
+	historyPruned:            "已无法恢复",
 
 	batchNeedsModel:      "先在设置里配置标题模型，才能批量命名",
 	batchNeedsMarks:      "x 标记会话后，再用 ctrl+t 批量命名",
@@ -833,6 +883,7 @@ var chineseText = uiText{
 	helpArchived:         " a 继续归档 · u 撤销 · esc 返回列表 · q 退出",
 	helpDeleted:          " u 撤销删除 · esc 保持删除 · ↑↓ 继续浏览",
 	helpFoldedBand:       " z 展开该分组 · ↑↓ 移动 · ? 快捷键",
+	helpHistory:          " ↑↓ 选择 · 回车撤销 · esc 关闭",
 	helpKeyWindow:        "时间窗：90 / 30 / 7 天，再按全部",
 	recentWindowChipFmt:  "最近 %d 天",
 	helpListBase:         " ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · / 搜索 · ? 快捷键",
@@ -862,6 +913,7 @@ var chineseText = uiText{
 	helpKeyQuit:          "退出",
 	helpKeyGroup:         "分组：关 / 日期 / 目录",
 	helpKeyFold:          "折叠它所在的分组",
+	helpKeyHistory:       "操作历史",
 
 	helpRelocate:         " 输入目录 · ↑↓ 选择 · → 填入 · tab 复制/移动 · enter 确认 · esc 取消",
 	helpRelocateForkOnly: " 输入目录 · ↑↓ 选择 · → 填入 · enter 复制 · esc 取消",

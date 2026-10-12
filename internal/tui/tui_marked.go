@@ -181,6 +181,7 @@ func (m modelState) copyMarked() (tea.Model, tea.Cmd) {
 func archiveMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sessions []model.Summary, archived bool, skip batchSkip) tea.Cmd {
 	return func() tea.Msg {
 		done := archiveBatchDoneMsg{archived: archived, skip: skip}
+		st := openJournal()
 		touched := map[string]bool{}
 		for _, sm := range sessions {
 			p, err := reg.Get(sm.Provider)
@@ -198,6 +199,7 @@ func archiveMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 				done.failed = append(done.failed, batchFailure{id: sm.ID, err: err})
 				continue
 			}
+			recordArchive(st, sm, archived)
 			touched[sm.Provider] = true
 			done.done = append(done.done, sm.ID)
 		}
@@ -218,6 +220,7 @@ func archiveMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.St
 func deleteMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.Store, sessions []model.Summary, skip batchSkip) tea.Cmd {
 	return func() tea.Msg {
 		done := deleteBatchDoneMsg{skip: skip}
+		st := openJournal()
 		touched := map[string]bool{}
 		for _, sm := range sessions {
 			p, err := reg.Get(sm.Provider)
@@ -231,10 +234,17 @@ func deleteMarkedCmd(ctx context.Context, reg *registry.Registry, idx *index.Sto
 				continue
 			}
 			ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+			entry, serr := snapshotForDelete(ctx, st, p, sm)
+			if serr != nil {
+				done.failed = append(done.failed, batchFailure{id: sm.ID, err: serr})
+				continue
+			}
 			if err := deleter.DeleteSession(ctx, ref); err != nil {
+				dropDeleteSnapshot(st, entry)
 				done.failed = append(done.failed, batchFailure{id: sm.ID, err: err})
 				continue
 			}
+			recordDelete(st, entry)
 			touched[sm.Provider] = true
 			done.done = append(done.done, sm.ID)
 		}
@@ -282,6 +292,7 @@ func (m modelState) onDeleteBatchDone(msg deleteBatchDoneMsg) (tea.Model, tea.Cm
 	m.overlay = overlayNone
 	m.deleteBatch, m.deleteBatchSkip = nil, batchSkip{}
 	m.lastDeleted, m.restoreDeleted = nil, nil
+	m.lastDeletedEntryID = ""
 	for _, id := range msg.done {
 		delete(m.marked, id)
 	}

@@ -51,6 +51,8 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onDeleteDone(msg)
 	case restoreDoneMsg:
 		return m.onRestoreDone(msg)
+	case historyRevertedMsg:
+		return m.onHistoryReverted(msg)
 	case relocateDoneMsg:
 		return m.onRelocateDone(msg)
 	case relocateBatchDoneMsg:
@@ -283,6 +285,7 @@ func (m modelState) onDeleteDone(msg deleteDoneMsg) (tea.Model, tea.Cmd) {
 	m.selected = nil
 	m.lastResume = ""
 	m.status = okStyle.Render(txt.deletedPrefix + truncateDisplay(msg.title, 48))
+	m.lastDeletedEntryID = msg.entryID
 	if msg.restore != nil && deleted != nil {
 		summary := deleted.summary
 		m.lastDeleted = &summary
@@ -291,6 +294,7 @@ func (m modelState) onDeleteDone(msg deleteDoneMsg) (tea.Model, tea.Cmd) {
 	} else {
 		m.lastDeleted = nil
 		m.restoreDeleted = nil
+		m.lastDeletedEntryID = ""
 	}
 	m.sources = sourceChips(m.reg, msg.counts)
 	if m.sourceIdx >= len(m.sources) {
@@ -309,6 +313,7 @@ func (m modelState) onRestoreDone(msg restoreDoneMsg) (tea.Model, tea.Cmd) {
 	// working on a second press, and the reason belongs on screen.
 	m.lastDeleted = nil
 	m.restoreDeleted = nil
+	m.lastDeletedEntryID = ""
 	if msg.err != nil {
 		m.err = msg.err.Error()
 		return m, nil
@@ -488,6 +493,8 @@ func (m modelState) updateComponents(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.overlay {
 	case overlaySource:
 		m.sourceList, cmd = m.sourceList.Update(msg)
+	case overlayHistory:
+		m.historyList, cmd = m.historyList.Update(msg)
 	case overlayTarget:
 		m.targets, cmd = m.targets.Update(msg)
 	case overlayPreview:
@@ -541,6 +548,9 @@ func (m modelState) updateSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m modelState) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.overlay == overlayBatchTitle {
 		return m.updateBatchOverlay(msg)
+	}
+	if m.overlay == overlayHistory {
+		return m.updateHistory(msg)
 	}
 	if m.overlay == overlayRename {
 		switch msg.String() {
@@ -873,6 +883,8 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpOffset = 0
 		m.layout()
 		return m, tea.Batch(tea.HideCursor, tea.ClearScreen)
+	case "h":
+		return m.openHistory()
 	case "esc":
 		m.err = ""
 		if m.lastResume != "" {
@@ -899,6 +911,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.lastArchived = nil
 		m.lastDeleted = nil
 		m.restoreDeleted = nil
+		m.lastDeletedEntryID = ""
 		m.status = ""
 		return m, nil
 	case "u":
@@ -916,7 +929,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		summary, restore := *m.lastDeleted, m.restoreDeleted
 		m.loading = true
 		m.err = ""
-		return m, tea.Batch(m.spinner.Tick, restoreSessionCmd(m.ctx, m.reg, m.idx, summary, restore))
+		return m, tea.Batch(m.spinner.Tick, restoreSessionCmd(m.ctx, m.reg, m.idx, summary, restore, m.lastDeletedEntryID))
 	case "f":
 		if m.cwd == "" {
 			m.err = txt.projectUnknown

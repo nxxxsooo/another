@@ -99,3 +99,5 @@ In a Git repository, the main worktree and every registered linked worktree form
 ## Configuration
 
 Settings live at `~/.config/another/config.json`: enabled providers and their order, interface language, title agent and model, path aliases, and integration consent, plus the last view the session browser was left on. First run without a config opens `another setup`.
+
+The action journal lives at `~/.cache/another/history/`: an append-only `journal.jsonl` of archive, delete, and rename actions, a prunable `snapshots.json`, and `blobs/` holding the bytes of removed sessions so a delete can be reversed from the `h` overlay after another exits. It is a record, not a source of truth — every revert goes back through the provider's native operation, and a server-backed provider that cannot restore refuses rather than replaying a copy.

@@ -96,6 +96,11 @@ func (m *modelState) layout() {
 	modalInnerW := modalInnerWidth(width)
 	modalListH := max(1, min(10, max(1, contentH-8)))
 	m.sourceList.SetSize(modalInnerW, min(len(m.sourceList.Items()), modalListH))
+	// historyList is built in run(); a model assembled directly (tests) may
+	// leave it zero, and sizing a zero list panics.
+	if len(m.historyList.Items()) > 0 {
+		m.historyList.SetSize(modalInnerW, min(len(m.historyList.Items()), modalListH))
+	}
 	// The target box is the one modal with a width of its own, and lipgloss
 	// counts padding inside it. Sizing the list to the box would let a row wrap
 	// and make the modal a line taller than the pane it sits in.
@@ -195,6 +200,9 @@ func (m modelState) View() string {
 		pane = overlay(pane, box, width)
 	case overlayHelp:
 		box := modalStyle.Width(m.helpModalWidth()).Render(m.helpModalView())
+		pane = overlay(pane, box, width)
+	case overlayHistory:
+		box := sourceModalStyle.Render(accentStyle.Render(txt.historyModalTitle) + m.modalSubtitle(txt.historyModalHint) + "\n\n" + m.historyList.View())
 		pane = overlay(pane, box, width)
 	}
 	return centerBlock(lipgloss.JoinVertical(lipgloss.Left, header, pane, footer), m.bandLeft(), m.width)
@@ -355,6 +363,7 @@ func (m modelState) keyHelpColumns() (left, right []keyGroup) {
 			{"f", txt.helpKeyScope},
 			{"g", txt.helpKeyGroup},
 			{"z", txt.helpKeyFold},
+			{"h", txt.helpKeyHistory},
 			{"t", txt.helpKeyWindow},
 			{"/", txt.helpKeySearch},
 			{"r", txt.helpKeyRefresh},
@@ -947,6 +956,8 @@ func (m modelState) help() string {
 		return txt.helpRelocateForkOnly
 	case overlayHelp:
 		return txt.helpModalClose
+	case overlayHistory:
+		return txt.helpHistory
 	case overlayBatchTitle:
 		if m.batchModelPicking {
 			return txt.helpBatchModelList
