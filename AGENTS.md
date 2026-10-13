@@ -6,6 +6,16 @@
 - Verify that `another-dev` resolves to the installed development binary, its `--version` carries `+dev`, and it matches the build just tested. Confirm that `adev` points to `another-dev`; if interactive-shell verification is blocked, report that gap rather than claiming the shortcut was tested.
 - Keep the released `another` and its `a` shortcut untouched. Development testing does not authorize a tag, release, publication, or consumer upgrade.
 
+## Cross-Platform and CI Contract
+
+- Windows is a supported runtime, not merely a cross-compilation target. Consider Windows behavior in every filesystem, process, shell, and environment change, including test fixtures.
+- Build native filesystem fixtures with `t.TempDir()` and `filepath.Join`. Do not use hard-coded Unix paths such as `/repo` or `/opt/agent-home` as portable absolute paths: on Windows they lack a drive. Keep literal platform-specific paths only in tests explicitly covering their semantics.
+- Follow the production path contract in fixtures: normalize scope roots and candidate paths consistently before containment checks. Cover child paths, sibling-prefix collisions, and traversal outside the root; when parsing user paths, account for Windows drive letters and native separators. Use `filepath` for filesystem paths, not URL-style `path` operations.
+- Treat symlinks, file permissions, process signals, executable lookup, and shell syntax as platform-dependent. Use native implementations or narrowly justified platform-specific tests; do not skip Windows coverage or weaken assertions just to make CI green.
+- Before pushing, run relevant local tests. After an authorized push or PR update, use `gh pr checks` / `gh run view --log-failed` to inspect the checks for the exact submitted commit. Both CI jobs (`test` and `windows`), including their race tests, must pass before reporting the code ready to merge. Local macOS success and Windows cross-compilation do not prove Windows runtime correctness.
+- For a CI repair, trace the failing assertion to its cause, fix it, and verify a new run on the corrected commit. Re-running an unchanged deterministic failure is not a fix. If native Windows verification is unavailable, state the gap explicitly rather than claiming Windows is fixed.
+- Before merging a stale PR, incorporate current `main` where needed and verify the resulting merge candidate. After an authorized merge, check the CI run on the actual `main` commit as well. Commit, push, merge, and release remain distinct actions; this verification contract does not itself authorize publication or changes to branch protection.
+
 ## Release Contract
 
 Treat implementation, publication, distribution, and maintainer installation as separate states. A change intended for delivery is not complete merely because code and tests pass.

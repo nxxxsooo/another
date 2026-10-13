@@ -31,20 +31,24 @@ func TestParseFolderQuery(t *testing.T) {
 	}
 }
 
-func gitScope() util.ProjectScope {
+func gitScope(t *testing.T) util.ProjectScope {
+	t.Helper()
+	base := util.NormalizeProjectPath(t.TempDir())
+	root := filepath.Join(base, "repo")
 	return util.ProjectScope{
-		CWD:       "/repo",
-		Root:      "/repo",
-		Worktrees: []string{"/repo", "/worktrees/edge"},
+		CWD:       root,
+		Root:      root,
+		Worktrees: []string{root, filepath.Join(base, "worktrees", "edge")},
 		Git:       true,
 	}
 }
 
 func TestResolveFolderRelativeFansOut(t *testing.T) {
-	got := resolveFolderRoots(gitScope(), scopeModeExact, "packages/api", "/repo")
+	scope := gitScope(t)
+	got := resolveFolderRoots(scope, scopeModeExact, "packages/api", scope.CWD)
 	want := []string{
-		filepath.Join("/repo", "packages/api"),
-		filepath.Join("/worktrees/edge", "packages/api"),
+		filepath.Join(scope.Root, "packages", "api"),
+		filepath.Join(scope.Worktrees[1], "packages", "api"),
 	}
 	// Normalize both sides for symlinked test dirs (e.g. /private/tmp on macOS).
 	for i := range want {
@@ -56,54 +60,64 @@ func TestResolveFolderRelativeFansOut(t *testing.T) {
 }
 
 func TestResolveFolderWorktreeFirst(t *testing.T) {
-	got := resolveFolderRoots(gitScope(), scopeModeExact, "edge/internal/tui", "/repo")
-	want := []string{util.NormalizeProjectPath("/worktrees/edge/internal/tui")}
+	scope := gitScope(t)
+	got := resolveFolderRoots(scope, scopeModeExact, "edge/internal/tui", scope.CWD)
+	want := []string{filepath.Join(scope.Worktrees[1], "internal", "tui")}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v want %#v", got, want)
 	}
-	got = resolveFolderRoots(gitScope(), scopeModeExact, "edge", "/repo")
-	want = []string{util.NormalizeProjectPath("/worktrees/edge")}
+	got = resolveFolderRoots(scope, scopeModeExact, "edge", scope.CWD)
+	want = []string{scope.Worktrees[1]}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v want %#v", got, want)
 	}
 }
 
 func TestResolveFolderAbsoluteContainment(t *testing.T) {
-	got := resolveFolderRoots(gitScope(), scopeModeExact, "/repo/packages/api", "/repo")
-	want := []string{util.NormalizeProjectPath("/repo/packages/api")}
+	scope := gitScope(t)
+	child := filepath.Join(scope.Root, "packages", "api")
+	got := resolveFolderRoots(scope, scopeModeExact, child, scope.CWD)
+	want := []string{child}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v want %#v", got, want)
 	}
-	if got := resolveFolderRoots(gitScope(), scopeModeExact, "/other/dir", "/repo"); len(got) != 0 {
-		t.Fatalf("outside scope should be empty, got %#v", got)
+	for _, outside := range []string{
+		filepath.Join(filepath.Dir(scope.Root), "other", "dir"),
+		scope.Root + "-sibling",
+	} {
+		if got := resolveFolderRoots(scope, scopeModeExact, outside, scope.CWD); len(got) != 0 {
+			t.Fatalf("outside scope %q should be empty, got %#v", outside, got)
+		}
 	}
 }
 
 func TestResolveFolderNonGitAndTraversal(t *testing.T) {
-	scope := util.ProjectScope{CWD: "/notes", Root: "/notes"}
-	got := resolveFolderRoots(scope, scopeModeTree, "sub/deep", "/notes")
-	want := []string{util.NormalizeProjectPath("/notes/sub/deep")}
+	root := util.NormalizeProjectPath(t.TempDir())
+	scope := util.ProjectScope{CWD: root, Root: root}
+	got := resolveFolderRoots(scope, scopeModeTree, "sub/deep", scope.CWD)
+	want := []string{filepath.Join(root, "sub", "deep")}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v want %#v", got, want)
 	}
-	if got := resolveFolderRoots(scope, scopeModeTree, "../escape", "/notes"); len(got) != 0 {
+	if got := resolveFolderRoots(scope, scopeModeTree, "../escape", scope.CWD); len(got) != 0 {
 		t.Fatalf("traversal escape should be empty, got %#v", got)
 	}
 }
 
 func TestFolderFilterNarrowsListOpts(t *testing.T) {
+	scope := gitScope(t)
 	m := modelState{
-		projectScope:  gitScope(),
+		projectScope:  scope,
 		scopeMode:     scopeModeExact,
 		folderDisplay: "packages/api",
-		folderRoots:   resolveFolderRoots(gitScope(), scopeModeExact, "packages/api", "/repo"),
+		folderRoots:   resolveFolderRoots(scope, scopeModeExact, "packages/api", scope.CWD),
 	}
 	opts := listOptsFor(m)
 	if len(opts.ProjectRoots) != 2 {
 		t.Fatalf("ProjectRoots = %#v, want 2 narrowed roots", opts.ProjectRoots)
 	}
 	m.folderDisplay = "nope"
-	m.folderRoots = resolveFolderRoots(gitScope(), scopeModeExact, "/other/dir", "/repo")
+	m.folderRoots = resolveFolderRoots(scope, scopeModeExact, scope.Root+"-sibling", scope.CWD)
 	opts = listOptsFor(m)
 	if len(opts.ProjectRoots) != 0 || opts.ProjectExact != folderNoMatch {
 		t.Fatalf("no-match should be empty roots + sentinel, got %#v / %q", opts.ProjectRoots, opts.ProjectExact)
@@ -111,11 +125,12 @@ func TestFolderFilterNarrowsListOpts(t *testing.T) {
 }
 
 func TestSearchOptsForRespectsFolderFilter(t *testing.T) {
+	scope := gitScope(t)
 	m := modelState{
-		projectScope:  gitScope(),
+		projectScope:  scope,
 		scopeMode:     scopeModeExact,
 		folderDisplay: "packages/api",
-		folderRoots:   resolveFolderRoots(gitScope(), scopeModeExact, "packages/api", "/repo"),
+		folderRoots:   resolveFolderRoots(scope, scopeModeExact, "packages/api", scope.CWD),
 	}
 	opts := searchOptsFor(m, "needle")
 	if opts.Query != "needle" {
