@@ -1053,17 +1053,21 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "X":
-		// Toggling on the whole visible page keeps one key for select-all and
-		// clear-all, and it is x's own key with Shift: same verb, wider scope.
-		items := m.sessions.Items()
-		allMarked := len(items) > 0
-		for _, li := range items {
+		// Toggling covers the viewport only: the page in front of the reader.
+		// Pressing X on each page accumulates a wider set, and esc still
+		// clears everything at once. Group headers are rows in the list but
+		// never sessions, so they are skipped rather than marked.
+		visible := m.sessions.VisibleItems()
+		start, end := m.sessions.Paginator.GetSliceBounds(len(visible))
+		page := visible[start:end]
+		allMarked := len(page) > 0
+		for _, li := range page {
 			if it, ok := li.(sessionItem); ok && !m.marked[it.summary.ID] {
 				allMarked = false
 				break
 			}
 		}
-		for _, li := range items {
+		for _, li := range page {
 			it, ok := li.(sessionItem)
 			if !ok {
 				continue

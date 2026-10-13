@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -31,6 +33,83 @@ func TestRenameKeyOpensBatchWhenMarked(t *testing.T) {
 	got := updated.(modelState)
 	if got.overlay != overlayBatchTitle || cmd == nil {
 		t.Fatalf("r with marks did not open batch: overlay=%d cmd=%v status=%q", got.overlay, cmd, got.status)
+	}
+}
+
+func TestMarkAllOnlyMarksViewport(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	first := m.sessions.SelectedItem().(sessionItem)
+	var items []list.Item
+	for i := 0; i < 60; i++ {
+		row := first
+		row.summary.ID = fmt.Sprintf("s%02d", i)
+		items = append(items, row)
+	}
+	m.sessions.SetItems(items)
+	m.layout()
+	visible := m.sessions.VisibleItems()
+	start, end := m.sessions.Paginator.GetSliceBounds(len(visible))
+	if end-start >= len(visible) {
+		t.Fatalf("test setup shows everything on one page: bounds=[%d,%d) of %d", start, end, len(visible))
+	}
+	updated, _ := m.Update(runeKey('X'))
+	got := updated.(modelState)
+	want := map[string]bool{}
+	for _, li := range visible[start:end] {
+		want[li.(sessionItem).summary.ID] = true
+	}
+	if len(got.marked) != len(want) {
+		t.Fatalf("X marked %d sessions, want the %d on this page", len(got.marked), len(want))
+	}
+	for id := range want {
+		if !got.marked[id] {
+			t.Fatalf("X missed a visible session: %s", id)
+		}
+	}
+	// A second X clears the page again.
+	updated, _ = got.Update(runeKey('X'))
+	if len(updated.(modelState).marked) != 0 {
+		t.Fatalf("second X left marks: %v", updated.(modelState).marked)
+	}
+}
+
+func TestMarkAllSkipsGroupHeaders(t *testing.T) {
+	m := layoutTestModel()
+	m.width, m.height = 100, 30
+	m.groupMode = groupTree
+	first := m.sessions.SelectedItem().(sessionItem)
+	var items []list.Item
+	for i := 0; i < 60; i++ {
+		row := first
+		row.summary.ID = fmt.Sprintf("g%02d", i)
+		if i%2 == 0 {
+			row.summary.ProjectPath = "/tmp/alpha"
+		} else {
+			row.summary.ProjectPath = "/tmp/beta"
+		}
+		items = append(items, row)
+	}
+	m.setSessionItems(items)
+	m.layout()
+	if !hasGroupHeaders(m.sessions.Items()) {
+		t.Fatal("test setup drew no group headers")
+	}
+	visible := m.sessions.VisibleItems()
+	start, end := m.sessions.Paginator.GetSliceBounds(len(visible))
+	updated, _ := m.Update(runeKey('X'))
+	got := updated.(modelState)
+	want := 0
+	for _, li := range visible[start:end] {
+		if row, ok := li.(sessionItem); ok {
+			want++
+			if !got.marked[row.summary.ID] {
+				t.Fatalf("X missed a visible session: %s", row.summary.ID)
+			}
+		}
+	}
+	if len(got.marked) != want {
+		t.Fatalf("X marked %d, want the %d sessions on this page", len(got.marked), want)
 	}
 }
 
