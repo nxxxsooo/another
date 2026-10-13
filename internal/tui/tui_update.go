@@ -523,9 +523,11 @@ func (m modelState) updateSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.searching = false
 		m.searchInput.Blur()
-		if m.searchQuery != "" {
+		if m.searchQuery != "" || m.folderDisplay != "" {
 			m.searchQuery = ""
 			m.searchInput.SetValue("")
+			m.folderDisplay = ""
+			m.folderRoots = nil
 			return dispatchPageLoadModel(m)
 		}
 		m.layout()
@@ -538,7 +540,19 @@ func (m modelState) updateSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searching = false
 		m.searchInput.Blur()
 		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, query), providerCountOpts(m)))
+		frag, text := parseFolderQuery(query)
+		if frag != "" {
+			m.folderDisplay = frag
+			m.folderRoots = resolveFolderRoots(m.projectScope, m.scopeMode, frag, m.cwd)
+		} else {
+			m.folderDisplay = ""
+			m.folderRoots = nil
+		}
+		if text == "" {
+			m.searchQuery = ""
+			return dispatchPageLoadModel(m)
+		}
+		return m, tea.Batch(m.spinner.Tick, searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, text), providerCountOpts(m)))
 	}
 	var cmd tea.Cmd
 	m.searchInput, cmd = m.searchInput.Update(msg)
@@ -894,9 +908,11 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = ""
 			return m, nil
 		}
-		if m.searchQuery != "" {
+		if m.searchQuery != "" || m.folderDisplay != "" {
 			m.searchQuery = ""
 			m.searchInput.SetValue("")
+			m.folderDisplay = ""
+			m.folderRoots = nil
 			return dispatchPageLoadModel(m)
 		}
 		// A batch selection is the same kind of transient state as a search or

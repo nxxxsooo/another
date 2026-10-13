@@ -173,11 +173,16 @@ type modelState struct {
 	contentIndexing bool
 	searching       bool
 	searchQuery     string
-	totalSessions   int
-	cwd             string
-	movedAway       []string
-	projectScope    util.ProjectScope
-	scopeMode       scopeMode
+	// folderDisplay is the raw path: fragment and folderRoots its resolved
+	// absolute roots. The filter narrows list and search together, stays
+	// inside the current scope, and clears with the query.
+	folderDisplay string
+	folderRoots   []string
+	totalSessions int
+	cwd           string
+	movedAway     []string
+	projectScope  util.ProjectScope
+	scopeMode     scopeMode
 	// pathBase is what a globally-listed row is read against, from
 	// ui.path_base, and pathDepth is how many segments of it a row keeps, from
 	// ui.path_depth. Both are display only: neither ever filters a row out, so
@@ -294,7 +299,7 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 	vp := viewport.New(64, 20)
 	search := textinput.New()
 	search.Prompt = "/ "
-	search.Placeholder = "search titles and messages"
+	search.Placeholder = "search titles and messages · path:folder"
 	rename := textinput.New()
 	rename.Prompt = ""
 	rename.Placeholder = txt.renamePlaceholder

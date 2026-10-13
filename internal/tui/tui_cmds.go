@@ -131,6 +131,7 @@ func listOptsFor(m modelState) index.ListOpts {
 	if m.scopeMode != scopeModeAll {
 		applyProjectScope(&opts, m.projectScope, m.scopeMode)
 	}
+	applyFolderFilter(&opts, m)
 	if cutoff := m.windowCutoff(); cutoff > 0 {
 		opts.Since = cutoff
 	}
@@ -358,6 +359,22 @@ func applyProjectScope(opts *index.ListOpts, scope util.ProjectScope, mode scope
 	opts.ProjectRoots = []string{scope.CWD}
 }
 
+// applyFolderFilter narrows an already-scoped query to the resolved folder
+// roots. A fragment that resolved to nothing becomes the no-match sentinel
+// so the view goes empty instead of leaking the wider scope.
+func applyFolderFilter(opts *index.ListOpts, m modelState) {
+	if m.folderDisplay == "" {
+		return
+	}
+	if len(m.folderRoots) > 0 {
+		opts.ProjectRoots = append([]string(nil), m.folderRoots...)
+		opts.ProjectExact = ""
+		return
+	}
+	opts.ProjectRoots = nil
+	opts.ProjectExact = folderNoMatch
+}
+
 func providerCountOpts(m modelState) index.ListOpts {
 	opts := listOptsFor(m)
 	opts.Provider = ""
@@ -421,6 +438,15 @@ func searchOptsFor(m modelState, query string) index.SearchOpts {
 		applyProjectScope(&listOpts, m.projectScope, m.scopeMode)
 		opts.ProjectExact = listOpts.ProjectExact
 		opts.ProjectRoots = listOpts.ProjectRoots
+	}
+	if m.folderDisplay != "" {
+		if len(m.folderRoots) > 0 {
+			opts.ProjectRoots = append([]string(nil), m.folderRoots...)
+			opts.ProjectExact = ""
+		} else {
+			opts.ProjectRoots = nil
+			opts.ProjectExact = folderNoMatch
+		}
 	}
 	opts.Since = m.windowCutoff()
 	return opts
