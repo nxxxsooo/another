@@ -75,33 +75,49 @@ func resolveFolderRoots(scope util.ProjectScope, mode scopeMode, frag, cwd strin
 		}
 	}
 	norm := func(p string) string { return util.NormalizeProjectPath(p) }
-	join := func(root, rel string) string { return norm(filepath.Join(root, rel)) }
-	if mode == scopeModeAll {
-		base := scope.CWD
-		if base == "" {
-			base = cwd
+	// A typed fragment may use either slash; read it in native form so the
+	// worktree split and the joins below behave on every platform.
+	native := filepath.FromSlash(expanded)
+	join := func(root, rel string) string { return norm(filepath.Join(root, filepath.FromSlash(rel))) }
+	normalizeRoots := func(roots []string) []string {
+		out := make([]string, 0, len(roots))
+		for _, r := range roots {
+			if n := norm(r); n != "" {
+				out = append(out, n)
+			}
 		}
-		if filepath.IsAbs(expanded) {
-			return []string{norm(expanded)}
-		}
-		if base == "" {
-			return []string{norm(expanded)}
-		}
-		return []string{join(base, expanded)}
+		return out
 	}
-	roots := effectiveScopeRoots(scope, mode)
+	if mode == scopeModeAll {
+		base := norm(scope.CWD)
+		if base == "" {
+			base = norm(cwd)
+		}
+		if filepath.IsAbs(native) {
+			return []string{norm(native)}
+		}
+		if base == "" {
+			return []string{norm(native)}
+		}
+		return []string{join(base, native)}
+	}
+	// Roots are normalized before any containment check: stored scope paths
+	// and freshly joined candidates must be compared in the same form, or a
+	// platform that spells absolute paths differently (drive letters,
+	// symlinked tmp dirs) silently matches nothing.
+	roots := normalizeRoots(effectiveScopeRoots(scope, mode))
 	if len(roots) == 0 {
 		return nil
 	}
-	if filepath.IsAbs(expanded) {
-		n := norm(expanded)
+	if filepath.IsAbs(native) {
+		n := norm(native)
 		if underAnyRoot(n, roots) {
 			return []string{n}
 		}
 		return nil
 	}
 	if scope.Git {
-		first, rest, _ := strings.Cut(expanded, "/")
+		first, rest, _ := strings.Cut(native, string(filepath.Separator))
 		var matched []string
 		for _, r := range roots {
 			if filepath.Base(r) == first {
