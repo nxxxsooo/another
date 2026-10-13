@@ -2,10 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nxxxsooo/another/internal/i18n"
 )
 
 // Rename and delete share one key for one row and for the marked set: r
@@ -110,6 +112,32 @@ func TestMarkAllSkipsGroupHeaders(t *testing.T) {
 	}
 	if len(got.marked) != want {
 		t.Fatalf("X marked %d, want the %d sessions on this page", len(got.marked), want)
+	}
+}
+
+func TestHelpListsNewKeys(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		useLanguage(t, lang)
+		help := helpActions(layoutTestModel())
+		keys := map[string]bool{}
+		for _, line := range strings.Split(help, "\n") {
+			if k, _, found := strings.Cut(line, "\t"); found {
+				keys[k] = true
+			}
+		}
+		for _, k := range []string{"r", "d", "s", "X", "c", "u", "esc", "?"} {
+			if !keys[k] {
+				t.Fatalf("%s: ? overlay hides %q:\n%s", lang, k, help)
+			}
+		}
+		if strings.Contains(help, "ctrl+r") || strings.Contains(help, "ctrl+d") || strings.Contains(help, "ctrl+t") {
+			t.Fatalf("%s: ? overlay still advertises a retired ctrl key:\n%s", lang, help)
+		}
+		for _, s := range []string{txt.markedFmt, txt.batchNeedsMarks, txt.batchPartialFmt, txt.batchAllFailedFmt} {
+			if strings.Contains(s, "ctrl+t") || strings.Contains(s, "ctrl+d") {
+				t.Fatalf("%s: status copy still names %q", lang, s)
+			}
+		}
 	}
 }
 

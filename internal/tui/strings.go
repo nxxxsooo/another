@@ -292,6 +292,10 @@ type uiText struct {
 	helpKeyGroup     string
 	helpKeyFold      string
 	helpKeyHistory   string
+	helpKeyUndo      string
+	helpKeyCopy      string
+	helpKeyHelp      string
+	helpKeyClear     string
 
 	// Setup, page one.
 	setupAgentsTitle string
@@ -412,7 +416,7 @@ var englishText = uiText{
 	indexing:                   "indexing…",
 	sessionCountFmt:            "%d sessions",
 	sessionCountOneFmt:         "%d session",
-	markedFmt:                  "%d marked · m move · a archive · ctrl+d delete · → carry · esc clears",
+	markedFmt:                  "%d marked · r rename · m move · a archive · d delete · → carry · esc",
 	archiveNoneMarked:          "None of the marked sessions can be archived by its agent",
 	deleteNoneMarked:           "None of the marked sessions can be deleted by its agent",
 	copyNoneMarked:             "None of the marked sessions could be turned into a resume command",
@@ -520,7 +524,7 @@ var englishText = uiText{
 	historyPruned:            "no longer recoverable",
 
 	batchNeedsModel:      "Configure a title model in setup before renaming in bulk",
-	batchNeedsMarks:      "Mark sessions with x, then press ctrl+t",
+	batchNeedsMarks:      "Mark sessions with x, then press r",
 	batchMarksMissing:    "None of the marked sessions are in this list",
 	batchCancelling:      "Cancelling the remaining rows…",
 	batchNothingToRetry:  "No row is worth retrying",
@@ -528,9 +532,9 @@ var englishText = uiText{
 	batchNoChanges:       "No title change to apply",
 	batchRetryMissing:    "The rows to retry are no longer in this batch",
 	batchModelUnchanged:  "Same model — keeping the current results",
-	batchPartialFmt:      "Renamed %d, failed %d: %s · failed rows stay marked, ctrl+t retries",
+	batchPartialFmt:      "Renamed %d, failed %d: %s · failed rows stay marked, r retries",
 	batchRenamedFmt:      "Renamed %d",
-	batchAllFailedFmt:    "Batch rename failed on %d: %s · marks kept, ctrl+t retries",
+	batchAllFailedFmt:    "Batch rename failed on %d: %s · marks kept, r retries",
 	batchSetNoneFmt:      "%s none: %d failed, %s · marks kept",
 	batchNoneApplied:     "No title change was applied",
 	someRowsFailed:       "some rows failed",
@@ -582,10 +586,10 @@ var englishText = uiText{
 	helpKeyWindow:        "window: 90 / 30 / 7 days, then all",
 	recentWindowChipFmt:  "last %d days",
 	helpListBase:         " ↑↓ session · enter open · → other agent · space preview · / search · ? keys",
-	helpListRename:       "rename the session",
-	helpListArchive:      "archive it",
+	helpListRename:       "rename it (marked set if any)",
+	helpListArchive:      "archive it (marked set if any)",
 	helpListRelocate:     "send to another directory (marked set if any)",
-	helpListDelete:       "delete it",
+	helpListDelete:       "delete it (marked set if any)",
 	helpRelocate:         " type a directory · ↑↓ pick · → fill · tab fork/move · enter confirm · esc cancel",
 	helpRelocateForkOnly: " type a directory · ↑↓ pick · → fill · enter fork · esc cancel",
 
@@ -606,12 +610,16 @@ var englishText = uiText{
 	helpKeyMigrate:   "carry it to another agent",
 	helpKeyPreview:   "preview the conversation",
 	helpKeyMark:      "mark this one",
-	helpKeyMarkAll:   "mark everything shown",
+	helpKeyMarkAll:   "mark the viewport shown",
 	helpKeyBatch:     "retitle the marked ones",
 	helpKeyQuit:      "quit",
 	helpKeyGroup:     "group: off, date, dir",
 	helpKeyFold:      "fold the group it is in",
 	helpKeyHistory:   "action history",
+	helpKeyUndo:      "undo archive / delete",
+	helpKeyCopy:      "copy resume command",
+	helpKeyHelp:      "open / close this keymap",
+	helpKeyClear:     "clear marks / close",
 
 	setupAgentsTitle:      "Choose your agents",
 	setupAgentsHint:       "Space toggles an agent; Shift+↑↓ reorders them.",
@@ -633,7 +641,7 @@ var englishText = uiText{
 	setupInterface:        "Interface",
 
 	setupTitleTitle:     "AI title suggestions",
-	setupTitleHint:      "Which installed agent writes a title when you press ctrl+r.",
+	setupTitleHint:      "Which installed agent writes a title when you press r.",
 	setupTitleNone:      "None of the selected agents has a CLI that can write titles, so this stays off.",
 	setupTitleNoneHelp:  "enter save  ·  esc back",
 	setupTitleOff:       "Off",
@@ -719,7 +727,7 @@ var chineseText = uiText{
 	indexing:                   "正在建立索引…",
 	sessionCountFmt:            "%d 个会话",
 	sessionCountOneFmt:         "%d 个会话",
-	markedFmt:                  "已标记 %d 个 · m 换目录 · a 归档 · ctrl+d 删除 · → 交接 · esc 清除",
+	markedFmt:                  "已标记 %d 个 · r 重命名 · m 换目录 · a 归档 · d 删除 · → 交接 · esc 清除",
 	archiveNoneMarked:          "标记的会话里没有能被其 agent 归档的",
 	deleteNoneMarked:           "标记的会话里没有能被其 agent 删除的",
 	copyNoneMarked:             "标记的会话都没能生成 resume 命令",
@@ -827,7 +835,7 @@ var chineseText = uiText{
 	historyPruned:            "已无法恢复",
 
 	batchNeedsModel:      "先在设置里配置标题模型，才能批量命名",
-	batchNeedsMarks:      "x 标记会话后，再用 ctrl+t 批量命名",
+	batchNeedsMarks:      "x 标记会话后，再按 r 批量命名",
 	batchMarksMissing:    "标记的会话都不在当前列表中",
 	batchCancelling:      "正在取消剩余任务…",
 	batchNothingToRetry:  "没有可重试的行",
@@ -835,9 +843,9 @@ var chineseText = uiText{
 	batchNoChanges:       "没有可应用的标题变更",
 	batchRetryMissing:    "重试的会话都不在这批里了",
 	batchModelUnchanged:  "模型未变，保留现有结果",
-	batchPartialFmt:      "已重命名 %d 条，失败 %d 条：%s · 失败行仍有标记，ctrl+t 重试",
+	batchPartialFmt:      "已重命名 %d 条，失败 %d 条：%s · 失败行仍有标记，按 r 重试",
 	batchRenamedFmt:      "已重命名 %d 条",
-	batchAllFailedFmt:    "批量重命名失败 %d 条：%s · 标记保留，ctrl+t 重试",
+	batchAllFailedFmt:    "批量重命名失败 %d 条：%s · 标记保留，按 r 重试",
 	batchSetNoneFmt:      "%s 0 条：%d 条失败，%s · 标记保留",
 	batchNoneApplied:     "没有应用任何标题变更",
 	someRowsFailed:       "部分行失败",
@@ -889,10 +897,10 @@ var chineseText = uiText{
 	helpKeyWindow:        "时间窗：90 / 30 / 7 天，再按全部",
 	recentWindowChipFmt:  "最近 %d 天",
 	helpListBase:         " ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · / 搜索 · ? 快捷键",
-	helpListRename:       "重命名会话",
-	helpListArchive:      "归档",
+	helpListRename:       "重命名（有标记时批量）",
+	helpListArchive:      "归档（有标记时批量）",
 	helpListRelocate:     "换到另一个目录（有标记时按标记集）",
-	helpListDelete:       "删除",
+	helpListDelete:       "删除（有标记时批量）",
 	helpModalTitle:       "快捷键",
 	helpModalHint:        "当前 agent 不支持的操作不会列出。",
 	helpModalClose:       " ↑↓ 滚动 · esc 关闭",
@@ -910,12 +918,16 @@ var chineseText = uiText{
 	helpKeyMigrate:       "迁移到另一个 agent",
 	helpKeyPreview:       "预览对话",
 	helpKeyMark:          "标记这一条",
-	helpKeyMarkAll:       "标记列出的全部会话",
+	helpKeyMarkAll:       "只标记当前屏",
 	helpKeyBatch:         "给标记的会话重起标题",
 	helpKeyQuit:          "退出",
 	helpKeyGroup:         "分组：关 / 日期 / 目录",
 	helpKeyFold:          "折叠它所在的分组",
 	helpKeyHistory:       "操作历史",
+	helpKeyUndo:          "撤销归档 / 删除",
+	helpKeyCopy:          "复制 resume 命令",
+	helpKeyHelp:          "打开 / 关闭这份键表",
+	helpKeyClear:         "清除标记 / 关闭",
 
 	helpRelocate:         " 输入目录 · ↑↓ 选择 · → 填入 · tab 复制/移动 · enter 确认 · esc 取消",
 	helpRelocateForkOnly: " 输入目录 · ↑↓ 选择 · → 填入 · enter 复制 · esc 取消",
@@ -940,7 +952,7 @@ var chineseText = uiText{
 	setupInterface:        "界面语言",
 
 	setupTitleTitle:     "重命名时的 AI 标题建议",
-	setupTitleHint:      "按 ctrl+r 时调用哪个已装 agent 生成候选标题。",
+	setupTitleHint:      "按 r 时调用哪个已装 agent 生成候选标题。",
 	setupTitleNone:      "已选的 agent 里没有能生成标题的 CLI，此功能保持关闭。",
 	setupTitleNoneHelp:  "enter 保存  ·  esc 返回",
 	setupTitleOff:       "不启用",

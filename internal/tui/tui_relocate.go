@@ -34,7 +34,7 @@ type relocateBatchDoneMsg struct {
 	caveat     error
 }
 
-// openRelocateForMarked takes the marked set the way ctrl+t does for rename.
+// openRelocateForMarked takes the marked set the way r does for rename.
 // Sessions the agent cannot relocate, and the one running right now, are
 // dropped here and counted, so the box never promises more than it can do.
 func (m modelState) openRelocateForMarked() (tea.Model, tea.Cmd) {

@@ -253,7 +253,7 @@ func (m modelState) onBatchApplied(msg batchAppliedMsg) (tea.Model, tea.Cmd) {
 		if detail == "" {
 			detail = txt.someRowsFailed
 		}
-		// Only the applied rows lose their mark, so ctrl+t reopens the
+		// Only the applied rows lose their mark, so r reopens the
 		// batch on exactly the rows that failed.
 		m.err = fmt.Sprintf(txt.batchPartialFmt, msg.applied, msg.failed, detail)
 	case msg.applied > 0:
