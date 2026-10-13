@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/nxxxsooo/another/internal/i18n"
 )
 
@@ -137,6 +138,64 @@ func TestHelpListsNewKeys(t *testing.T) {
 			if strings.Contains(s, "ctrl+t") || strings.Contains(s, "ctrl+d") {
 				t.Fatalf("%s: status copy still names %q", lang, s)
 			}
+		}
+	}
+}
+
+func TestRenameOnFoldedBandDoesNothing(t *testing.T) {
+	m := sampleModel(t, 132, 32)
+	m.groupMode = groupTree
+	m.ungrouped = sampleSessions()
+	m.sessions.SetItems(m.groupedItems())
+	m.applySessionDelegate()
+	m.layout()
+	updated, _ := m.Update(runeKey('z'))
+	m = updated.(modelState)
+	m.sessions.Select(foldedHeaderIndex(t, m))
+	if _, ok := m.sessions.SelectedItem().(sessionItem); ok {
+		t.Fatal("test setup did not rest on a folded band")
+	}
+	updated, cmd := m.Update(runeKey('r'))
+	got := updated.(modelState)
+	if got.overlay != overlayNone || cmd != nil || got.indexing || got.err != "" {
+		t.Fatalf("r on a folded band acted: overlay=%d cmd=%v indexing=%v err=%q", got.overlay, cmd, got.indexing, got.err)
+	}
+}
+
+func TestDeleteSetSkipsTheRunningSession(t *testing.T) {
+	m := markedModel(t, 3)
+	t.Setenv("PI_SESSION_ID", "three")
+	updated, _ := m.Update(runeKey('d'))
+	got := updated.(modelState)
+	if got.overlay != overlayDelete {
+		t.Fatalf("d did not confirm the set: overlay=%d err=%q", got.overlay, got.err)
+	}
+	if len(got.deleteBatch) != 2 {
+		t.Fatalf("deleteBatch holds %d sessions, want the 2 non-running", len(got.deleteBatch))
+	}
+	for _, sm := range got.deleteBatch {
+		if sm.ID == "three" {
+			t.Fatal("the running session entered the delete set")
+		}
+	}
+	if got.deleteBatchSkip.count != 1 {
+		t.Fatalf("skip=%+v, want the running session counted", got.deleteBatchSkip)
+	}
+}
+
+func TestHelpOverlayFitsMinimumTerminal(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		useLanguage(t, lang)
+		m := layoutTestModel()
+		m.width, m.height = 40, 12
+		m.overlay = overlayHelp
+		m.layout()
+		view := m.View()
+		if w := lipgloss.Width(view); w > 40 {
+			t.Fatalf("%s: help view is %d cells wide", lang, w)
+		}
+		if h := lipgloss.Height(view); h > 12 {
+			t.Fatalf("%s: help view is %d lines tall", lang, h)
 		}
 	}
 }

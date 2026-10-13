@@ -23,7 +23,7 @@ func renamingModel(t *testing.T) modelState {
 }
 
 // One session or fifty, waiting on an agent looks the same: the rename box
-// draws the spinner ctrl+t draws, because a still line reads as a hang when the
+// draws the spinner r draws, because a still line reads as a hang when the
 // agent takes several seconds to answer.
 func TestSuggestionWaitDrawsTheBatchSpinner(t *testing.T) {
 	m := renamingModel(t)
