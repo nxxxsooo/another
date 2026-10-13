@@ -184,7 +184,7 @@ x / X     mark the row under the cursor / mark or clear the whole page
 Ctrl+D    delete after an explicit confirmation
 u         undo the latest archive or reversible delete; Esc dismisses the offer
 h         open the action history — what another archived, renamed or deleted, newest first; enter reverses one
-/         search titles and normalized conversation text
+/         search titles and normalized conversation text (`path:folder text` narrows to that subtree)
 t         narrow the window: 90 days → 30 → 7 → everything
 r         refresh the local index
 Esc       close a picker or dismiss transient state

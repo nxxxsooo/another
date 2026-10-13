@@ -853,6 +853,9 @@ func (m modelState) scopeView(showPath bool) string {
 	if showPath && path != "" && m.scopeMode != scopeModeAll {
 		line += mutedStyle.Render("  ·  " + path)
 	}
+	if m.folderDisplay != "" {
+		line += mutedStyle.Render("  ·  path:" + m.folderDisplay)
+	}
 	return line
 }
 
