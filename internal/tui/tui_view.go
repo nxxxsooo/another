@@ -342,10 +342,12 @@ func (m modelState) keyHelpColumns() (left, right []keyGroup) {
 		{"enter", txt.helpKeyOpen},
 		{"→", txt.helpKeyMigrate},
 		{"space", txt.helpKeyPreview},
+		{"u", txt.helpKeyUndo},
+		{"c", txt.helpKeyCopy},
 	}
 	caps := m.selectedSessionCapabilities()
 	if caps.rename {
-		session = append(session, keyRow{"ctrl+r", txt.helpListRename})
+		session = append(session, keyRow{"r", txt.helpListRename})
 	}
 	if caps.archive {
 		session = append(session, keyRow{"a", txt.helpListArchive})
@@ -354,7 +356,7 @@ func (m modelState) keyHelpColumns() (left, right []keyGroup) {
 		session = append(session, keyRow{"m", txt.helpListRelocate})
 	}
 	if caps.delete {
-		session = append(session, keyRow{"ctrl+d", txt.helpListDelete})
+		session = append(session, keyRow{"d", txt.helpListDelete})
 	}
 	left = []keyGroup{
 		{txt.helpGroupBrowse, []keyRow{
@@ -366,14 +368,16 @@ func (m modelState) keyHelpColumns() (left, right []keyGroup) {
 			{"h", txt.helpKeyHistory},
 			{"t", txt.helpKeyWindow},
 			{"/", txt.helpKeySearch},
-			{"r", txt.helpKeyRefresh},
+			{"s", txt.helpKeyRefresh},
 			{"ctrl+l", txt.helpKeyRedraw},
+			{"?", txt.helpKeyHelp},
+			{"esc", txt.helpKeyClear},
 			{"q", txt.helpKeyQuit},
 		}},
 		{txt.helpGroupBatch, []keyRow{
 			{"x", txt.helpKeyMark},
 			{"X", txt.helpKeyMarkAll},
-			{"ctrl+t", txt.helpKeyBatch},
+			{"r", txt.helpKeyBatch},
 		}},
 	}
 	return left, []keyGroup{{txt.helpGroupSession, session}}

@@ -253,7 +253,7 @@ func (m modelState) onBatchApplied(msg batchAppliedMsg) (tea.Model, tea.Cmd) {
 		if detail == "" {
 			detail = txt.someRowsFailed
 		}
-		// Only the applied rows lose their mark, so ctrl+t reopens the
+		// Only the applied rows lose their mark, so r reopens the
 		// batch on exactly the rows that failed.
 		m.err = fmt.Sprintf(txt.batchPartialFmt, msg.applied, msg.failed, detail)
 	case msg.applied > 0:
@@ -1053,17 +1053,21 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "X":
-		// Toggling on the whole visible page keeps one key for select-all and
-		// clear-all, and it is x's own key with Shift: same verb, wider scope.
-		items := m.sessions.Items()
-		allMarked := len(items) > 0
-		for _, li := range items {
+		// Toggling covers the viewport only: the page in front of the reader.
+		// Pressing X on each page accumulates a wider set, and esc still
+		// clears everything at once. Group headers are rows in the list but
+		// never sessions, so they are skipped rather than marked.
+		visible := m.sessions.VisibleItems()
+		start, end := m.sessions.Paginator.GetSliceBounds(len(visible))
+		page := visible[start:end]
+		allMarked := len(page) > 0
+		for _, li := range page {
 			if it, ok := li.(sessionItem); ok && !m.marked[it.summary.ID] {
 				allMarked = false
 				break
 			}
 		}
-		for _, li := range items {
+		for _, li := range page {
 			it, ok := li.(sessionItem)
 			if !ok {
 				continue
@@ -1076,40 +1080,20 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.status = m.markStatus()
 		return m, nil
-	case "ctrl+r":
-		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
-			if isCurrentSession(it.summary) {
-				m.err = txt.cannotRenameRunning
-				return m, nil
-			}
-			p, err := m.reg.Get(it.summary.Provider)
-			if err != nil {
-				m.err = err.Error()
-				return m, nil
-			}
-			if !capabilitiesFor(p, it.summary).Rename {
-				m.err = fmt.Sprintf(txt.renameUnsupportedFmt, p.DisplayName())
-				return m, nil
-			}
-			sel := it
-			m.selected = &sel
-			m.renameInput.SetValue(it.summary.Title)
-			m.renameInput.CursorEnd()
-			m.renameInput.Focus()
-			m.overlay = overlayRename
-			m.layout()
-			// The box opens on the original title immediately; the suggestion
-			// lands later, or never, without ever blocking typing.
-			m.suggestion, m.suggestErr, m.suggesting, m.suggestFor = "", "", false, ""
-			if m.titleCfg.Enabled() {
-				m.suggesting = true
-				m.suggestFor = it.summary.ID
-				return m, tea.Batch(textinput.Blink, m.spinner.Tick,
-					suggestTitleCmd(m.ctx, m.reg, m.titleCfg, it.summary))
-			}
-			return m, textinput.Blink
+	case "r":
+		// One key for one row and for the set: marked sessions open the
+		// batch flow the way m/a/→ already do.
+		if len(m.marked) > 0 {
+			return m.startBatch()
 		}
-		return m, nil
+		return m.openRenameBox()
+	case "ctrl+r":
+		// Hidden alias, frozen on the old single-only behavior.
+		return m.openRenameBox()
+	case "ctrl+t":
+		// Hidden alias, frozen on the old batch-only behavior: without
+		// marks it hints rather than opening the single box.
+		return m.startBatch()
 	case "m":
 		// Relocate is deliberately its own action rather than a migration to
 		// the same agent: the provider moves or copies its own session, so
@@ -1139,11 +1123,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openRelocateBox(caps.RelocateMove, it.summary.ProjectPath)
 		}
 		return m, nil
-	case "ctrl+t":
-		// The batch flow previews first and renames only on confirmation, so
-		// opening it never spends a model call by itself.
-		return m.startBatch()
-	case "ctrl+d":
+	case "d", "ctrl+d":
 		if len(m.marked) > 0 {
 			return m.deleteConfirm()
 		}
@@ -1168,7 +1148,9 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.layout()
 		}
 		return m, nil
-	case "r":
+	case "s":
+		// Refresh lives here so r can rename: the frequent verb keeps the
+		// easy key and the rare re-fetch keeps the mnemonic one.
 		m.indexing = true
 		m.loading = true
 		return m, tea.Batch(m.spinner.Tick, refreshIndexCmd(m.ctx, m.reg, m.idx, m.sourceID(), m.cwd, true))
@@ -1178,6 +1160,45 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// The list moved the cursor by rows and does not know a band is not one.
 	m.skipGroupHeader(!headerSkipUpward(msg.String()))
 	return m, cmd
+}
+
+// openRenameBox opens the single-session rename box on the row under the
+// cursor. It is shared by r (with nothing marked) and the hidden ctrl+r
+// alias; the batch flow stays on r-with-marks and the ctrl+t alias.
+func (m modelState) openRenameBox() (tea.Model, tea.Cmd) {
+	if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
+		if isCurrentSession(it.summary) {
+			m.err = txt.cannotRenameRunning
+			return m, nil
+		}
+		p, err := m.reg.Get(it.summary.Provider)
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		if !capabilitiesFor(p, it.summary).Rename {
+			m.err = fmt.Sprintf(txt.renameUnsupportedFmt, p.DisplayName())
+			return m, nil
+		}
+		sel := it
+		m.selected = &sel
+		m.renameInput.SetValue(it.summary.Title)
+		m.renameInput.CursorEnd()
+		m.renameInput.Focus()
+		m.overlay = overlayRename
+		m.layout()
+		// The box opens on the original title immediately; the suggestion
+		// lands later, or never, without ever blocking typing.
+		m.suggestion, m.suggestErr, m.suggesting, m.suggestFor = "", "", false, ""
+		if m.titleCfg.Enabled() {
+			m.suggesting = true
+			m.suggestFor = it.summary.ID
+			return m, tea.Batch(textinput.Blink, m.spinner.Tick,
+				suggestTitleCmd(m.ctx, m.reg, m.titleCfg, it.summary))
+		}
+		return m, textinput.Blink
+	}
+	return m, nil
 }
 
 // navigationKey stays live while a fetch is in flight. Swallowing arrows during

@@ -20,7 +20,7 @@ func TestBatchEscapesImmediatelyWhenIdle(t *testing.T) {
 	}
 }
 
-// Closing the review keeps the marks, so ctrl+t reopens on the rows that
+// Closing the review keeps the marks, so r reopens on the rows that
 // failed — but it says so, and says how to put them down. Without the second
 // step the only way out of a partial selection was X twice, which marks every
 // row on the page before clearing them.

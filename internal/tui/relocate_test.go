@@ -235,7 +235,7 @@ func relocateMarkedModel(t *testing.T, providers ...string) modelState {
 	return m
 }
 
-// With sessions marked, m takes the marked set the way ctrl+t takes it for
+// With sessions marked, m takes the marked set the way r takes it for
 // rename, rather than the row under the cursor.
 func TestRelocateWithMarksTakesTheMarkedSet(t *testing.T) {
 	m := relocateMarkedModel(t, "pi", "pi", "pi")
