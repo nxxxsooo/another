@@ -148,7 +148,7 @@ the screen first. When the terminal supports focus reporting, returning to the
 window immediately clears and redraws it; periodic redraws pause while it is
 unfocused. Resuming the process also repairs the screen immediately. `Ctrl+L`
 forces a redraw while preserving your input, selection, and open dialog.
-Redrawing does not rescan sessions or refresh the index; use `r` for a data refresh.
+Redrawing does not rescan sessions or refresh the index; use `s` for a data refresh.
 
 ### Update
 
@@ -175,18 +175,18 @@ Enter     resume the selected session in its native agent
 ↑ / ↓     move through sessions or picker items
 Space     preview the conversation
 f         switch between the current project and all projects
-Ctrl+R    rename in the source agent's native title store
+r         rename in the source agent's native title store (batch rename when sessions are marked)
 Ctrl+L    redraw the screen without resetting your input or selection
 Tab       accept the AI title suggestion, when one is configured and arrives
 m         fork or move the session into another project directory
 a         archive the current session (the whole marked set when there is one); press a again to archive the next
-x / X     mark the row under the cursor / mark or clear the whole page
-Ctrl+D    delete after an explicit confirmation
+x / X     mark the row under the cursor / mark or clear only the sessions on the current screen
+d         delete the current session (the whole marked set when there is one) after an explicit confirmation
 u         undo the latest archive or reversible delete; Esc dismisses the offer
 h         open the action history — what another archived, renamed or deleted, newest first; enter reverses one
 /         search titles and normalized conversation text (`path:folder text` narrows to that subtree)
 t         narrow the window: 90 days → 30 → 7 → everything
-r         refresh the local index
+s         refresh the local index
 Esc       close a picker or dismiss transient state
 q         quit
 ```
@@ -228,7 +228,7 @@ This is not a migration. Migration rewrites the conversation through a portable 
 
 Every relocation is read back before it is reported: OpenCode V2 compares the directory in the session's own row, Pi compares a content digest. Move deletes the original only after the new file verifies, and a fork that cannot be created leaves nothing behind in the source directory. By default the target directory has to exist — a mistyped path should fail immediately instead of producing a session that points at nothing. When the directory genuinely is not there yet (a worktree you are about to open), press `Enter` a second time in the TUI to create it, or pass `--create` on the command line.
 
-The marked set is a first-class thing: once anything is marked, `m` to relocate, `a` to archive, `Ctrl+D` to delete, `c` to copy resume commands, and `→` to carry to another agent all act on the whole set, so only unmarked rows are left alone. To carry several at once, mark them with `x` (`X` toggles the page) and press `m`: the box acts on the marked set, and sessions whose agent cannot relocate are skipped and counted before you confirm. Each session still goes through its own native operation, so one failure does not stop the rest; failed rows keep their marks, and another `m` retries only those. The command-line form is `another relocate <id> <id>... --to-dir <path>`.
+The marked set is a first-class thing: once anything is marked, `r` to rename, `m` to relocate, `a` to archive, `d` to delete, `c` to copy resume commands, and `→` to carry to another agent all act on the whole set, so only unmarked rows are left alone. To carry several at once, mark them with `x` (`X` toggles only the sessions on the current screen, keeping marks on other pages) and press `m`: the box acts on the marked set, and sessions whose agent cannot relocate are skipped and counted before you confirm. Each session still goes through its own native operation, so one failure does not stop the rest; failed rows keep their marks, and another `m` retries only those. The command-line form is `another relocate <id> <id>... --to-dir <path>`.
 
 ## Agents
 
@@ -270,7 +270,7 @@ another providers doctor
 
 `v0.15.9` fixes missing title suggestions when Qwen Code is selected on Windows. The complete prompt now travels through stdin, avoiding npm's `qwen.cmd` truncating the title rules and session content at the first newline. Your configured account and model are reused; run `another update` to upgrade.
 
-When setup names an agent, `Ctrl+R` opens the rename box on the original title and asks that agent, in the background, for one title using another's own fixed contract: `MMDD｜类型｜主题` in Chinese or `MMDD｜Type｜Topic` in English. It does not depend on a Skill. The date comes from the indexed creation time converted to `Asia/Shanghai`, never from the model. The model does not read the whole session: the opening messages set the intent and the last few say what the session turned out to be, while the middle never reaches the prompt; per-message and total caps keep the prompt small. Suggestions that miss the contract, arrive after the box closes, or fail outright are discarded without touching what you typed. The agent runs in a throwaway directory, so your project's own instructions never reach it.
+When setup names an agent and no sessions are marked, `r` opens the rename box on the original title and asks that agent, in the background, for one title using another's own fixed contract: `MMDD｜类型｜主题` in Chinese or `MMDD｜Type｜Topic` in English. It does not depend on a Skill. The date comes from the indexed creation time converted to `Asia/Shanghai`, never from the model. The model does not read the whole session: the opening messages set the intent and the last few say what the session turned out to be, while the middle never reaches the prompt; per-message and total caps keep the prompt small. Suggestions that miss the contract, arrive after the box closes, or fail outright are discarded without touching what you typed. The agent runs in a throwaway directory, so your project's own instructions never reach it.
 
 The second setup page picks the agent and the language; `Enter` opens a third page for the model. That list comes from the agent's own CLI (`pi --list-models`, `agy models`), typing filters it, the first row leaves the choice to the CLI, and the last row still accepts a name typed by hand. From `v0.15.7`, OpenCode is asked through its own server (`/api/model`) — the catalog its `/models` command shows inside the client, custom providers from your `opencode.json(c)` included — and falls back to `opencode models` on a build without that endpoint. That subcommand was the old source, and it has to resolve a catalog for the directory it was started in: another probes from a throwaway temporary directory, so what came back was the half-resolved state — nothing, then all of models.dev, with your own providers never reached. Claude Code and Qwen Code have no listing subcommand, but their headless control protocols return the catalog available to the current configuration; another sends only control requests, with no prompt or model call. Codex exposes nothing to ask, so it goes straight to typing with the reason shown — a guessed list of model IDs would only fail later, at rename time.
 
@@ -278,7 +278,7 @@ The second setup page picks the title language with `←→`, independently of t
 
 A batch delete offers no single-step undo — the one-step offer restores a single session, and one row coming back without its neighbours is not the state you had. Each session another can snapshot, however, is listed in the action history (`h`) and can be restored from there one at a time while its bytes are kept; the confirmation states the count before anything is deleted. The history keeps the newest fifty deletes for thirty days: past that a delete stays listed but is marked no longer recoverable, and its bytes are gone from disk.
 
-For more than one title at a time, mark sessions with `x` (`X` toggles the whole page) and press `Ctrl+T`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `Ctrl+T` retries exactly those.
+For more than one title at a time, mark sessions with `x` (`X` toggles only the sessions on the current screen) and press `r`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `r` retries exactly those.
 
 The batch header names the agent, model, and language this run uses, and `m` opens the same picker setup uses.
 
@@ -356,7 +356,7 @@ OpenCode writes through the released V2 import/API surface by default. An early 
 
 - Every migrated target is reloaded and content-verified before success is reported.
 - Failed verification removes only the artifact created by that migration.
-- `Ctrl+D` defaults to **Cancel** and shows the provider, title, project, and full session ID.
+- `d` defaults to **Cancel** and shows the provider, title, project, and full session ID.
 - The delete confirmation states whether that agent's delete can be undone, and an undo is offered only where the same session comes back — never as a re-rendered copy.
 - Relocation defaults to move except for fork-only sessions; it deletes the original only after the new location verifies. To keep the original, select Fork in the TUI or pass `--fork` on the CLI.
 - Exactly identified active sessions are protected from rename, archive, relocate, and delete.
