@@ -141,23 +141,6 @@ func hasGroupHeaders(items []list.Item) bool {
 	return false
 }
 
-// projectsBelowGroups reports whether any row sits below its own group root —
-// a monorepo's subtrees, or an agent started in a package rather than at the
-// top of the worktree. When none do, the project column repeats what the band
-// above it already said, and the cells belong to the title instead.
-func projectsBelowGroups(items []list.Item, roots []string) bool {
-	for _, item := range items {
-		row, ok := item.(sessionItem)
-		if !ok || row.summary.ProjectPath == "" {
-			continue
-		}
-		if filepath.Clean(row.summary.ProjectPath) != groupKeyFor(row.summary.ProjectPath, roots) {
-			return true
-		}
-	}
-	return false
-}
-
 // groupRoots is the set of trees this list can group by. Git names them exactly,
 // and only inside a project scope: with every session on screen there is no one
 // repository whose worktrees they could be read against, so each directory is

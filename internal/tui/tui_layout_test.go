@@ -219,7 +219,7 @@ func TestScopeKeyRerunsActiveSearch(t *testing.T) {
 
 func TestHeaderAndEmptyViewExposeProjectScope(t *testing.T) {
 	m := layoutTestModel()
-	m.width, m.height = 100, 24
+	m.width, m.height = 120, 24
 	m.scopeMode = scopeModeExact
 	m.projectScope = util.ProjectScope{CWD: "/repo", Root: "/repo", Git: true, Worktrees: []string{"/repo"}}
 	header := ansi.Strip(m.headerView())

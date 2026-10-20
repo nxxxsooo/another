@@ -57,19 +57,23 @@ func TestCompactTimeAnswersWhatItsBandDoesNot(t *testing.T) {
 	}
 }
 
-// The point of the bands is the width they hand back: the heading carries the
-// day, so the column stops carrying it too.
-func TestDateBandsShrinkTheTimeColumn(t *testing.T) {
-	flat := sessionDelegate{}.columns(132).timeW
-	banded := sessionDelegate{dateBands: true}.columns(132).timeW
-	if banded >= flat {
-		t.Fatalf("date bands did not shrink the column: %d vs %d", banded, flat)
+// Date bands write a shorter stamp into the same column rather than narrowing
+// it, so g never moves the title. Only a phone-width row spends the saving.
+func TestDateBandsKeepTheTimeColumnExceptWhenNarrow(t *testing.T) {
+	flat := sessionDelegate{}.columns(132)
+	banded := sessionDelegate{dateBands: true}.columns(132)
+	if banded.timeW != flat.timeW || banded.titleW != flat.titleW {
+		t.Fatalf("date bands reflowed the row: %+v vs %+v", banded, flat)
+	}
+	narrow := sessionDelegate{dateBands: true, narrow: true}.columns(46).timeW
+	if narrow >= flat.timeW {
+		t.Fatalf("a narrow row kept the full time column under date bands: %d", narrow)
 	}
 	now := time.Now()
 	for _, at := range []time.Time{now, now.Add(-7 * time.Minute), now.Add(-3 * time.Hour),
 		now.AddDate(0, 0, -1), now.AddDate(0, 0, -3), now.AddDate(0, 0, -40), now.AddDate(-1, 0, 0)} {
-		if w := ansi.StringWidth(compactTime(at, now)); w > banded {
-			t.Errorf("%q is %d cells, wider than the %d-cell column", compactTime(at, now), w, banded)
+		if w := ansi.StringWidth(compactTime(at, now)); w > narrow {
+			t.Errorf("%q is %d cells, wider than the %d-cell column", compactTime(at, now), w, narrow)
 		}
 	}
 }

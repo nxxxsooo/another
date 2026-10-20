@@ -147,3 +147,29 @@ func TestTooSmallStillMeasuresTheTerminal(t *testing.T) {
 		t.Fatalf("refusal width = %d, wider than the terminal at 39", got)
 	}
 }
+
+// g changes what the cells say, never where they are: across all three views
+// the band, the list, and every column keep one position and width.
+func TestGroupingKeepsTheGrid(t *testing.T) {
+	m := sampleModel(t, 190, 30)
+	m.scopeMode = scopeModeAll
+	m.ungrouped = sampleSessions()
+	m.sessions.SetItems(m.groupedItems())
+	m.applySessionDelegate()
+	m.layout()
+	band, listW := m.bandWidth(), m.sessions.Width()
+	grid := sessionDelegateFor(&m).columns(listW)
+	for _, want := range []int{groupDate, groupTree, groupNone} {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+		m = updated.(modelState)
+		if m.groupMode != want {
+			t.Fatalf("g landed on %d, want %d", m.groupMode, want)
+		}
+		if m.bandWidth() != band || m.sessions.Width() != listW {
+			t.Fatalf("mode %d moved the frame: band %d→%d, list %d→%d", want, band, m.bandWidth(), listW, m.sessions.Width())
+		}
+		if got := sessionDelegateFor(&m).columns(listW); got != grid {
+			t.Fatalf("mode %d reflowed the row:\n got %+v\nwant %+v", want, got, grid)
+		}
+	}
+}

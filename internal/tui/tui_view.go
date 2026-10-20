@@ -790,27 +790,31 @@ func (m modelState) headerView() string {
 	tight := mutedStyle.Render(" " + slot + " ")
 	// Choose one layout for both scopes. The scope label changes when f is
 	// pressed, but must not decide whether the prefix loses its brand or gaps.
-	scopeFits := func(showPath bool) string {
+	scopeFits := func(showPath, showWindow bool) string {
 		maxWidth := 0
 		modes := scopeModes(m.projectScope)
 		for _, mode := range modes {
 			variant := m
 			variant.scopeMode = mode
-			w := ansi.StringWidth(variant.scopeView(showPath))
+			w := ansi.StringWidth(variant.scopeView(showPath, showWindow))
 			if w > maxWidth {
 				maxWidth = w
 			}
 		}
-		return padRight(m.scopeView(showPath), maxWidth)
+		return padRight(m.scopeView(showPath, showWindow), maxWidth)
 	}
 	compactSep := mutedStyle.Render(" │ ")
 	first := ""
 	for _, candidate := range []string{
-		left + position + right + separator + scopeFits(true),
-		left + position + right + separator + scopeFits(false),
-		bare + position + right + separator + scopeFits(false),
-		bare + position + right + compactSep + scopeFits(false),
-		bare + tight + right + compactSep + scopeFits(false),
+		left + position + right + separator + scopeFits(true, true),
+		left + position + right + separator + scopeFits(false, true),
+		bare + position + right + separator + scopeFits(false, true),
+		bare + position + right + compactSep + scopeFits(false, true),
+		bare + tight + right + compactSep + scopeFits(false, true),
+		// The window goes before the scope does. It is the same width at
+		// every t, so which of these lines is drawn depends on the terminal
+		// alone, never on the window chosen.
+		bare + tight + right + compactSep + scopeFits(false, false),
 		bare + position + right,
 	} {
 		if ansi.StringWidth(candidate) <= width {
@@ -821,7 +825,7 @@ func (m modelState) headerView() string {
 	if first == "" {
 		// No room for the brand or the count: the scope and the agent filter
 		// are what change what is on screen, and the target chip names a key.
-		compact := m.scopeView(false) + " " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
+		compact := m.scopeView(false, false) + " " + mutedStyle.Render(txt.sourceArrow) + sourceChipStyle.Render(sourceName)
 		compact = ansi.Truncate(compact, max(0, width-ansi.StringWidth(right)-2), "…")
 		gap := max(2, width-ansi.StringWidth(compact)-ansi.StringWidth(right))
 		first = ansi.Truncate(compact+strings.Repeat(" ", gap)+right, width, "…")
@@ -833,7 +837,7 @@ func (m modelState) headerView() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m modelState) scopeView(showPath bool) string {
+func (m modelState) scopeView(showPath, showWindow bool) string {
 	path := m.projectScope.Root
 	if path == "" {
 		path = m.cwd
@@ -857,8 +861,11 @@ func (m modelState) scopeView(showPath bool) string {
 	line := scopeChipStyle.Render(label)
 	// The count in the header is the count of what the window leaves, so the
 	// window has to be part of what explains it.
-	if m.recentDays > 0 {
-		line += mutedStyle.Render("  ·  " + fmt.Sprintf(txt.recentWindowChipFmt, m.recentDays))
+	// The window always takes its place, "all time" included, and is padded
+	// to the widest label t can step through: a chip that vanished or changed
+	// length on t moved the header around the count it explains.
+	if showWindow {
+		line += mutedStyle.Render("  ·  " + m.recentWindowLabel())
 	}
 	if showPath && path != "" && m.scopeMode != scopeModeAll {
 		line += mutedStyle.Render("  ·  " + path)
@@ -867,6 +874,22 @@ func (m modelState) scopeView(showPath bool) string {
 		line += mutedStyle.Render("  ·  path:" + m.folderDisplay)
 	}
 	return line
+}
+
+// recentWindowLabel names the display window in a slot as wide as any window
+// t can reach from here, so stepping through them never resizes the header.
+func (m modelState) recentWindowLabel() string {
+	label := func(days int) string {
+		if days <= 0 {
+			return txt.recentWindowAll
+		}
+		return fmt.Sprintf(txt.recentWindowChipFmt, days)
+	}
+	widest := ansi.StringWidth(label(m.recentDays))
+	for _, days := range recentWindowPresets {
+		widest = max(widest, ansi.StringWidth(label(days)))
+	}
+	return padRight(label(m.recentDays), widest)
 }
 
 // movedAwayDirectories finds directories that once held this project and no
