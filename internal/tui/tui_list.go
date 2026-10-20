@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -108,7 +109,40 @@ type sessionDelegate struct {
 	// row's own, not something the heading already said.
 	dateBands  bool
 	groupRoots []string
+	// narrow is set on a band below narrowBandWidth, which is a phone
+	// reaching a terminal over SSH far more often than a desktop window.
+	// There the title is the column that loses every cell the others keep,
+	// so the row gives up what it can say elsewhere: the count's unit, and
+	// under date bands the date prefix the band above already states. The
+	// full title moves to the footer, where the selected row is read whole.
+	narrow bool
+	// hideAgent drops the agent chip while a single agent is selected: every
+	// row would carry the same three letters the header already names. Only
+	// a narrow band spends that column on the title instead.
+	hideAgent bool
 }
+
+// narrowBandWidth is the band below which rows switch to the narrow layout.
+// Every ordinary desktop window is wider; a phone in portrait is not.
+const narrowBandWidth = 64
+
+// narrowCountWidth is the message column under the narrow layout: the count
+// without its unit, up to four digits, then thousands.
+const narrowCountWidth = 4
+
+// narrowMessageCount spells a count in narrowCountWidth cells or fewer.
+func narrowMessageCount(n int) string {
+	if n < 10000 {
+		return fmt.Sprint(n)
+	}
+	return fmt.Sprintf("%dk", min(n/1000, 999))
+}
+
+// titleDatePrefix is the MMDD｜ stamp a titling convention puts in front of a
+// session title. Under date bands on a narrow row the band already places the
+// session in time, and the stamp costs the title six cells it cannot spare;
+// the footer still shows the title with it.
+var titleDatePrefix = regexp.MustCompile(`^\d{4}\s*[｜|]\s*`)
 
 func (sessionDelegate) Height() int { return 1 }
 
@@ -150,18 +184,27 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	msgs := ""
 	if it.summary.MessageCount > 0 {
 		msgs = fmt.Sprintf(txt.messageCountFmt, it.summary.MessageCount)
+		if d.narrow {
+			msgs = narrowMessageCount(it.summary.MessageCount)
+		}
 	}
 
 	c := d.columns(width)
-	title := padRight(ansi.Truncate(it.displayTitle(), c.titleW, "…"), c.titleW)
+	shownTitle := it.displayTitle()
+	if d.narrow && d.dateBands {
+		shownTitle = titleDatePrefix.ReplaceAllString(shownTitle, "")
+	}
+	title := padRight(ansi.Truncate(shownTitle, c.titleW, "…"), c.titleW)
 	if index == m.Index() {
 		title = selectedRow.Render(title)
 	}
-	provText := renderAgentChip(it.summary.Provider)
 
 	row := c.leftInset + gutter +
-		mutedStyle.Render(padRight(ansi.Truncate(rel, c.timeW, ""), c.timeW)) + c.gap +
-		provText + c.gap + title + c.gap
+		mutedStyle.Render(padRight(ansi.Truncate(rel, c.timeW, ""), c.timeW)) + c.gap
+	if c.provW > 0 {
+		row += renderAgentChip(it.summary.Provider) + c.gap
+	}
+	row += title + c.gap
 	if c.projW > 0 {
 		text, shown := projectCellShown(it.summary.ProjectPath, d.projectBase, d.bands, d.groupRoots)
 		row += renderProjectChipCell(it.summary.ProjectPath, text, shown, c.projW, it.missingDir, d.global, d.pathDepth) + c.gap
@@ -192,7 +235,7 @@ func (d sessionDelegate) columns(width int) rowColumns {
 	// column and the right edge all walked sideways under the eye. A column
 	// that is where it was is worth more than a column with no air in it;
 	// what does not fit is cut with an ellipsis, and what is short is short.
-	const provW = agentChipWidth
+	provW := agentChipWidth
 	timeW := absoluteTimeWidth
 	if d.dateBands {
 		timeW = compactTimeWidth()
@@ -204,19 +247,30 @@ func (d sessionDelegate) columns(width int) rowColumns {
 	// gaps are the spaces between columns: after the time, after the agent
 	// chip, after the title, and after the project when it is drawn.
 	gapCount := 3
-	if d.showProject && width >= 92 {
+	if d.narrow {
+		msgW = narrowCountWidth
+		if d.hideAgent {
+			provW = 0
+			gapCount--
+		}
+	}
+	withProject := d.showProject && width >= 92
+	if withProject {
 		gapCount++
 	}
 	fixed := rowGutterWidth + timeW + provW + msgW
 	// Spacing is bought before the text columns are, up to maxColumnGap, and
 	// is one width for every gap: columns spaced unevenly read as groups.
 	gapW := columnGap(max(0, width-fixed-gapCount-titleColumnCap/2), gapCount)
+	if d.narrow {
+		gapW = 1
+	}
 	room := max(8, width-fixed-gapCount*gapW)
 	// The path gets the smaller share and the title the rest, up to the caps.
 	// A share rather than a measurement: the same pane lays out the same way
 	// whatever is loaded into it.
 	projW := 0
-	if gapCount == 4 {
+	if withProject {
 		projW = min(projectColumnCap, room*2/5)
 		room -= projW
 	}
@@ -644,7 +698,10 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 	if bands {
 		showProject = projectsBelowGroups(items, roots)
 	}
+	narrow := m.narrowBand()
 	return sessionDelegate{
+		narrow:      narrow,
+		hideAgent:   narrow && m.sourceID() != "",
 		marked:      m.marked,
 		showProject: showProject,
 		projectBase: base,
