@@ -60,6 +60,16 @@ func (m modelState) bandWidth() int {
 	return min(max(contentBandFloor, width*contentBandPercent/100), max(contentBandFloor, naturalRowWidth()))
 }
 
+// narrowBand reports whether the browser is laid out for a phone-width
+// terminal; see narrowBandWidth.
+func (m modelState) narrowBand() bool { return m.bandWidth() < narrowBandWidth }
+
+// narrowList is a narrow band tall enough to spend a footer line on the
+// selected title. It depends on the size alone: a footer whose height followed
+// the overlay or the cursor would resize the list without a relayout, and cut
+// off its bottom row. A short terminal needs that line for its modals.
+func (m modelState) narrowList() bool { return m.narrowBand() && m.height >= 16 }
+
 // bandLeft is the left margin that centres the band. Odd leftovers go to the
 // right, which is where a truncation would already have taken them.
 func (m modelState) bandLeft() int { return max(0, (m.width-m.bandWidth())/2) }
@@ -912,11 +922,25 @@ func (m modelState) footerView() string {
 	case m.status != "":
 		lines = append(lines, m.status)
 	default:
-		if m.bandWidth() < 92 {
+		switch {
+		case m.narrowList():
+			lines = append(lines, m.selectionTitleLines()...)
+		case m.bandWidth() < 92:
 			lines = append(lines, mutedStyle.Render(m.selectionSummary()))
 		}
 	}
-	lines = append(lines, footerStyle.Render(m.help()))
+	help := m.help()
+	if m.narrowList() {
+		// The status area keeps two lines whatever fills it, so moving the
+		// cursor between a short title and a long one never resizes the pane.
+		for len(lines) < narrowStatusLines {
+			lines = append(lines, "")
+		}
+		if help == txt.helpListBase {
+			help = txt.helpListNarrow
+		}
+	}
+	lines = append(lines, footerStyle.Render(help))
 	// The footer stays inside the band, so it starts and ends where the pane
 	// does. It used to be allowed past the right edge because the keymap was
 	// assembled from every supported action and did not fit otherwise — the
@@ -939,6 +963,31 @@ func (m modelState) selectionSummary() string {
 	}
 	proj := util.TildePath(it.summary.ProjectPath)
 	return fmt.Sprintf(" %s · %s", proj, it.summary.ShortID())
+}
+
+// narrowStatusLines is the height of the footer's status area on a narrow
+// band: room for a title wrapped once.
+const narrowStatusLines = 2
+
+// selectionTitleLines is the footer on a narrow band. A row there holds only
+// the start of a title, so the selected one is spelled out in full below the
+// list, over two lines; a title that fits in one leaves the second to the
+// directory and ID the wider footer shows instead.
+func (m modelState) selectionTitleLines() []string {
+	it, ok := m.sessions.SelectedItem().(sessionItem)
+	if !ok {
+		return []string{mutedStyle.Render(m.selectionSummary())}
+	}
+	width := max(1, m.bandWidth()-1)
+	title := it.displayTitle()
+	first, _, wrapped := strings.Cut(ansi.Wrap(title, width, ""), "\n")
+	if !wrapped {
+		return []string{" " + first, mutedStyle.Render(m.selectionSummary())}
+	}
+	// The rest is cut from the title rather than rejoined from the wrapped
+	// lines, which would put a space into every place a word was hard-broken.
+	rest := strings.TrimSpace(ansi.Cut(title, ansi.StringWidth(first), ansi.StringWidth(title)))
+	return []string{" " + first, " " + ansi.Truncate(rest, width, "…")}
 }
 
 func (m modelState) help() string {

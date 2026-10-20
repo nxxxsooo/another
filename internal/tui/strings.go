@@ -259,6 +259,7 @@ type uiText struct {
 	helpKeyWindow        string
 	recentWindowChipFmt  string
 	helpListBase         string
+	helpListNarrow       string
 	helpListRename       string
 	helpListArchive      string
 	helpListRelocate     string
@@ -586,6 +587,7 @@ var englishText = uiText{
 	helpKeyWindow:        "window: 90 / 30 / 7 days, then all",
 	recentWindowChipFmt:  "last %d days",
 	helpListBase:         " ↑↓ session · enter open · → other agent · space preview · / search · ? keys",
+	helpListNarrow:       " enter open · → other agent · / search · ? keys",
 	helpListRename:       "rename it (marked set if any)",
 	helpListArchive:      "archive it (marked set if any)",
 	helpListRelocate:     "send to another directory (marked set if any)",
@@ -897,6 +899,7 @@ var chineseText = uiText{
 	helpKeyWindow:        "时间窗：90 / 30 / 7 天，再按全部",
 	recentWindowChipFmt:  "最近 %d 天",
 	helpListBase:         " ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · / 搜索 · ? 快捷键",
+	helpListNarrow:       " enter 进入 · → 跨 agent · / 搜索 · ? 快捷键",
 	helpListRename:       "重命名（有标记时批量）",
 	helpListArchive:      "归档（有标记时批量）",
 	helpListRelocate:     "换到另一个目录（有标记时按标记集）",
