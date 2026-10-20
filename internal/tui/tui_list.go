@@ -236,8 +236,14 @@ func (d sessionDelegate) columns(width int) rowColumns {
 	// that is where it was is worth more than a column with no air in it;
 	// what does not fit is cut with an ellipsis, and what is short is short.
 	provW := agentChipWidth
-	timeW := absoluteTimeWidth
-	if d.dateBands {
+	// The grouping mode is not one of those inputs. g changes what the cells
+	// say, never where they are: date bands write a shorter stamp into the
+	// same time column, and tree bands leave the path cell blank where the
+	// band already named it. A grid that reflowed on g moved the title and
+	// the path under the eye on every press. Only a phone-width band, where
+	// six cells are a fifth of the title, spends the stamp's shorter width.
+	timeW := max(absoluteTimeWidth, compactTimeWidth())
+	if d.narrow && d.dateBands {
 		timeW = compactTimeWidth()
 	}
 	// The message column is sized by the language rather than by a constant:
@@ -274,7 +280,16 @@ func (d sessionDelegate) columns(width int) rowColumns {
 		projW = min(projectColumnCap, room*2/5)
 		room -= projW
 	}
-	titleW := min(titleColumnCap, room)
+	// Without the directory column the title inherits its cells. The band is
+	// sized for a full row and stays that size whichever columns are drawn,
+	// so g into tree bands does not move the frame; the cells the path gave
+	// up belong inside the row, where they keep the count on the right edge,
+	// rather than as a blank strip after it.
+	titleCap := titleColumnCap
+	if !withProject {
+		titleCap += projectColumnCap + maxColumnGap
+	}
+	titleW := min(titleCap, room)
 	room -= titleW
 	// What is over the caps goes to the path first, which has more to say
 	// whenever it is given the cells, and then becomes margin around the row.
@@ -685,19 +700,15 @@ func sessionDelegateFor(m *modelState) sessionDelegate {
 		spread = projectsSpreadOut(items)
 	}
 	base := m.projectBase()
-	// Grouped, the band already names the tree, so most rows have nothing left
-	// to say and the column is only worth its width if some row sits below its
-	// own tree — Lark Base hides the field it groups by for the same reason.
 	headers := hasGroupHeaders(items)
-	// Only tree bands stand in for the path column. A date band says when, so
-	// every row still owes its own directory.
+	// Under tree bands the band already names the tree, so a row at its tree
+	// leaves its path cell blank and a row below it keeps only the part that
+	// differs. The column itself stays: whether it exists is a property of
+	// the scope, and switching views must not reflow the row.
 	bands := headers && m.groupMode == groupTree
 	dateBands := headers && m.groupMode == groupDate
 	roots := m.groupRoots()
 	showProject := m.scopeMode != scopeModeExact || spread
-	if bands {
-		showProject = projectsBelowGroups(items, roots)
-	}
 	narrow := m.narrowBand()
 	return sessionDelegate{
 		narrow:      narrow,

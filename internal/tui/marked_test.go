@@ -324,7 +324,7 @@ func TestTheWindowReachesTheQueryAndTheHeader(t *testing.T) {
 	if got := searchOptsFor(m, "needle").Since; got != cutoff {
 		t.Fatalf("search opts cutoff = %d, want %d", got, cutoff)
 	}
-	if view := ansi.Strip(m.scopeView(true)); !strings.Contains(view, "30") {
+	if view := ansi.Strip(m.scopeView(true, true)); !strings.Contains(view, "30") {
 		t.Fatalf("the header does not say which window is on: %q", view)
 	}
 
@@ -332,7 +332,7 @@ func TestTheWindowReachesTheQueryAndTheHeader(t *testing.T) {
 	if got := listOptsFor(m).Since; got != 0 {
 		t.Fatalf("no window still filtered the fetch: %d", got)
 	}
-	if view := ansi.Strip(m.scopeView(true)); strings.Contains(view, "days") {
+	if view := ansi.Strip(m.scopeView(true, true)); strings.Contains(view, "days") {
 		t.Fatalf("the header claims a window that is off: %q", view)
 	}
 }

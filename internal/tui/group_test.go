@@ -234,33 +234,22 @@ func TestGroupToggleKeepsTheSelectedSession(t *testing.T) {
 	}
 }
 
-// The band names the tree, so a column repeating it down every row is padding.
-// It comes back the moment a row has something the band did not say.
-func TestGroupedRowsDropTheColumnTheBandReplaces(t *testing.T) {
-	atRoots := groupModel(
-		groupRow("a", groupLayout, 1),
-		groupRow("b", groupRoot, 5),
-	)
-	if sessionDelegateFor(&atRoots).showProject {
-		t.Fatal("grouped rows repeat the path their band already carries")
-	}
-
-	belowRoots := groupModel(
-		groupRow("a", filepath.Join(groupLayout, "internal", "tui"), 1),
-		groupRow("b", groupRoot, 5),
-	)
-	if !sessionDelegateFor(&belowRoots).showProject {
-		t.Fatal("a session below its tree lost the only thing naming where it ran")
-	}
-
-	ungrouped := groupModel(
-		groupRow("a", groupLayout, 1),
-		groupRow("b", groupRoot, 5),
-	)
-	ungrouped.groupMode = groupNone
-	ungrouped.sessions.SetItems(ungrouped.groupedItems())
-	if !sessionDelegateFor(&ungrouped).showProject {
-		t.Fatal("an ungrouped project spanning two trees hides what tells them apart")
+// Grouping is a view, not a layout. Whether the directory column exists is a
+// property of the scope; under tree bands a row at its tree leaves its cell
+// blank instead of the column disappearing and the title reflowing on g.
+func TestGroupingKeepsTheDirectoryColumn(t *testing.T) {
+	for _, mode := range []int{groupNone, groupDate, groupTree} {
+		for _, rows := range [][]list.Item{
+			{groupRow("a", groupLayout, 1), groupRow("b", groupRoot, 5)},
+			{groupRow("a", filepath.Join(groupLayout, "internal", "tui"), 1), groupRow("b", groupRoot, 5)},
+		} {
+			m := groupModel(rows...)
+			m.groupMode = mode
+			m.sessions.SetItems(m.groupedItems())
+			if !sessionDelegateFor(&m).showProject {
+				t.Fatalf("mode %d hid the directory column of a project spanning two trees", mode)
+			}
+		}
 	}
 }
 
