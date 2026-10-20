@@ -4,7 +4,7 @@
 
 - When Mingjian asks for “dev test” or “test first”, deliver the current changes through `adev` (`another-dev`), not only `./bin/another`. After the relevant automated checks pass, run `make install` to update the development installation.
 - Verify that `another-dev` resolves to the installed development binary, its `--version` carries `+dev`, and it matches the build just tested. Confirm that `adev` points to `another-dev`; if interactive-shell verification is blocked, report that gap rather than claiming the shortcut was tested.
-- Keep the released `another` and its `a` shortcut untouched. Development testing does not authorize a tag, release, publication, or consumer upgrade.
+- Keep the released `another` and its `a` shortcut untouched while testing. Development testing alone does not authorize a tag, release, publication, or consumer upgrade; Mingjian's acceptance of the tested build does, through the delivery routine in `../AGENTS.md`.
 
 ## Cross-Platform and CI Contract
 
@@ -14,7 +14,7 @@
 - Treat symlinks, file permissions, process signals, executable lookup, and shell syntax as platform-dependent. Use native implementations or narrowly justified platform-specific tests; do not skip Windows coverage or weaken assertions just to make CI green.
 - Before pushing, run relevant local tests. After an authorized push or PR update, use `gh pr checks` / `gh run view --log-failed` to inspect the checks for the exact submitted commit. Both CI jobs (`test` and `windows`), including their race tests, must pass before reporting the code ready to merge. Local macOS success and Windows cross-compilation do not prove Windows runtime correctness.
 - For a CI repair, trace the failing assertion to its cause, fix it, and verify a new run on the corrected commit. Re-running an unchanged deterministic failure is not a fix. If native Windows verification is unavailable, state the gap explicitly rather than claiming Windows is fixed.
-- Before merging a stale PR, incorporate current `main` where needed and verify the resulting merge candidate. After an authorized merge, check the CI run on the actual `main` commit as well. Commit, push, merge, and release remain distinct actions; this verification contract does not itself authorize publication or changes to branch protection.
+- Before merging a stale PR, incorporate current `main` where needed and verify the resulting merge candidate. After an authorized merge, check the CI run on the actual `main` commit as well. This verification contract does not itself authorize publication or changes to branch protection; publication follows Mingjian's acceptance under the delivery routine in `../AGENTS.md`.
 
 ## Release Contract
 
@@ -31,7 +31,7 @@ For every release, update and verify the full release-surface matrix:
 
 Writing about the project is not a release surface. A launch post, a WeChat article, or any other promotion is its own piece of work, published when there is something worth telling people about; a release does not owe one, and no draft is required to call a release complete.
 
-There is no fixed release cadence. Tag when the change on `main` is worth what a release costs — one install for every user, and every surface in the matrix above for the maintainer — and judge that per change rather than against a clock. A fix people are hitting today is worth a tag today, even if one already went out; a change nobody is waiting on can sit on `main` until something else joins it.
+There is no fixed release cadence. A user-visible change Mingjian accepts after dev testing ships in its own release under the delivery routine in `../AGENTS.md`: a patch for fixes, a minor for new behavior. Docs, tests, and chores with no user-visible effect wait on `main` for the next release.
 
 Release notes are written for the person deciding whether to upgrade: features and fixes in their own words, grouped, with docs, chores, CI, tests, and merge commits filtered out. `.goreleaser.yaml` does the grouping and the install header; do not replace it with a raw commit list. Its `release.header` is a hand-written template, not a generated one: the `## Compatibility` section describes whichever release last edited it and will silently ship stale text otherwise. Rewrite that section for the version being tagged, before the tag, and check the published notes afterwards.
 

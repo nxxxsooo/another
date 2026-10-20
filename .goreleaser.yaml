@@ -144,23 +144,19 @@ release:
 
     ## Compatibility
 
-    v0.20.0 moves the browser's most used keys onto single letters: `r`
-    renames the session under the cursor, or retitles the whole marked set
-    when anything is marked; `d` deletes (the marked set when there is one);
-    refresh moves from `r` to `s`. The old `Ctrl+R`, `Ctrl+D`, and `Ctrl+T`
-    keep working. `X` now marks or clears only the rows on screen, so a
-    select-all can no longer reach sessions you have not seen; press it on
-    each page to build a wider set, and `Esc` still clears everything.
+    v0.20.1 keeps the session browser still while you change how it is
+    viewed. `g` cycles ungrouped, by date, and by directory on one grid:
+    every column keeps its position and width, and only what the cells say
+    changes. By date, the time column keeps its full width; by directory,
+    the directory column keeps its place and leaves a cell blank where the
+    band already names the tree. A scope with no directory column gives
+    that width to the title, so the count stays on the right edge instead
+    of leaving a blank strip after it. `t` no longer reshapes the header:
+    with no window it reads `all time`, in a slot as wide as `last 90 days`.
 
-    `/` accepts `path:folder text` to narrow the list and the search to one
-    subfolder of the current scope. On a terminal narrower than 64 columns —
-    a phone over SSH — rows give their width to the title and the footer
-    spells out the selected title in full; wider terminals lay out exactly
-    as before.
-
-    Compatibility: no settings key, command, or flag changes, nothing in how
-    sessions are stored inside any agent changes, and no migration is needed.
-    Script installations can run `another update`.
+    Compatibility: no settings key, command, flag, or keymap changes,
+    nothing in how sessions are stored inside any agent changes, and no
+    migration is needed. Script installations can run `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
