@@ -55,7 +55,10 @@ func Open(path string) (*Store, error) {
 	if err := validateIndexFiles(path); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	// Every transaction here writes. Taking the write lock at BEGIN lets the
+	// busy timeout apply; a deferred transaction that reads first gets
+	// SQLITE_BUSY at once when it upgrades while another writer is active.
+	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate")
 	if err != nil {
 		return nil, err
 	}
