@@ -144,15 +144,11 @@ release:
 
     ## Compatibility
 
-    v0.20.1 keeps the session browser still while you change how it is
-    viewed. `g` cycles ungrouped, by date, and by directory on one grid:
-    every column keeps its position and width, and only what the cells say
-    changes. By date, the time column keeps its full width; by directory,
-    the directory column keeps its place and leaves a cell blank where the
-    band already names the tree. A scope with no directory column gives
-    that width to the title, so the count stays on the right edge instead
-    of leaving a blank strip after it. `t` no longer reshapes the header:
-    with no window it reads `all time`, in a slot as wide as `last 90 days`.
+    v0.20.2 fixes refreshes that failed with `database is locked (5)
+    (SQLITE_BUSY)`, most often reported against codex. A refresh that
+    overlapped the background search indexer, another refresh, or a second
+    another process could not wait for the index's write lock and gave up
+    at once. It now waits its turn and completes.
 
     Compatibility: no settings key, command, flag, or keymap changes,
     nothing in how sessions are stored inside any agent changes, and no
