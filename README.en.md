@@ -296,9 +296,9 @@ Titles these adapters write follow the session instead of freezing after the fir
 
 ```bash
 # Browse and search
-another list [--provider ID] [--project PATH] [--cwd] [--limit N] [--json] [--refresh]
-another search "query" [--provider ID] [--project PATH] [--cwd] [--limit N] [--json]
-another show <session-id> [--provider ID] [--limit N]
+another list [--provider ID] [--project PATH] [--all] [--limit N] [--json] [--refresh]
+another search "query" [--provider ID] [--project PATH] [--all] [--limit N] [--json]
+another show <session-id> [--provider ID] [--limit N] [--all]
 
 # Move a session
 another migrate <session-id> --to <provider> [--from ID] [-y]

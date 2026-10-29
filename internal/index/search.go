@@ -19,7 +19,6 @@ type SearchOpts struct {
 	Provider         string
 	ProjectFilter    string
 	ProjectExact     string
-	ProjectCWD       string
 	ProjectRoots     []string
 	Since            int64
 	IncludeSubagents bool
@@ -194,8 +193,8 @@ func (s *Store) Search(opts SearchOpts) ([]SearchHit, error) {
 	}
 	where, args := s.listWhere(ListOpts{
 		Provider: opts.Provider, ProjectFilter: opts.ProjectFilter, ProjectExact: opts.ProjectExact,
-		ProjectCWD: opts.ProjectCWD, ProjectRoots: opts.ProjectRoots,
-		Since: opts.Since, IncludeSubagents: opts.IncludeSubagents,
+		ProjectRoots: opts.ProjectRoots,
+		Since:        opts.Since, IncludeSubagents: opts.IncludeSubagents,
 	})
 	like := "%" + util.EscapeLike(rawQuery) + "%"
 	args = append(args, like, like, like)

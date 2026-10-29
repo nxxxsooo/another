@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -39,6 +40,44 @@ func DiscoverProjectScope(ctx context.Context, cwd string) ProjectScope {
 	scope.Root = roots[0]
 	scope.Worktrees = roots
 	return scope
+}
+
+// Roots is what "this project" covers in the index: every registered worktree
+// of a repository, or a plain directory and everything under it. Nil means the
+// scope has no anchor and reads as all projects.
+func (s ProjectScope) Roots() []string {
+	if s.Git && len(s.Worktrees) > 0 {
+		return append([]string(nil), s.Worktrees...)
+	}
+	if s.CWD == "" {
+		return nil
+	}
+	return []string{s.CWD}
+}
+
+// Contains reports whether a recorded project path sits at or below one of the
+// scope's roots, by the same rule the index applies to ProjectRoots. A
+// sibling sharing a name prefix (/repo-old beside /repo) is outside.
+func (s ProjectScope) Contains(projectPath string) bool {
+	p := NormalizeProjectPath(projectPath)
+	if p == "" {
+		return false
+	}
+	sep := string(filepath.Separator)
+	for _, root := range s.Roots() {
+		root = NormalizeProjectPath(root)
+		if root == "" {
+			continue
+		}
+		prefix := root
+		if !strings.HasSuffix(prefix, sep) {
+			prefix += sep
+		}
+		if p == root || strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseWorktreeList extracts worktree paths from `git worktree list

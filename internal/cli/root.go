@@ -166,10 +166,56 @@ func reportScanFailure(err error) error {
 	return err
 }
 
+// currentScope is what the CLI reads as "here" unless told otherwise: the
+// scope the browser opens on, so a search run in a repository and the list
+// opened there agree. --all and --project both replace it.
+func currentScope(ctx context.Context) (util.ProjectScope, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return util.ProjectScope{}, err
+	}
+	return util.DiscoverProjectScope(ctx, wd), nil
+}
+
+// scopeRoots resolves the project filter shared by list and search. A path
+// substring searches every project for it; otherwise the current project
+// applies unless --all lifts it.
+func scopeRoots(ctx context.Context, project string, all bool) ([]string, error) {
+	if project != "" || all {
+		return nil, nil
+	}
+	scope, err := currentScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return scope.Roots(), nil
+}
+
+// requireInScope refuses to read a session recorded outside the current
+// project unless --all says so: an agent asking from one repository must not
+// be handed another organization's conversation by default.
+func requireInScope(ctx context.Context, sm *model.Summary, all bool) error {
+	if all {
+		return nil
+	}
+	scope, err := currentScope(ctx)
+	if err != nil {
+		return err
+	}
+	if len(scope.Roots()) == 0 || scope.Contains(sm.ProjectPath) {
+		return nil
+	}
+	where := sm.ProjectPath
+	if where == "" {
+		where = "an unrecorded directory"
+	}
+	return fmt.Errorf("session %s belongs to %s, outside this project; pass --all to read it", sm.ID, where)
+}
+
 func (a *App) listCmd() *cobra.Command {
 	var providerID, project string
 	var limit int
-	var asJSON, refresh, cwdOnly, includeSubagents bool
+	var asJSON, refresh, all, includeSubagents bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List indexed sessions",
@@ -178,19 +224,16 @@ func (a *App) listCmd() *cobra.Command {
 			if err := a.ensureIndex(ctx, providerID, refresh); err != nil {
 				return err
 			}
+			roots, err := scopeRoots(ctx, project, all)
+			if err != nil {
+				return err
+			}
 			opts := index.ListOpts{
 				Provider:         registry.NormalizeID(providerID),
+				ProjectFilter:    project,
+				ProjectRoots:     roots,
 				Limit:            limit,
 				IncludeSubagents: includeSubagents,
-			}
-			if cwdOnly {
-				wd, err := os.Getwd()
-				if err != nil {
-					return err
-				}
-				opts.ProjectCWD = util.NormalizeProjectPath(wd)
-			} else if project != "" {
-				opts.ProjectFilter = project
 			}
 			items, err := a.Index.List(opts)
 			if err != nil {
@@ -212,8 +255,8 @@ func (a *App) listCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&providerID, "provider", "", "filter by provider")
-	cmd.Flags().StringVar(&project, "project", "", "filter by project path substring")
-	cmd.Flags().BoolVar(&cwdOnly, "cwd", false, "only sessions for the current working directory")
+	cmd.Flags().StringVar(&project, "project", "", "filter every project by path substring")
+	cmd.Flags().BoolVar(&all, "all", false, "include every project, not only the current one")
 	cmd.Flags().IntVar(&limit, "limit", 0, "max results (0 = unlimited)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before listing")
@@ -224,7 +267,7 @@ func (a *App) listCmd() *cobra.Command {
 func (a *App) showCmd() *cobra.Command {
 	var from string
 	var limit int
-	var raw, refresh bool
+	var raw, refresh, all bool
 	cmd := &cobra.Command{
 		Use:   "show <session-id>",
 		Short: "Show session messages",
@@ -236,6 +279,9 @@ func (a *App) showCmd() *cobra.Command {
 			}
 			sm, p, err := migrate.ResolveSession(ctx, a.Registry, a.Index, args[0], from)
 			if err != nil {
+				return err
+			}
+			if err := requireInScope(ctx, sm, all); err != nil {
 				return err
 			}
 			ref := provider.SessionRef{
@@ -272,6 +318,7 @@ func (a *App) showCmd() *cobra.Command {
 	cmd.Flags().IntVar(&limit, "limit", 0, "show last N messages")
 	cmd.Flags().BoolVar(&raw, "raw", false, "do not truncate")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before show")
+	cmd.Flags().BoolVar(&all, "all", false, "allow a session from any project, not only the current one")
 	return cmd
 }
 
@@ -674,7 +721,7 @@ func (a *App) tuiCmd() *cobra.Command {
 func (a *App) searchCmd() *cobra.Command {
 	var providerID, project string
 	var limit int
-	var cwdOnly, includeSubagents, asJSON, noWait, refresh bool
+	var all, includeSubagents, asJSON, noWait, refresh bool
 	cmd := &cobra.Command{
 		Use:   "search <keywords>",
 		Short: "Search session titles and message text",
@@ -689,19 +736,13 @@ func (a *App) searchCmd() *cobra.Command {
 					return err
 				}
 			}
-			if cwdOnly {
-				wd, err := os.Getwd()
-				if err != nil {
-					return err
-				}
-				project = util.NormalizeProjectPath(wd)
+			roots, err := scopeRoots(ctx, project, all)
+			if err != nil {
+				return err
 			}
 			searchOpts := index.SearchOpts{
 				Query: strings.Join(args, " "), Provider: registry.NormalizeID(providerID),
-				ProjectFilter: project, IncludeSubagents: includeSubagents, Limit: limit,
-			}
-			if cwdOnly {
-				searchOpts.ProjectCWD, searchOpts.ProjectFilter = project, ""
+				ProjectFilter: project, ProjectRoots: roots, IncludeSubagents: includeSubagents, Limit: limit,
 			}
 			hits, err := a.Index.Search(searchOpts)
 			if err != nil {
@@ -742,8 +783,8 @@ func (a *App) searchCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&providerID, "provider", "", "filter by provider")
-	cmd.Flags().StringVar(&project, "project", "", "filter by project path substring")
-	cmd.Flags().BoolVar(&cwdOnly, "cwd", false, "only sessions for the current working directory")
+	cmd.Flags().StringVar(&project, "project", "", "filter every project by path substring")
+	cmd.Flags().BoolVar(&all, "all", false, "search every project, not only the current one")
 	cmd.Flags().BoolVar(&includeSubagents, "include-subagents", false, "include child agent sessions")
 	cmd.Flags().IntVar(&limit, "limit", 50, "max results")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")

@@ -277,9 +277,9 @@ OpenCode V2 可以在首次自动命名时直接执行同一规则，而不额�
 
 ```bash
 # 浏览和搜索
-another list [--provider ID] [--project PATH] [--cwd] [--limit N] [--json] [--refresh]
-another search "query" [--provider ID] [--project PATH] [--cwd] [--limit N] [--json]
-another show <session-id> [--provider ID] [--limit N]
+another list [--provider ID] [--project PATH] [--all] [--limit N] [--json] [--refresh]
+another search "query" [--provider ID] [--project PATH] [--all] [--limit N] [--json]
+another show <session-id> [--provider ID] [--limit N] [--all]
 
 # 迁移会话
 another migrate <session-id> --to <provider> [--from ID] [-y]

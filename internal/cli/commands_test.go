@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -35,10 +36,10 @@ func seededApp(t *testing.T) (*App, *fakeProvider, *fakeProvider, string) {
 
 func TestListPrintsIndexedSessions(t *testing.T) {
 	app, _, _, _ := seededApp(t)
-	out := mustRun(t, app, "list")
+	out := mustRun(t, app, "list", "--all")
 	wantContains(t, out, "PROVIDER", "TITLE", "Stripe webhook retry", "Old project notes", "Fake alpha")
 
-	out = mustRun(t, app, "list", "--json", "--provider", "alpha")
+	out = mustRun(t, app, "list", "--all", "--json", "--provider", "alpha")
 	var items []model.Summary
 	if err := json.Unmarshal([]byte(out), &items); err != nil {
 		t.Fatalf("json: %v\n%s", err, out)
@@ -47,7 +48,7 @@ func TestListPrintsIndexedSessions(t *testing.T) {
 		t.Fatalf("items = %d", len(items))
 	}
 
-	out = mustRun(t, app, "list", "--limit", "1", "--json")
+	out = mustRun(t, app, "list", "--all", "--limit", "1", "--json")
 	items = nil
 	if err := json.Unmarshal([]byte(out), &items); err != nil || len(items) != 1 {
 		t.Fatalf("limit: %d items, %v", len(items), err)
@@ -61,12 +62,12 @@ func TestListPrintsIndexedSessions(t *testing.T) {
 
 func TestShowPrintsMessages(t *testing.T) {
 	app, _, _, _ := seededApp(t)
-	out := mustRun(t, app, "show", "alpha-one")
+	out := mustRun(t, app, "show", "alpha-one", "--all")
 	wantContains(t, out, "Session alpha-one (alpha)", "Messages: 3", "[user]", "stripe webhook", "[assistant]")
-	out = mustRun(t, app, "show", "alpha-two")
+	out = mustRun(t, app, "show", "alpha-two", "--all")
 	wantContains(t, out, "Messages: 2", "wiki export")
 
-	out = mustRun(t, app, "show", "alpha-one", "--limit", "1", "--raw")
+	out = mustRun(t, app, "show", "alpha-one", "--all", "--limit", "1", "--raw")
 	if strings.Contains(out, "stripe webhook") || !strings.Contains(out, "ship it") {
 		t.Fatalf("--limit 1 should keep only the last message:\n%s", out)
 	}
@@ -77,7 +78,7 @@ func TestShowPrintsMessages(t *testing.T) {
 
 func TestSearchFindsMessageText(t *testing.T) {
 	app, _, _, _ := seededApp(t)
-	out := mustRun(t, app, "search", "idempotent", "--json")
+	out := mustRun(t, app, "search", "idempotent", "--all", "--json")
 	var res struct {
 		Results []struct {
 			Session model.Summary `json:"session"`
@@ -89,8 +90,66 @@ func TestSearchFindsMessageText(t *testing.T) {
 	if len(res.Results) != 1 || res.Results[0].Session.ID != "alpha-one" {
 		t.Fatalf("results = %+v", res.Results)
 	}
-	out = mustRun(t, app, "search", "webhook", "--no-wait")
+	out = mustRun(t, app, "search", "webhook", "--all", "--no-wait")
 	wantContains(t, out, "TITLE / SNIPPET", "Stripe webhook retry")
+}
+
+// list, search, and show read the directory they run in the way the browser
+// does: the project and everything below it, never a sibling that merely shares
+// its name prefix, and nothing from elsewhere until --all says so.
+func TestCLIDefaultsToCurrentProject(t *testing.T) {
+	alpha, beta := newFake(t, "alpha"), newFake(t, "beta")
+	base := t.TempDir()
+	project := filepath.Join(base, "repo")
+	child := filepath.Join(project, "internal", "cli")
+	sibling := filepath.Join(base, "repo-old")
+	for _, dir := range []string{child, sibling} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alpha.seed(t, sampleConversation("here", project, "Here webhook"))
+	beta.seed(t, sampleConversation("below", child, "Below webhook"))
+	alpha.seed(t, sampleConversation("sibling", sibling, "Sibling webhook"))
+	beta.seed(t, sampleConversation("elsewhere", t.TempDir(), "Elsewhere webhook"))
+	app := newTestApp(t, alpha, beta)
+	t.Chdir(project)
+
+	ids := func(args ...string) []string {
+		t.Helper()
+		var items []model.Summary
+		if err := json.Unmarshal([]byte(mustRun(t, app, append([]string{"list", "--json"}, args...)...)), &items); err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, s := range items {
+			out = append(out, s.ID)
+		}
+		sort.Strings(out)
+		return out
+	}
+	if got := ids(); strings.Join(got, ",") != "below,here" {
+		t.Fatalf("default list = %v, want [below here]", got)
+	}
+	if got := ids("--all"); len(got) != 4 {
+		t.Fatalf("--all list = %v, want all four", got)
+	}
+	if got := ids("--project", "repo-old"); strings.Join(got, ",") != "sibling" {
+		t.Fatalf("--project list = %v, want [sibling]", got)
+	}
+
+	out := mustRun(t, app, "search", "webhook")
+	wantContains(t, out, "Here webhook", "Below webhook")
+	if strings.Contains(out, "Sibling webhook") || strings.Contains(out, "Elsewhere webhook") {
+		t.Fatalf("search leaked outside the project:\n%s", out)
+	}
+	out = mustRun(t, app, "search", "webhook", "--all")
+	wantContains(t, out, "Sibling webhook", "Elsewhere webhook")
+
+	mustRun(t, app, "show", "below")
+	_, err := run(t, app, "show", "sibling")
+	wantErr(t, err, "outside this project; pass --all")
+	wantContains(t, mustRun(t, app, "show", "sibling", "--all"), "Session sibling (alpha)")
 }
 
 func TestMigrateResumeAndDedup(t *testing.T) {
@@ -195,7 +254,7 @@ func TestRenameWritesTheProviderAndRefreshesTheIndex(t *testing.T) {
 	if alpha.renamed["alpha-one"] != "0901|Fix|Stripe retries" {
 		t.Fatalf("provider title = %q", alpha.renamed["alpha-one"])
 	}
-	out = mustRun(t, app, "list", "--provider", "alpha")
+	out = mustRun(t, app, "list", "--all", "--provider", "alpha")
 	wantContains(t, out, "0901|Fix|Stripe retries")
 
 	_, err := run(t, app, "rename", "alpha-one", "--auto")

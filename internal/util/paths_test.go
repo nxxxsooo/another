@@ -72,38 +72,6 @@ func TestMatchID(t *testing.T) {
 	}
 }
 
-func TestProjectPathMatchesCWD(t *testing.T) {
-	home := util.HomeDir()
-	if home == "" {
-		t.Skip("no home dir")
-	}
-	proj := filepath.Join(home, "proj")
-	sub := filepath.Join(proj, "sub")
-	if util.ProjectPathMatchesCWD(home, home) {
-		t.Fatal("exact home path should not match home filter")
-	}
-	if !util.ProjectPathMatchesCWD(proj, home) {
-		t.Fatal("project under home should match home filter")
-	}
-	if util.ProjectPathMatchesCWD(sub, proj) {
-		t.Fatal("subdir should not match exact project filter")
-	}
-	if util.ProjectPathMatchesCWD("/other", proj) {
-		t.Fatal("unrelated path should not match")
-	}
-}
-
-func TestProjectPathMatchesCWDExact(t *testing.T) {
-	home := util.HomeDir()
-	if home == "" {
-		t.Skip("no home dir")
-	}
-	proj := filepath.Join(home, "proj")
-	if !util.ProjectPathMatchesCWD(proj, proj) {
-		t.Fatal("exact path should match")
-	}
-}
-
 func TestWriteFileAtomicIsSecureAndCleansFailedTemp(t *testing.T) {
 	dir := t.TempDir()
 	victim := filepath.Join(dir, "victim")

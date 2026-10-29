@@ -129,20 +129,6 @@ func HomeDir() string {
 	return NormalizeProjectPath(home)
 }
 
-// ProjectPathMatchesCWD reports whether a stored project path belongs to the cwd filter.
-func ProjectPathMatchesCWD(projectPath, cwd string) bool {
-	projectPath = NormalizeProjectPath(projectPath)
-	cwd = NormalizeProjectPath(cwd)
-	if projectPath == "" || cwd == "" {
-		return false
-	}
-	home := HomeDir()
-	if home != "" && cwd == home {
-		return strings.HasPrefix(projectPath, home+string(filepath.Separator))
-	}
-	return projectPath == cwd
-}
-
 func EncodeClaudeProjectPath(absPath string) string {
 	abs, err := filepath.Abs(absPath)
 	if err != nil {

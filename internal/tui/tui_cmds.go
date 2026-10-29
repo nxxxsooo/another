@@ -342,13 +342,6 @@ func applyProjectScope(opts *index.ListOpts, scope util.ProjectScope, mode scope
 	if mode == scopeModeAll {
 		return
 	}
-	if scope.Git && len(scope.Worktrees) > 0 {
-		opts.ProjectRoots = append([]string(nil), scope.Worktrees...)
-		return
-	}
-	if scope.CWD == "" {
-		return
-	}
 	// Outside Git the scope is this directory and what is under it: the whole
 	// tree, subprojects included, because a line of work is read as one thing.
 	// An exact match hid entire trees — opening huatu showed nothing at all
@@ -356,7 +349,7 @@ func applyProjectScope(opts *index.ListOpts, scope util.ProjectScope, mode scope
 	// below hid the rest: a workspace is not a folder of unrelated checkouts,
 	// and "huatu" that omits huatu's own subprojects is not the answer anyone
 	// opening huatu was asking for.
-	opts.ProjectRoots = []string{scope.CWD}
+	opts.ProjectRoots = scope.Roots()
 }
 
 // applyFolderFilter narrows an already-scoped query to the resolved folder

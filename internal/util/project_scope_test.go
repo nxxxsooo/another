@@ -60,6 +60,50 @@ func TestDiscoverProjectScopeOutsideGitFallsBackToCWD(t *testing.T) {
 	}
 }
 
+func TestProjectScopeRootsAndContains(t *testing.T) {
+	base := t.TempDir()
+	repo := filepath.Join(base, "repo")
+	tree := filepath.Join(base, "repo-feature")
+	for _, dir := range []string{repo, tree} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo, tree = util.NormalizeProjectPath(repo), util.NormalizeProjectPath(tree)
+
+	git := util.ProjectScope{CWD: repo, Root: repo, Worktrees: []string{repo, tree}, Git: true}
+	if got := git.Roots(); !reflect.DeepEqual(got, []string{repo, tree}) {
+		t.Fatalf("git roots = %#v", got)
+	}
+	plain := util.ProjectScope{CWD: repo, Root: repo}
+	if got := plain.Roots(); !reflect.DeepEqual(got, []string{repo}) {
+		t.Fatalf("plain roots = %#v", got)
+	}
+	if got := (util.ProjectScope{}).Roots(); got != nil {
+		t.Fatalf("empty scope roots = %#v, want nil", got)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		scope util.ProjectScope
+		path  string
+		want  bool
+	}{
+		{"root itself", plain, repo, true},
+		{"child", plain, filepath.Join(repo, "internal", "cli"), true},
+		{"sibling sharing the prefix", plain, tree, false},
+		{"traversal out of the root", plain, filepath.Join(repo, "..", "elsewhere"), false},
+		{"parent", plain, base, false},
+		{"empty path", plain, "", false},
+		{"linked worktree child", git, filepath.Join(tree, "docs"), true},
+		{"outside every worktree", git, filepath.Join(base, "other"), false},
+	} {
+		if got := tc.scope.Contains(tc.path); got != tc.want {
+			t.Errorf("%s: Contains(%q) = %v, want %v", tc.name, tc.path, got, tc.want)
+		}
+	}
+}
+
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
