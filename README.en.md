@@ -107,7 +107,7 @@ A tap you have already trusted stays trusted; no need to repeat `brew trust`.
 <details>
 <summary><strong>From source</strong></summary>
 
-Go 1.24+:
+Go 1.25+:
 
 ```bash
 go install github.com/nxxxsooo/another/cmd/another@latest

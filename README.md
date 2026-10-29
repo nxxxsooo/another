@@ -90,7 +90,7 @@ brew install nxxxsooo/tap/another
 <details>
 <summary><strong>从源码安装</strong></summary>
 
-需要 Go 1.24 或更高版本：
+需要 Go 1.25 或更高版本：
 
 ```bash
 go install github.com/nxxxsooo/another/cmd/another@latest
