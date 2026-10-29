@@ -261,7 +261,7 @@ A dash means that agent has no verified native contract for the operation. Renam
 
 CodeM looks sessions up by a hash of the literal working directory. When a directory moves or an old path becomes a symlink, another uses CodeM's own `LINCO_SESSIONS_ROOT` to give it a resume bridge exposing only the original project-hash directory. No JSONL is copied or moved, and a same-ID session in another project is never exposed to CodeM.
 
-Per-agent behavior worth knowing before you rely on it — which deletes can be taken back, Codex's three title stores and its subagent threads, child sessions, and sessions whose directory is gone — is in [`docs/providers.md`](docs/providers.md).
+Per-agent behavior worth knowing before you rely on it — which deletes can be taken back, Codex's native titles and its subagent threads, child sessions, and sessions whose directory is gone — is in [`docs/providers.md`](docs/providers.md).
 
 Check the local installation:
 
@@ -354,7 +354,7 @@ Context modes:
 
 Provider-specific reasoning signatures, tool calls, tool results, images, and system records do not have portable equivalents and are excluded. The original source session is untouched by migration.
 
-OpenCode writes through the released V2 import/API surface by default. An early isolated `opencode2` store retains its matching V2 entry point, while V1 is history-only compatibility. Codex Desktop titles come from its GUI title index rather than guessed injected messages. Pi writes complete assistant records with explicit transport metadata and zero-valued usage for reconstructed history.
+OpenCode writes through the released V2 import/API surface by default. An early isolated `opencode2` store retains its matching V2 entry point, while V1 is history-only compatibility. Current Codex Desktop titles come from native `threads.name` metadata; rename uses the installed Codex CLI's `thread/name/set` API and verifies it with `thread/read`. Older stores without that metadata retain their native title catalogs. Pi writes complete assistant records with explicit transport metadata and zero-valued usage for reconstructed history.
 
 ## Safety
 

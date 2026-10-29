@@ -24,7 +24,9 @@ Antigravity 的归档就是这样一格：它的存储里根本没有归档这�
 
 ## Codex
 
-**三处标题**。Codex 把会话名存了三处：CLI 的线程库、旧版 Desktop 的 `session_index.jsonl`，以及 Codex Desktop 侧边栏实际读的 Electron 状态。重命名三处全写。Desktop 运行时会整份重写自己的状态，写在它下面不是丢改动就是丢它没落盘的东西，所以这种情况不硬写：CLI 侧已经改名，界面会明说侧边栏要等 Desktop 重启才更新，而不是把这次重命名报成失败。
+**原生标题来源**。新版 Codex 客户端把显示名称保存在 `threads.name`，通过 app-server 接口的 `thread.name` 返回。旧 `title`、`preview` 字段和 `session_index.jsonl` 可能与它不一致。Another 优先读取原生名称，并将每条名称纳入对应会话的刷新指纹，即使转录没有变化，也能发现改名；无关数据库写入不会让所有转录重新索引。尚无原生名称字段的旧版存储仍使用其旧标题目录。
+
+**改名后回读验证**。改名需要安装支持 app-server 的 `codex` CLI。Another 启动短时元数据服务，调用 `thread/name/set`，再要求 `thread/read` 返回同一会话的新名称；不再自行修改 SQLite 标题字段、旧标题目录或 Electron 状态。原生接口拒绝或回读不符时会报错。回读成功证明名称已持久化，已打开的 Desktop 窗口仍可能需要重新加载会话列表。此适配器暂不支持普通云端 ChatGPT 对话及 ChatGPT 自动标题策略。
 
 **子 agent 会话**。Codex Desktop 派生出的子 agent 会话（fork 线程）只把回答写成 `event_msg`，没有 `response_item` 那一份，用户角色的记录也只剩注入的插件清单。这类会话能正常打开和迁移；它们没有属于自己的提问，标题就取 Codex 记的子 agent 身份，例如 `api_definitions · Wegener the 9th`。
 

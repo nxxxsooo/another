@@ -144,15 +144,18 @@ release:
 
     ## Compatibility
 
-    v0.20.2 fixes refreshes that failed with `database is locked (5)
-    (SQLITE_BUSY)`, most often reported against codex. A refresh that
-    overlapped the background search indexer, another refresh, or a second
-    another process could not wait for the index's write lock and gave up
-    at once. It now waits its turn and completes.
+    v0.20.3 fixes Codex titles that changed in another while ChatGPT Desktop
+    kept the old name. Another now reads the native thread name, renames
+    through Codex's app-server API, and checks the same session's name after
+    the write. Native title changes also refresh the index without rereading
+    every transcript for unrelated database activity.
 
-    Compatibility: no settings key, command, flag, or keymap changes,
-    nothing in how sessions are stored inside any agent changes, and no
-    migration is needed. Script installations can run `another update`.
+    Codex rename requires an installed `codex` CLI supporting `app-server`,
+    `thread/name/set`, and `thread/read` (verified with Codex 0.165.0).
+    No settings, flags, keybindings, or migration steps change. An already-open
+    Desktop list may need to reload. Automatic ChatGPT title enforcement and
+    regular cloud ChatGPT conversations are not included in this release.
+    Script installations can run `another update`.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)

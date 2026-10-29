@@ -2,17 +2,15 @@ package codex
 
 import (
 	"bufio"
-	"bytes"
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
-
-	"github.com/nxxxsooo/another/internal/provider"
-	"github.com/nxxxsooo/another/internal/util"
 )
 
 // guiTitles is Codex Desktop's own session-title catalog. A title here is also
@@ -20,14 +18,18 @@ import (
 // threads can carry subagent-shaped source metadata even while appearing in the
 // sidebar.
 type guiTitles struct {
-	names map[string]string
-	mtime int64
-	size  int64
+	names           map[string]string
+	nativeRevisions map[string]uint64
+	mtime           int64
+	size            int64
 }
 
-func (p *Provider) loadGUITitles() guiTitles {
+func (p *Provider) loadGUITitles(ctx context.Context) (guiTitles, error) {
 	root := filepath.Dir(p.sessionsRoot)
-	out := guiTitles{names: make(map[string]string)}
+	out := guiTitles{names: make(map[string]string), nativeRevisions: make(map[string]uint64)}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 
 	// Older Desktop builds store generated descriptions in persisted Electron
 	// state. Keep this as the broad fallback.
@@ -48,9 +50,8 @@ func (p *Provider) loadGUITitles() guiTitles {
 		out.noteFile(global)
 	}
 
-	// Current Desktop builds append explicit user-facing names here. Last entry
-	// wins because renames append a new row. These short names are exactly what
-	// the sidebar shows, so they override generated descriptions above.
+	// Older CLI/Desktop versions append names here. Native thread metadata below
+	// takes precedence: current clients no longer use this as the title authority.
 	indexPath := filepath.Join(root, "session_index.jsonl")
 	if f, err := os.Open(indexPath); err == nil {
 		scanner := bufio.NewScanner(f)
@@ -67,7 +68,52 @@ func (p *Provider) loadGUITitles() guiTitles {
 		_ = f.Close()
 		out.noteFile(indexPath)
 	}
-	return out
+	if err := p.loadNativeNames(ctx, &out); err != nil {
+		return out, fmt.Errorf("codex: read native thread names: %w", err)
+	}
+	return out, nil
+}
+
+// loadNativeNames reads the same name returned by thread/read. The legacy
+// title/preview columns describe the initial prompt, not the current name.
+// Fingerprint each native name, rather than the whole database/WAL: an unrelated
+// turn updates the database too, but must not re-index every Codex transcript.
+func (p *Provider) loadNativeNames(ctx context.Context, titles *guiTitles) error {
+	path, err := p.resolveStateDB()
+	if err != nil || path == "" {
+		return err
+	}
+	db, err := sql.Open("sqlite", path+"?mode=ro&_pragma=busy_timeout(3000)")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	var hasName int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('threads') WHERE name = 'name'`).Scan(&hasName); err != nil {
+		return err
+	}
+	if hasName == 0 {
+		return nil // A pre-name database still uses the legacy catalogs above.
+	}
+	rows, err := db.QueryContext(ctx, `SELECT id, name, rollout_path FROM threads`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id, rolloutPath string
+		var name sql.NullString
+		if err := rows.Scan(&id, &name, &rolloutPath); err != nil {
+			return err
+		}
+		delete(titles.names, id)
+		if name.Valid && strings.TrimSpace(name.String) != "" {
+			titles.names[id] = name.String
+		}
+		revision := sha256.Sum256([]byte("codex-native-name\x00" + id + "\x00" + name.String))
+		titles.nativeRevisions[filepath.Clean(rolloutPath)] = binary.LittleEndian.Uint64(revision[:8])
+	}
+	return rows.Err()
 }
 
 func (g *guiTitles) noteFile(path string) {
@@ -79,164 +125,12 @@ func (g *guiTitles) noteFile(path string) {
 	}
 }
 
-func (p *Provider) appendGUITitle(sessionID, title string) error {
-	title = strings.TrimSpace(title)
-	if sessionID == "" || title == "" {
-		return fmt.Errorf("codex: session id and title are required")
-	}
-	path := filepath.Join(filepath.Dir(p.sessionsRoot), "session_index.jsonl")
-	row, err := json.Marshal(map[string]any{
-		"id": sessionID, "thread_name": title, "updated_at": time.Now().UTC().Format(time.RFC3339Nano),
-	})
-	if err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	if _, err := f.Write(append(row, '\n')); err != nil {
-		return err
-	}
-	return f.Sync()
-}
-
-// desktopTitleKey is the map Codex Desktop's sidebar actually reads. A rename
-// that only reaches the CLI's thread store leaves the sidebar on the old name,
-// which is what the person is looking at.
-const desktopTitleKey = "thread-descriptions-v1"
-
-// desktopStateKey is the object that map lives in, inside the Electron state.
-const desktopStateKey = "electron-persisted-atom-state"
-
-// writeDesktopTitle puts the new name where Desktop reads it.
-//
-// The file is Desktop's whole persisted state, and Desktop rewrites all of it
-// from memory while it runs, so writing underneath a running app either loses
-// the rename or loses whatever the app has not flushed yet. When Desktop is
-// running this reports provider.ErrPartial instead: the CLI's own store has
-// already been renamed, and the sidebar catches up on the next restart.
-func (p *Provider) writeDesktopTitle(sessionID, title string) error {
-	path := filepath.Join(filepath.Dir(p.sessionsRoot), ".codex-global-state.json")
-	st, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		// No Desktop on this machine; the CLI store is the only surface.
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	switch desktopRunning() {
-	case util.ProcessRunning:
-		return fmt.Errorf("%w: Codex Desktop is running, so its sidebar keeps the old name until it restarts",
-			provider.ErrPartial)
-	case util.ProcessUnknown:
-		return fmt.Errorf("%w: another cannot tell whether Codex Desktop is running here, so it left the sidebar alone rather than write over what Desktop has not saved",
-			provider.ErrPartial)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	// UseNumber keeps every number byte-for-byte. Decoding this file through
-	// float64 would rewrite the millisecond timestamps in it as exponents.
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var state map[string]any
-	if err := decoder.Decode(&state); err != nil {
-		return fmt.Errorf("codex: read desktop state: %w", err)
-	}
-	persisted, ok := state[desktopStateKey].(map[string]any)
-	if !ok {
-		return fmt.Errorf("%w: Codex Desktop state has no %s object to rename in",
-			provider.ErrPartial, desktopStateKey)
-	}
-	titles, ok := persisted[desktopTitleKey].(map[string]any)
-	if !ok {
-		// Desktop writes this map the first time it names a thread. Creating it
-		// here would be inventing a shape this build has never seen.
-		return fmt.Errorf("%w: Codex Desktop state has no %s map to rename in",
-			provider.ErrPartial, desktopTitleKey)
-	}
-	if current, _ := titles[sessionID].(string); current == title {
-		return nil
-	}
-	titles[sessionID] = title
-
-	// Desktop does not escape HTML in its own state, and json.Marshal does.
-	// Rewriting every < and & as an escape would leave a file that parses the
-	// same and looks nothing like the one Desktop wrote.
-	var out bytes.Buffer
-	encoder := json.NewEncoder(&out)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(state); err != nil {
-		return err
-	}
-	return writeFileAtomic(path, bytes.TrimRight(out.Bytes(), "\n"), st.Mode().Perm())
-}
-
-// writeFileAtomic replaces a file by rename, so a crash mid-write cannot leave
-// Desktop with half of its own state.
-func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer func() { _ = os.Remove(name) }()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(name, mode); err != nil {
-		return err
-	}
-	return os.Rename(name, path)
-}
-
-// desktopRunning reports whether Codex Desktop holds its singleton lock. The
-// lock is a symlink Chromium points at "<host>-<pid>" and removes on a clean
-// exit; the pid is checked because a crash leaves the link behind.
-//
-// Only a missing lock is read as gone, because that is Desktop's own signal for
-// having exited cleanly. A lock this code cannot make sense of is unknown, not
-// absent: Desktop writes the link when it starts, so the one thing its presence
-// rules out is Desktop being closed.
-func desktopRunning() util.Liveness {
-	dir := os.Getenv("CODEX_DESKTOP_STATE_DIR")
-	if dir == "" {
-		known, ok := desktopStateDir()
-		if !ok {
-			return util.ProcessUnknown
-		}
-		dir = known
-	}
-	target, err := os.Readlink(filepath.Join(dir, "SingletonLock"))
-	if err != nil {
-		return util.ProcessGone
-	}
-	idx := strings.LastIndex(target, "-")
-	if idx < 0 {
-		return util.ProcessUnknown
-	}
-	pid, err := strconv.Atoi(target[idx+1:])
-	if err != nil || pid <= 0 {
-		return util.ProcessUnknown
-	}
-	return util.ProcessLiveness(pid)
-}
-
-func (g guiTitles) fingerprint(st os.FileInfo) (int64, int64) {
+func (g guiTitles) fingerprint(st os.FileInfo, path string) (int64, int64) {
 	mtime := st.ModTime().UnixNano()
+	if revision, ok := g.nativeRevisions[filepath.Clean(path)]; ok {
+		// SourceSize is an opaque index fingerprint, not a displayed byte count.
+		return mtime, int64((uint64(st.Size()) ^ revision) & ((1 << 63) - 1))
+	}
 	if g.mtime > mtime {
 		mtime = g.mtime
 	}

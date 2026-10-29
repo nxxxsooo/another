@@ -236,7 +236,7 @@ OpenCode V2 正式版与 V1 历史会话共用一个 `opencode` provider。anoth
 
 CodeM 按工作目录字面路径的哈希查找会话。目录搬家或旧路径变成符号链接后，Another 会通过 CodeM 自己的 `LINCO_SESSIONS_ROOT` 给它一个只指向原项目哈希目录的恢复桥接：不复制、不移动 JSONL，也不会把另一个项目里的同名 ID 暴露给 CodeM。
 
-各 agent 值得先了解的具体行为——哪些删除可以撤销、Codex 的三处标题与子 agent 会话、子会话、目录已不存在的会话——见 [`docs/providers.zh.md`](docs/providers.zh.md)。
+各 agent 值得先了解的具体行为——哪些删除可以撤销、Codex 的原生标题与子 agent 会话、子会话、目录已不存在的会话——见 [`docs/providers.zh.md`](docs/providers.zh.md)。
 
 检查本机安装状态：
 
@@ -335,7 +335,7 @@ another paths unlink <旧目录>
 
 各 provider 特有的 reasoning signature、tool call、tool result、图片和 system record 没有可移植的对等格式，因此不会迁移。来源会话不会被修改。
 
-OpenCode 默认通过正式 V2 的导入／API 接口写入；仍在使用早期隔离 `opencode2` 存储时会沿用对应 V2 入口，V1 只作为历史兼容后端。Codex Desktop 标题来自 GUI 标题索引，不从注入消息中猜测。Pi 写入完整的 assistant 记录，并为重建历史显式设置传输元数据和零值 usage。
+OpenCode 默认通过正式 V2 的导入／API 接口写入；仍在使用早期隔离 `opencode2` 存储时会沿用对应 V2 入口，V1 只作为历史兼容后端。新版 Codex Desktop 标题读取原生 `threads.name` 元数据；改名调用已安装 Codex CLI 的 `thread/name/set` 接口，并通过 `thread/read` 回读验证。缺少该元数据的旧版存储仍读取其原生标题目录。Pi 写入完整的 assistant 记录，并为重建历史显式设置传输元数据和零值 usage。
 
 ## 安全边界
 
