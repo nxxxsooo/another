@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -150,6 +151,53 @@ func TestCLIDefaultsToCurrentProject(t *testing.T) {
 	_, err := run(t, app, "show", "sibling")
 	wantErr(t, err, "outside this project; pass --all")
 	wantContains(t, mustRun(t, app, "show", "sibling", "--all"), "Session sibling (alpha)")
+}
+
+func TestContextPrintsBoundedMarkdownInScope(t *testing.T) {
+	alpha := newFake(t, "alpha")
+	project, elsewhere := t.TempDir(), t.TempDir()
+	long := sampleConversation("long", project, "Long webhook session")
+	long.Messages = nil
+	for i := 0; i < 30; i++ {
+		role := model.RoleUser
+		if i%2 == 1 {
+			role = model.RoleAssistant
+		}
+		long.Messages = append(long.Messages, model.Message{Role: role, Content: fmt.Sprintf("turn-%02d\nsecond line", i+1)})
+	}
+	alpha.seed(t, long)
+	alpha.seed(t, sampleConversation("away", elsewhere, "Away session"))
+	app := newTestApp(t, alpha)
+	t.Chdir(project)
+
+	out := mustRun(t, app, "context", "long")
+	wantContains(t, out, "# Long webhook session", "- Agent: Fake alpha (`alpha`)", "turn-01\nsecond line", "turn-30", "*… 21 turns omitted …*", "- Turns: 30, 9 shown")
+	if strings.Contains(out, "turn-04\n") {
+		t.Fatalf("middle turn leaked into the bounded view:\n%s", out)
+	}
+	_, err := run(t, app, "context", "away")
+	wantErr(t, err, "outside this project; pass --all")
+	wantContains(t, mustRun(t, app, "context", "away", "--all"), "# Away session")
+}
+
+func TestExportMarkdownWritesTheWholeTranscript(t *testing.T) {
+	app, _, _, _ := seededApp(t)
+	file := filepath.Join(t.TempDir(), "s.md")
+	mustRun(t, app, "export", "alpha-one", "--format", "markdown", "-o", file)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantContains(t, string(data), "# Stripe webhook retry", "- Turns: 3", "## 1 · User", "the stripe webhook retries forever", "## 3 · User", "ship it")
+	if strings.Contains(string(data), "Excerpt") {
+		t.Fatalf("a full export is not an excerpt:\n%s", data)
+	}
+
+	out := mustRun(t, app, "export", "alpha-one", "--format", "markdown", "-o", "-")
+	wantContains(t, out, "# Stripe webhook retry", "ship it")
+
+	_, err = run(t, app, "export", "alpha-one", "--format", "html")
+	wantErr(t, err, `unknown format "html"`)
 }
 
 func TestMigrateResumeAndDedup(t *testing.T) {

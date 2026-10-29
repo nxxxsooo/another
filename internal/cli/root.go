@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/recall"
 	"github.com/nxxxsooo/another/internal/registry"
 	"github.com/nxxxsooo/another/internal/tui"
 	"github.com/nxxxsooo/another/internal/util"
@@ -117,6 +119,7 @@ func (a *App) Root() *cobra.Command {
 
 	root.AddCommand(a.listCmd())
 	root.AddCommand(a.showCmd())
+	root.AddCommand(a.contextCmd())
 	root.AddCommand(a.migrateCmd())
 	root.AddCommand(a.indexCmd())
 	root.AddCommand(a.pathsCmd())
@@ -662,14 +665,17 @@ func providerCLIStatus(id string) string {
 }
 
 func (a *App) exportCmd() *cobra.Command {
-	var from, out string
+	var from, out, format string
 	var refresh bool
 	cmd := &cobra.Command{
 		Use:   "export <session-id>",
-		Short: "Export session to portable JSON",
+		Short: "Export a session as portable JSON or a readable Markdown transcript",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			if format != "json" && format != "markdown" {
+				return fmt.Errorf("unknown format %q: use json or markdown", format)
+			}
 			if err := a.ensureIndex(ctx, from, refresh); err != nil {
 				return err
 			}
@@ -683,19 +689,31 @@ func (a *App) exportCmd() *cobra.Command {
 			}
 			if out == "" {
 				out = "session.another.json"
+				if format == "markdown" {
+					out = "session.another.md"
+				}
 			}
-			f, err := os.Create(out)
-			if err != nil {
+			w := io.Writer(os.Stdout)
+			if out != "-" {
+				f, err := os.Create(out)
+				if err != nil {
+					return err
+				}
+				defer func() { _ = f.Close() }()
+				w = f
+			}
+			if format == "markdown" {
+				_, err := io.WriteString(w, recall.Render(conv, recall.Source{AgentName: registry.DisplayName(a.Registry, sm.Provider)}, recall.Full))
 				return err
 			}
-			defer func() { _ = f.Close() }()
-			enc := json.NewEncoder(f)
+			enc := json.NewEncoder(w)
 			enc.SetIndent("", "  ")
 			return enc.Encode(conv)
 		},
 	}
 	cmd.Flags().StringVar(&from, "provider", "", "source provider")
-	cmd.Flags().StringVarP(&out, "output", "o", "", "output file")
+	cmd.Flags().StringVarP(&out, "output", "o", "", "output file, or - for stdout")
+	cmd.Flags().StringVar(&format, "format", "json", "json (portable, re-importable) or markdown (readable transcript)")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before export")
 	return cmd
 }
