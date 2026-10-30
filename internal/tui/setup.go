@@ -521,6 +521,10 @@ func pluginLabel(id string) string {
 		return txt.setupPluginLabelAgy
 	case integrations.Qwen:
 		return txt.setupPluginLabelQwen
+	case integrations.ClaudeCodeRecall:
+		return txt.setupRecallLabelClaude
+	case integrations.OpenCodeRecall:
+		return txt.setupRecallLabelOpenCode
 	}
 	return txt.setupPluginLabel
 }

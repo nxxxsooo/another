@@ -16,6 +16,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/muesli/termenv v0.16.0
 	github.com/spf13/cobra v1.8.1
+	github.com/tailscale/hujson v0.0.0-20260718110524-10d7940d4c87
 	modernc.org/sqlite v1.34.5
 )
 

@@ -340,19 +340,21 @@ type uiText struct {
 	// directory it would write to and what is there now. The toggle key is a
 	// number because the rows come and go with the agent selection, and a
 	// row that prints its own digit cannot leave a stale key behind.
-	setupPluginLabel     string
-	setupPluginLabelPi   string
-	setupPluginLabelAgy  string
-	setupPluginLabelQwen string
-	setupPluginToggleFmt string
-	setupPluginChecking  string
-	setupPluginMissing   string
-	setupPluginCurrent   string
-	setupPluginOutdated  string
-	setupPluginModified  string
-	setupPluginAdoptable string
-	setupPluginForeign   string
-	setupPluginKeep      string
+	setupPluginLabel         string
+	setupPluginLabelPi       string
+	setupPluginLabelAgy      string
+	setupPluginLabelQwen     string
+	setupRecallLabelClaude   string
+	setupRecallLabelOpenCode string
+	setupPluginToggleFmt     string
+	setupPluginChecking      string
+	setupPluginMissing       string
+	setupPluginCurrent       string
+	setupPluginOutdated      string
+	setupPluginModified      string
+	setupPluginAdoptable     string
+	setupPluginForeign       string
+	setupPluginKeep          string
 
 	// Setup, page three, shared with the batch model picker.
 	setupModelTitle       string
@@ -655,19 +657,21 @@ var englishText = uiText{
 	setupTitleHelpModel: "↑↓ agent  ·  ←→ language  ·  enter model  ·  esc back",
 	setupTitleHelpSave:  "↑↓ agent  ·  ←→ language  ·  enter save  ·  esc back",
 
-	setupPluginLabel:     "OpenCode title plugin",
-	setupPluginLabelPi:   "Pi title extension",
-	setupPluginLabelAgy:  "Antigravity title hooks",
-	setupPluginLabelQwen: "Qwen Code title hooks",
-	setupPluginToggleFmt: "%d toggles",
-	setupPluginChecking:  "checking",
-	setupPluginMissing:   "not installed",
-	setupPluginCurrent:   "installed",
-	setupPluginOutdated:  "update available",
-	setupPluginModified:  "edited on disk; leaving it alone",
-	setupPluginAdoptable: "installed by hand; another can keep it current",
-	setupPluginForeign:   "another plugin is already there",
-	setupPluginKeep:      "installed; remove it with 'another integrations remove'",
+	setupPluginLabel:         "OpenCode title plugin",
+	setupPluginLabelPi:       "Pi title extension",
+	setupPluginLabelAgy:      "Antigravity title hooks",
+	setupPluginLabelQwen:     "Qwen Code title hooks",
+	setupRecallLabelClaude:   "Claude Code session @ mentions",
+	setupRecallLabelOpenCode: "OpenCode session @ mentions",
+	setupPluginToggleFmt:     "%d toggles",
+	setupPluginChecking:      "checking",
+	setupPluginMissing:       "not installed",
+	setupPluginCurrent:       "installed",
+	setupPluginOutdated:      "update available",
+	setupPluginModified:      "edited on disk; leaving it alone",
+	setupPluginAdoptable:     "installed by hand; another can keep it current",
+	setupPluginForeign:       "another plugin is already there",
+	setupPluginKeep:          "installed; remove it with 'another integrations remove'",
 
 	setupModelTitle:       "Which model writes the titles",
 	setupModelHintFmt:     "The models %s reports; the default leaves the choice to that CLI.",
@@ -969,19 +973,21 @@ var chineseText = uiText{
 	setupTitleHelpModel: "↑↓ 选 agent  ·  ←→ 选语言  ·  enter 选模型  ·  esc 返回",
 	setupTitleHelpSave:  "↑↓ 选 agent  ·  ←→ 选语言  ·  enter 保存  ·  esc 返回",
 
-	setupPluginLabel:     "OpenCode 标题插件",
-	setupPluginLabelPi:   "Pi 标题扩展",
-	setupPluginLabelAgy:  "Antigravity 标题钩子",
-	setupPluginLabelQwen: "Qwen Code 标题钩子",
-	setupPluginToggleFmt: "%d 切换",
-	setupPluginChecking:  "检测中",
-	setupPluginMissing:   "未安装",
-	setupPluginCurrent:   "已安装",
-	setupPluginOutdated:  "有更新",
-	setupPluginModified:  "文件已被改动，保持原样",
-	setupPluginAdoptable: "此前手工安装，可交给 another 维护",
-	setupPluginForeign:   "该目录已有别的插件",
-	setupPluginKeep:      "仍在，可用 another integrations remove 移除",
+	setupPluginLabel:         "OpenCode 标题插件",
+	setupPluginLabelPi:       "Pi 标题扩展",
+	setupPluginLabelAgy:      "Antigravity 标题钩子",
+	setupPluginLabelQwen:     "Qwen Code 标题钩子",
+	setupRecallLabelClaude:   "Claude Code 会话 @ 引用",
+	setupRecallLabelOpenCode: "OpenCode 会话 @ 引用",
+	setupPluginToggleFmt:     "%d 切换",
+	setupPluginChecking:      "检测中",
+	setupPluginMissing:       "未安装",
+	setupPluginCurrent:       "已安装",
+	setupPluginOutdated:      "有更新",
+	setupPluginModified:      "文件已被改动，保持原样",
+	setupPluginAdoptable:     "此前手工安装，可交给 another 维护",
+	setupPluginForeign:       "该目录已有别的插件",
+	setupPluginKeep:          "仍在，可用 another integrations remove 移除",
 
 	setupModelTitle:       "用哪个模型写标题",
 	setupModelHintFmt:     "%s 报告的可用模型，留在默认即由该 CLI 自己决定。",

@@ -88,6 +88,16 @@ MCP tools/prompts, semantic search, secret redaction, hygiene, usage insight, us
 - Dev test: `make install`, verify `adev` → `another-dev` `+dev` matches build; live `@` checks in the six agents.
 - Ship v0.21.0 only after acceptance via `mj-ship`, full release-surface matrix per `AGENTS.md`.
 
+## Implementation notes (2026-10-30)
+
+- Slices 1–3 landed as designed. Go minimum is 1.25 (official MCP go-sdk v1.8.0).
+- Slice 4: recall adapters are `Kind: recall` entries beside the title adapters (`integrations --kind recall`). Their setup rows sit in the same adapter block on the title page.
+- Claude Code: registered through `claude mcp add --scope user another -- <binary> mcp`, because `.claude.json` is rewritten by running sessions. Status reads the file.
+- OpenCode V2: the canonical location is `mcp.servers.another`. The direct `mcp.<name>` form is deprecated V1 and is still recognized and migrated. The edit is a JSONC AST insert/remove (tailscale/hujson) that copies sibling indentation, line endings, and trailing-comma style, and a remove after an install restores the file byte for byte. `opencode mcp add` was rejected: it writes through the running service into whatever config that service uses, ignoring the directory another resolved.
+- The registered command is the installing binary's name (`another` or `another-dev`), so dev builds can be tested.
+- Qwen Code's MCP entry waits for the uncommitted Qwen title-hook work on `main`, so it can share `QwenConfigDir`.
+- OpenCode cannot be isolated for end-to-end testing: it reads the real home directory whatever `HOME`/XDG say. Its live `@` check happens on the real config during dev testing.
+
 ## Residual risks
 
 - Claude Code's `@` list is snapshotted at session start (no `list_changed` refresh): sessions created after launch appear only via the template or next launch.

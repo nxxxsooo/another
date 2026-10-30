@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/integrations"
 )
 
@@ -109,6 +110,44 @@ func TestQwenPluginRowTogglesAndNamesItsFile(t *testing.T) {
 		if !strings.Contains(rows, want) {
 			t.Fatalf("rows = %q, want %q", rows, want)
 		}
+	}
+}
+
+// A recall row is an opt-in like any other: off until pressed, named for what
+// it does, and saved under its own consent.
+func TestRecallRowStartsOffAndSavesItsOwnConsent(t *testing.T) {
+	m := pluginFixture(integrations.StateMissing)
+	m.selected["opencode2"] = false
+	m.selected["claude-code"] = true
+	m.plugins = []SetupPlugin{{
+		Integration: integrations.ClaudeCodeRecall,
+		Provider:    "claude-code",
+		Supported:   true,
+		Dir:         "/tmp/home/.claude.json",
+		State:       integrations.StateMissing,
+	}}
+	if m.wantsPlugin(integrations.ClaudeCodeRecall) {
+		t.Fatal("the MCP server was going to be registered unasked")
+	}
+	next, _ := m.updateTitlePage(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	m = next.(setupModel)
+	if !m.wantsPlugin(integrations.ClaudeCodeRecall) {
+		t.Fatal("1 did not turn the recall row on")
+	}
+	rows := ansi.Strip(m.pluginRows(72, false))
+	for _, want := range []string{txt.setupRecallLabelClaude, "/tmp/home/.claude.json"} {
+		if !strings.Contains(rows, want) {
+			t.Fatalf("rows = %q, want %q", rows, want)
+		}
+	}
+	adapter, ok := integrations.Find(integrations.ClaudeCodeRecall)
+	if !ok {
+		t.Fatal("setup cannot find the recall adapter")
+	}
+	var saved config.Integrations
+	*adapter.Consent(&saved) = true
+	if !saved.ClaudeCodeRecall || saved.OpenCode2TitlePolicy {
+		t.Fatalf("consent landed in the wrong field: %+v", saved)
 	}
 }
 

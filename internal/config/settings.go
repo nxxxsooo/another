@@ -46,6 +46,9 @@ type Integrations struct {
 	PiTitlePolicy        bool `json:"pi_title_policy,omitempty"`
 	AgyTitlePolicy       bool `json:"agy_title_policy,omitempty"`
 	QwenTitlePolicy      bool `json:"qwen_title_policy,omitempty"`
+	// Recall adapters register another's MCP server with an agent.
+	ClaudeCodeRecall bool `json:"claude_code_recall,omitempty"`
+	OpenCodeRecall   bool `json:"opencode_recall,omitempty"`
 }
 
 // PathAlias redirects sessions recorded under From to where that project lives

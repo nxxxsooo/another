@@ -18,6 +18,8 @@ type Adapter struct {
 	// Provider is the agent this writes into. It gates the setup row: an
 	// agent another does not manage is not asked about.
 	Provider string
+	// Kind is what the adapter is for; empty means a title adapter.
+	Kind Kind
 	// ConfigDir resolves the agent's configuration directory. OpenCode 2's
 	// answer comes from a subprocess, so this takes a context and callers
 	// treat it as slow.
@@ -73,12 +75,13 @@ var adapters = []Adapter{
 	},
 }
 
-// Adapters lists every adapter another ships.
-func Adapters() []Adapter { return adapters }
+// Adapters lists every adapter another ships: the title adapters, then the
+// recall adapters.
+func Adapters() []Adapter { return append(append([]Adapter(nil), adapters...), recallAdapters...) }
 
 // Find returns the adapter with this id.
 func Find(id string) (Adapter, bool) {
-	for _, a := range adapters {
+	for _, a := range Adapters() {
 		if a.ID == id {
 			return a, true
 		}
@@ -99,7 +102,7 @@ func Providers() []string {
 	return names
 }
 
-// ForProvider returns the adapter that writes into this agent, if there is one.
+// ForProvider returns the title adapter that writes into this agent, if there is one.
 func ForProvider(provider string) (Adapter, bool) {
 	if provider == "opencode2" || provider == "open-code-2" || provider == "o2" {
 		provider = "opencode"

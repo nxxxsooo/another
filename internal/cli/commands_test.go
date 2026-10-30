@@ -497,6 +497,38 @@ func TestIntegrationsInstallStatusRemove(t *testing.T) {
 	wantContains(t, out, "Nothing installed at")
 }
 
+// Recall adapters live beside the title adapters under --kind recall: the same
+// agent can have one of each, and naming the agent alone means its title
+// adapter, as it always did.
+func TestIntegrationsRecallKind(t *testing.T) {
+	app := newTestApp(t, newFake(t, "alpha"))
+	dir := t.TempDir()
+
+	out := mustRun(t, app, "integrations", "install", "opencode", "--kind", "recall", "--config-dir", dir)
+	wantContains(t, out, "Installed", "opencode-recall", "installed", `MCP server "another"`)
+	settings, err := config.LoadSettings()
+	if err != nil || !settings.Integrations.OpenCodeRecall || settings.Integrations.OpenCode2TitlePolicy {
+		t.Fatalf("consent = %+v, %v", settings.Integrations, err)
+	}
+	if !integrations.OpenCodeRecallStatus(dir).State.Installed() {
+		t.Fatal("the MCP server was not added where OpenCode reads it")
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "opencode.json")); !strings.Contains(string(data), `"mcp"`) {
+		t.Fatalf("config = %s", data)
+	}
+
+	out = mustRun(t, app, "integrations", "remove", "opencode", "--kind", "recall", "--config-dir", dir)
+	wantContains(t, out, "Removed")
+	if integrations.OpenCodeRecallStatus(dir).State.Installed() {
+		t.Fatal("remove left the MCP server registered")
+	}
+
+	_, err = run(t, app, "integrations", "install", "claude-code", "--config-dir", dir)
+	wantErr(t, err, `no title adapter for "claude-code"`)
+	_, err = run(t, app, "integrations", "status", "--kind", "skills")
+	wantErr(t, err, `unknown --kind "skills"`)
+}
+
 // Each adapter is installed, recorded, and removed on its own: consent to one
 // agent's configuration directory is not consent to another's.
 func TestIntegrationsTakeOneAdapterAtATime(t *testing.T) {
