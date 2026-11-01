@@ -41,6 +41,7 @@ func (a Adapter) Of() Kind {
 const (
 	ClaudeCodeRecall = "claude-code-recall"
 	OpenCodeRecall   = "opencode-recall"
+	QwenRecall       = "qwen-recall"
 )
 
 // MCPServerName is the key the server is registered under in every agent. It
@@ -68,12 +69,25 @@ var recallAdapters = []Adapter{
 		Remove:    RemoveOpenCodeRecall,
 		Consent:   func(i *config.Integrations) *bool { return &i.OpenCodeRecall },
 	},
+	{
+		ID:        QwenRecall,
+		Kind:      KindRecall,
+		Provider:  "qwen",
+		ConfigDir: func(context.Context) string { return QwenConfigDir() },
+		Status:    QwenRecallStatus,
+		Install:   InstallQwenRecall,
+		Remove:    RemoveQwenRecall,
+		Consent:   func(i *config.Integrations) *bool { return &i.QwenRecall },
+	},
 }
 
 // RecallForProvider returns the recall adapter for this agent, if there is one.
 func RecallForProvider(provider string) (Adapter, bool) {
-	if provider == "opencode2" || provider == "open-code-2" || provider == "o2" {
+	switch provider {
+	case "opencode2", "open-code-2", "o2":
 		provider = "opencode"
+	case "qwen-code", "qwen_code":
+		provider = "qwen"
 	}
 	for _, a := range recallAdapters {
 		if a.Provider == provider {
@@ -487,4 +501,79 @@ func memberIndent(obj *hujson.Object, parent, step string) string {
 		}
 	}
 	return parent + step
+}
+
+// Qwen Code keeps MCP servers under mcpServers in the same settings.json the
+// title hooks live in. The file is read as JSONC and patched in place, so
+// every other setting keeps its bytes.
+var qwenServerPath = []string{"mcpServers", MCPServerName}
+
+type qwenMCP struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+}
+
+// QwenRecallStatus reads mcpServers.another from Qwen Code's settings.json.
+func QwenRecallStatus(configDir string) Status {
+	file := QwenSettingsFile(configDir)
+	status := Status{ConfigDir: configDir, Dir: file, State: StateMissing}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return status
+	}
+	std, err := hujson.Standardize(data)
+	if err != nil {
+		status.State = StateForeign
+		return status
+	}
+	var doc struct {
+		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(std, &doc); err != nil {
+		status.State = StateForeign
+		return status
+	}
+	raw, ok := doc.MCPServers[MCPServerName]
+	if !ok {
+		return status
+	}
+	var entry qwenMCP
+	if err := json.Unmarshal(raw, &entry); err != nil || entry.Command == "" {
+		status.State = StateForeign
+		return status
+	}
+	status.State = recallState(append([]string{entry.Command}, entry.Args...))
+	return status
+}
+
+// InstallQwenRecall adds mcpServers.another to Qwen Code's settings.json.
+func InstallQwenRecall(status Status, _, _ string, force bool) (Status, error) {
+	if status.State == StateCurrent {
+		return status, nil
+	}
+	if status.State.Blocked() && !force {
+		return status, fmt.Errorf("%s already has an MCP server named %q that another did not add; remove it or rerun with --force", util.TildePath(status.Dir), MCPServerName)
+	}
+	command := MCPCommand()
+	err := patchJSONC(status.Dir, func(root *hujson.Object, nl string) error {
+		return setMember(root, nl, qwenServerPath, qwenMCP{Command: command[0], Args: command[1:]})
+	})
+	if err != nil {
+		return status, err
+	}
+	return QwenRecallStatus(status.ConfigDir), nil
+}
+
+// RemoveQwenRecall takes back mcpServers.another and nothing else.
+func RemoveQwenRecall(status Status, force bool) error {
+	if !status.State.Installed() {
+		return nil
+	}
+	if status.State.Blocked() && !force {
+		return fmt.Errorf("%s holds an MCP server named %q that another did not add; remove it by hand or rerun with --force", util.TildePath(status.Dir), MCPServerName)
+	}
+	return patchJSONC(status.Dir, func(root *hujson.Object, _ string) error {
+		removeMember(root, qwenServerPath)
+		return nil
+	})
 }

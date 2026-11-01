@@ -49,6 +49,7 @@ type Integrations struct {
 	// Recall adapters register another's MCP server with an agent.
 	ClaudeCodeRecall bool `json:"claude_code_recall,omitempty"`
 	OpenCodeRecall   bool `json:"opencode_recall,omitempty"`
+	QwenRecall       bool `json:"qwen_recall,omitempty"`
 }
 
 // PathAlias redirects sessions recorded under From to where that project lives

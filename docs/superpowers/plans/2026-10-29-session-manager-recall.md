@@ -95,7 +95,7 @@ MCP tools/prompts, semantic search, secret redaction, hygiene, usage insight, us
 - Claude Code: registered through `claude mcp add --scope user another -- <binary> mcp`, because `.claude.json` is rewritten by running sessions. Status reads the file.
 - OpenCode V2: the canonical location is `mcp.servers.another`. The direct `mcp.<name>` form is deprecated V1 and is still recognized and migrated. The edit is a JSONC AST insert/remove (tailscale/hujson) that copies sibling indentation, line endings, and trailing-comma style, and a remove after an install restores the file byte for byte. `opencode mcp add` was rejected: it writes through the running service into whatever config that service uses, ignoring the directory another resolved.
 - The registered command is the installing binary's name (`another` or `another-dev`), so dev builds can be tested.
-- Qwen Code's MCP entry waits for the uncommitted Qwen title-hook work on `main`, so it can share `QwenConfigDir`.
+- Qwen Code: `mcpServers.another` in the same `settings.json` as the title hooks, patched as JSONC. Verified live: `qwen mcp list` shows it Connected.
 - OpenCode cannot be isolated for end-to-end testing: it reads the real home directory whatever `HOME`/XDG say. Its live `@` check happens on the real config during dev testing.
 
 ## Residual risks

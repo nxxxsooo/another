@@ -183,6 +183,43 @@ func TestOpenCodeRecallMovesALegacyEntry(t *testing.T) {
 	}
 }
 
+// Qwen Code's settings.json holds every setting the person has, so the server
+// is added and taken back without changing a byte of anything else.
+func TestQwenRecallRoundTripsSettings(t *testing.T) {
+	dir := t.TempDir()
+	file := QwenSettingsFile(dir)
+	body := "{\n  \"$version\": 3,\n  // models\n  \"model\": {\"name\": \"qwen3\"},\n  \"mcpServers\": {\n    \"hindsight\": {\n      \"command\": \"node\",\n      \"args\": [\"x.js\"]\n    }\n  }\n}\n"
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := QwenRecallStatus(dir).State; got != StateMissing {
+		t.Fatalf("initial = %s", got)
+	}
+	installed, err := InstallQwenRecall(QwenRecallStatus(dir), "dev", "", false)
+	if err != nil || installed.State != StateCurrent {
+		t.Fatalf("install = %+v, %v", installed, err)
+	}
+	data, _ := os.ReadFile(file)
+	want := "    },\n    \"another\": {\n      \"command\": \"" + MCPCommand()[0] + "\",\n      \"args\": [\n        \"mcp\"\n      ]\n    }\n  }\n}\n"
+	if !strings.HasSuffix(string(data), want) || !strings.Contains(string(data), "// models") {
+		t.Fatalf("installed file:\n%s", data)
+	}
+	if err := RemoveQwenRecall(QwenRecallStatus(dir), false); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(file); string(data) != body {
+		t.Fatalf("round trip changed settings.json:\n%s", data)
+	}
+
+	foreign := t.TempDir()
+	if err := os.WriteFile(QwenSettingsFile(foreign), []byte(`{"mcpServers":{"another":{"command":"npx","args":["other"]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InstallQwenRecall(QwenRecallStatus(foreign), "dev", "", false); err == nil {
+		t.Fatal("install over a foreign server should need --force")
+	}
+}
+
 func TestRecallStateRecognizesAnothersOwnBinaries(t *testing.T) {
 	if got := recallState(MCPCommand()); got != StateCurrent {
 		t.Fatalf("own command = %s", got)

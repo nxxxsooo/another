@@ -224,6 +224,8 @@ func adapterLabel(adapter integrations.Adapter) string {
 		return "Claude Code session mentions"
 	case integrations.OpenCodeRecall:
 		return "OpenCode session mentions"
+	case integrations.QwenRecall:
+		return "Qwen Code session mentions"
 	default:
 		return "OpenCode title plugin"
 	}

@@ -346,6 +346,7 @@ type uiText struct {
 	setupPluginLabelQwen     string
 	setupRecallLabelClaude   string
 	setupRecallLabelOpenCode string
+	setupRecallLabelQwen     string
 	setupPluginToggleFmt     string
 	setupPluginChecking      string
 	setupPluginMissing       string
@@ -663,6 +664,7 @@ var englishText = uiText{
 	setupPluginLabelQwen:     "Qwen Code title hooks",
 	setupRecallLabelClaude:   "Claude Code session @ mentions",
 	setupRecallLabelOpenCode: "OpenCode session @ mentions",
+	setupRecallLabelQwen:     "Qwen Code session @ mentions",
 	setupPluginToggleFmt:     "%d toggles",
 	setupPluginChecking:      "checking",
 	setupPluginMissing:       "not installed",
@@ -979,6 +981,7 @@ var chineseText = uiText{
 	setupPluginLabelQwen:     "Qwen Code 标题钩子",
 	setupRecallLabelClaude:   "Claude Code 会话 @ 引用",
 	setupRecallLabelOpenCode: "OpenCode 会话 @ 引用",
+	setupRecallLabelQwen:     "Qwen Code 会话 @ 引用",
 	setupPluginToggleFmt:     "%d 切换",
 	setupPluginChecking:      "检测中",
 	setupPluginMissing:       "未安装",

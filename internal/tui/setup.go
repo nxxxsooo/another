@@ -525,6 +525,8 @@ func pluginLabel(id string) string {
 		return txt.setupRecallLabelClaude
 	case integrations.OpenCodeRecall:
 		return txt.setupRecallLabelOpenCode
+	case integrations.QwenRecall:
+		return txt.setupRecallLabelQwen
 	}
 	return txt.setupPluginLabel
 }
