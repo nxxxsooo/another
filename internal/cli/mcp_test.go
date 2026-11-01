@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/mcpserver"
 	"github.com/nxxxsooo/another/internal/util"
 )
@@ -72,6 +73,14 @@ func TestMCPServerListsAndReadsOnlyThisProject(t *testing.T) {
 	list, err := cs.ListResources(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(list.Resources) == 2 && list.Resources[0].Name != "Here webhook · Fake alpha" {
+		// Seeded with equal timestamps; the index breaks the tie the same
+		// way every time, and the list must follow the index, not the URI.
+		items, _ := app.Index.List(index.ListOpts{ProjectRoots: util.DiscoverProjectScope(ctx, project).Roots()})
+		if list.Resources[0].URI != mcpserver.SessionURI(items[0].Provider, items[0].ID) {
+			t.Fatalf("list order %v does not follow the index", list.Resources)
+		}
 	}
 	var names []string
 	for _, r := range list.Resources {

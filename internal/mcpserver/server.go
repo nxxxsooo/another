@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -73,15 +74,31 @@ func (s *Server) Build() (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "another", Title: "another sessions", Version: s.Version},
 		&mcp.ServerOptions{Instructions: instructions, Capabilities: &mcp.ServerCapabilities{Resources: &mcp.ResourceCapabilities{}}})
 	roots := s.Scope.Roots()
+	rank := map[string]int{}
 	if len(roots) > 0 {
 		items, err := s.Index.List(index.ListOpts{ProjectRoots: roots, Limit: limit})
 		if err != nil {
 			return nil, err
 		}
-		for _, sm := range items {
-			server.AddResource(s.resource(sm), s.read)
+		for i, sm := range items {
+			r := s.resource(sm)
+			rank[r.URI] = i
+			server.AddResource(r, s.read)
 		}
 	}
+	// The SDK lists resources in URI order, which reads as random in a
+	// picker. The index already ranked them by recency; keep that order.
+	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			res, err := next(ctx, method, req)
+			if list, ok := res.(*mcp.ListResourcesResult); ok && err == nil {
+				sort.SliceStable(list.Resources, func(i, j int) bool {
+					return rank[list.Resources[i].URI] < rank[list.Resources[j].URI]
+				})
+			}
+			return res, err
+		}
+	})
 	server.AddResourceTemplate(&mcp.ResourceTemplate{
 		Name:        "session",
 		Title:       "Session by agent and ID",
