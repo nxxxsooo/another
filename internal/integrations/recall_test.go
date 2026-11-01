@@ -109,6 +109,59 @@ func TestOpenCodeRecallRoundTripsEveryStyle(t *testing.T) {
 	}
 }
 
+// OpenCode 2's @ picker offers skills, not MCP resources, so the adapter is
+// only installed when both halves are: the server and the @another skill.
+func TestOpenCodeRecallInstallsTheSkillWithTheServer(t *testing.T) {
+	dir := t.TempDir()
+	skillFile := filepath.Join(OpenCodeSkillDir(dir), "SKILL.md")
+	installed, err := InstallOpenCodeRecall(OpenCodeRecallStatus(dir), "dev", "", false)
+	if err != nil || installed.State != StateCurrent {
+		t.Fatalf("install = %+v, %v", installed, err)
+	}
+	data, err := os.ReadFile(skillFile)
+	if err != nil || !strings.HasPrefix(string(data), "---\nname: another\n") {
+		t.Fatalf("skill = %q, %v", data, err)
+	}
+
+	// A server without its skill is a partial installation: outdated, and
+	// completed by the next install.
+	if err := os.RemoveAll(OpenCodeSkillDir(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if got := OpenCodeRecallStatus(dir).State; got != StateOutdated {
+		t.Fatalf("server without skill = %s, want outdated", got)
+	}
+	if got, err := InstallOpenCodeRecall(OpenCodeRecallStatus(dir), "dev", "", false); err != nil || got.State != StateCurrent {
+		t.Fatalf("completing install = %+v, %v", got, err)
+	}
+
+	// A skill someone edited is theirs: it blocks, and is never overwritten
+	// or removed without --force.
+	if err := os.WriteFile(skillFile, []byte("my notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status := OpenCodeRecallStatus(dir)
+	if status.State != StateModified {
+		t.Fatalf("edited skill = %s, want modified", status.State)
+	}
+	if err := RemoveOpenCodeRecall(status, false); err == nil {
+		t.Fatal("remove took an edited skill without --force")
+	}
+	if data, _ := os.ReadFile(skillFile); string(data) != "my notes" {
+		t.Fatalf("edited skill changed: %q", data)
+	}
+
+	if err := RemoveOpenCodeRecall(status, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(OpenCodeSkillDir(dir)); !os.IsNotExist(err) {
+		t.Fatalf("skill directory left behind: %v", err)
+	}
+	if got := OpenCodeRecallStatus(dir).State; got != StateMissing {
+		t.Fatalf("after remove = %s", got)
+	}
+}
+
 func TestOpenCodeRecallCreatesConfigAndRefusesForeignEntries(t *testing.T) {
 	dir := t.TempDir()
 	created, err := InstallOpenCodeRecall(OpenCodeRecallStatus(dir), "dev", "", false)

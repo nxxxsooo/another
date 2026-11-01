@@ -235,6 +235,9 @@ func printIntegration(adapter integrations.Adapter, status integrations.Status) 
 	fmt.Printf("%-24s %s\n", adapter.ID, integrationStateText(status))
 	if adapter.Of() == integrations.KindRecall {
 		fmt.Printf("    config: %s (MCP server %q)\n", util.TildePath(status.Dir), integrations.MCPServerName)
+		if adapter.ID == integrations.OpenCodeRecall {
+			fmt.Printf("    skill: %s (@%s)\n", util.TildePath(integrations.OpenCodeSkillDir(status.ConfigDir)), "another")
+		}
 	} else {
 		fmt.Printf("    files: %s\n", util.TildePath(status.Dir))
 	}

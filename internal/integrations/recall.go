@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	skill "github.com/nxxxsooo/another/integrations/another-skill"
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/util"
 	"github.com/tailscale/hujson"
@@ -266,9 +267,76 @@ var (
 	openCodeLegacyPath = []string{"mcp", MCPServerName}
 )
 
-// OpenCodeRecallStatus reads the registered server from the global
-// configuration, in either form OpenCode 2 accepts.
+// OpenCode 2's @ picker lists skills but not MCP resources, so the recall
+// adapter installs both: the MCP server, which the agent reads sessions
+// through, and the `another` skill, which is what @another selects.
+
+// OpenCodeSkillDir is where the skill belongs inside a resolved configuration
+// directory; OpenCode 2 discovers skills/ on its own.
+func OpenCodeSkillDir(configDir string) string {
+	return filepath.Join(configDir, "skills", skill.DirName)
+}
+
+var skillBundle = bundle{
+	Integration: "another-skill",
+	Names:       skill.Names,
+	Files:       skill.Files,
+	Hashes:      skill.Hashes,
+	Hash:        skill.Hash,
+}
+
+// skillStatus compares an installed copy of the skill with the one this
+// binary ships, by the same rules as every other bundle.
+func skillStatus(dir string) Status {
+	status := Status{Dir: dir, State: StateMissing}
+	installed, err := readInstalled(dir, skillBundle)
+	if err != nil || len(installed) == 0 {
+		return status
+	}
+	current := sameHashes(installed, skillBundle.Hashes())
+	saved, ok := readManifest(dir, skillBundle)
+	switch {
+	case !ok && current:
+		status.State = StateAdoptable
+	case !ok:
+		status.State = StateForeign
+	case !sameHashes(installed, saved.Files):
+		status.State = StateModified
+	case current:
+		status.State = StateCurrent
+	default:
+		status.State = StateOutdated
+	}
+	status.Version = saved.Version
+	return status
+}
+
+// combineStates reports two parts of one adapter as a single state: anything
+// another must not overwrite wins, agreement is reported as is, and a partial
+// installation is outdated, which is what makes install complete it.
+func combineStates(a, b State) State {
+	switch {
+	case a.Blocked():
+		return a
+	case b.Blocked():
+		return b
+	case a == b:
+		return a
+	default:
+		return StateOutdated
+	}
+}
+
+// OpenCodeRecallStatus reports the MCP server and the skill together.
 func OpenCodeRecallStatus(configDir string) Status {
+	status := openCodeMCPStatus(configDir)
+	status.State = combineStates(status.State, skillStatus(OpenCodeSkillDir(configDir)).State)
+	return status
+}
+
+// openCodeMCPStatus reads the registered server from the global
+// configuration, in either form OpenCode 2 accepts.
+func openCodeMCPStatus(configDir string) Status {
 	file := openCodeConfigFile(configDir)
 	status := Status{ConfigDir: configDir, Dir: file, State: StateMissing}
 	data, err := os.ReadFile(file)
@@ -307,40 +375,54 @@ func OpenCodeRecallStatus(configDir string) Status {
 }
 
 // InstallOpenCodeRecall adds mcp.servers.another to the user's global
-// configuration.
+// configuration and writes the skill beside it.
 // The file is JSONC that people annotate, so it is patched in place: comments,
 // order, and every other entry stay byte for byte, and the one entry another
 // adds is the one entry removal takes back.
-func InstallOpenCodeRecall(status Status, _, _ string, force bool) (Status, error) {
+func InstallOpenCodeRecall(status Status, version, _ string, force bool) (Status, error) {
 	if status.State == StateCurrent {
 		return status, nil
 	}
 	if status.State.Blocked() && !force {
 		return status, fmt.Errorf("%s already has an MCP server named %q that another did not add; remove it or rerun with --force", util.TildePath(status.Dir), MCPServerName)
 	}
-	err := patchJSONC(status.Dir, func(root *hujson.Object, nl string) error {
-		removeMember(root, openCodeLegacyPath)
-		return setMember(root, nl, openCodeServerPath, openCodeMCP{Type: "local", Command: MCPCommand()})
-	})
-	if err != nil {
-		return status, err
+	if openCodeMCPStatus(status.ConfigDir).State != StateCurrent {
+		err := patchJSONC(status.Dir, func(root *hujson.Object, nl string) error {
+			removeMember(root, openCodeLegacyPath)
+			return setMember(root, nl, openCodeServerPath, openCodeMCP{Type: "local", Command: MCPCommand()})
+		})
+		if err != nil {
+			return status, err
+		}
+	}
+	if skilled := skillStatus(OpenCodeSkillDir(status.ConfigDir)); skilled.State != StateCurrent {
+		if err := installBundle(skilled, skillBundle, version, "", force); err != nil {
+			return status, err
+		}
 	}
 	return OpenCodeRecallStatus(status.ConfigDir), nil
 }
 
-// RemoveOpenCodeRecall takes back the server another added and nothing else.
+// RemoveOpenCodeRecall takes back the server and the skill another added and
+// nothing else.
 func RemoveOpenCodeRecall(status Status, force bool) error {
 	if !status.State.Installed() {
 		return nil
 	}
 	if status.State.Blocked() && !force {
-		return fmt.Errorf("%s holds an MCP server named %q that another did not add; remove it by hand or rerun with --force", util.TildePath(status.Dir), MCPServerName)
+		return fmt.Errorf("%s holds an MCP server or skill named %q that another did not add; remove it by hand or rerun with --force", util.TildePath(status.Dir), MCPServerName)
 	}
-	return patchJSONC(status.Dir, func(root *hujson.Object, _ string) error {
-		removeMember(root, openCodeServerPath)
-		removeMember(root, openCodeLegacyPath)
-		return nil
-	})
+	if openCodeMCPStatus(status.ConfigDir).State.Installed() {
+		err := patchJSONC(status.Dir, func(root *hujson.Object, _ string) error {
+			removeMember(root, openCodeServerPath)
+			removeMember(root, openCodeLegacyPath)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return removeBundle(skillStatus(OpenCodeSkillDir(status.ConfigDir)), skillBundle, force)
 }
 
 // patchJSONC applies edit to the root object of a JSONC document and writes it
