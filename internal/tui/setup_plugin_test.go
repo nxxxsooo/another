@@ -78,6 +78,40 @@ func TestAgyPluginRowTogglesAndNamesItsFile(t *testing.T) {
 	}
 }
 
+// The qwen row follows the same rules: it exists only for someone who manages
+// qwen, starts off, and names the settings.json file it edits.
+func qwenPluginFixture(state integrations.State) setupModel {
+	m := pluginFixture(integrations.StateMissing)
+	m.selected["opencode2"] = false
+	m.selected["qwen"] = true
+	m.plugins = []SetupPlugin{{
+		Integration: integrations.Qwen,
+		Provider:    "qwen",
+		Supported:   true,
+		Dir:         "/tmp/qwen/settings.json",
+		State:       state,
+	}}
+	return m
+}
+
+func TestQwenPluginRowTogglesAndNamesItsFile(t *testing.T) {
+	m := qwenPluginFixture(integrations.StateMissing)
+	if m.wantsPlugin(integrations.Qwen) {
+		t.Fatal("the qwen hook was going to be installed unasked")
+	}
+	next, _ := m.updateTitlePage(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	m = next.(setupModel)
+	if !m.wantsPlugin(integrations.Qwen) {
+		t.Fatal("1 did not turn the qwen hook on")
+	}
+	rows := ansi.Strip(m.pluginRows(72, false))
+	for _, want := range []string{txt.setupPluginLabelQwen, "/tmp/qwen/settings.json"} {
+		if !strings.Contains(rows, want) {
+			t.Fatalf("rows = %q, want %q", rows, want)
+		}
+	}
+}
+
 // Writing into another agent's configuration directory is not something
 // detection alone may authorise, so a row starts off and stays off until
 // someone turns it on.

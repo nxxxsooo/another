@@ -62,6 +62,15 @@ var adapters = []Adapter{
 		Remove:    RemoveAgy,
 		Consent:   func(i *config.Integrations) *bool { return &i.AgyTitlePolicy },
 	},
+	{
+		ID:        Qwen,
+		Provider:  "qwen",
+		ConfigDir: func(context.Context) string { return QwenConfigDir() },
+		Status:    QwenStatus,
+		Install:   InstallQwen,
+		Remove:    RemoveQwen,
+		Consent:   func(i *config.Integrations) *bool { return &i.QwenTitlePolicy },
+	},
 }
 
 // Adapters lists every adapter another ships.
@@ -94,6 +103,9 @@ func Providers() []string {
 func ForProvider(provider string) (Adapter, bool) {
 	if provider == "opencode2" || provider == "open-code-2" || provider == "o2" {
 		provider = "opencode"
+	}
+	if provider == "qwen-code" || provider == "qwen_code" {
+		provider = "qwen"
 	}
 	for _, a := range adapters {
 		if a.Provider == provider {

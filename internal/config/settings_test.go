@@ -309,7 +309,7 @@ func TestIntegrationsConsentRoundTrips(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	want := config.Settings{
 		Version:      config.SettingsVersion,
-		Integrations: config.Integrations{OpenCode2TitlePolicy: true, PiTitlePolicy: true, AgyTitlePolicy: true},
+		Integrations: config.Integrations{OpenCode2TitlePolicy: true, PiTitlePolicy: true, AgyTitlePolicy: true, QwenTitlePolicy: true},
 	}
 	if err := config.SaveSettings(want); err != nil {
 		t.Fatal(err)

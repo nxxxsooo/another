@@ -195,10 +195,16 @@ func applyIntegrations(settings config.Settings, resolvers map[string]func() int
 // adapterLabel names an adapter the way a report should read, rather than by
 // its manifest id.
 func adapterLabel(adapter integrations.Adapter) string {
-	if adapter.ID == integrations.Pi {
+	switch adapter.ID {
+	case integrations.Pi:
 		return "Pi title extension"
+	case integrations.Agy:
+		return "Antigravity title hooks"
+	case integrations.Qwen:
+		return "Qwen Code title hooks"
+	default:
+		return "OpenCode title plugin"
 	}
-	return "OpenCode title plugin"
 }
 
 func printIntegration(adapter integrations.Adapter, status integrations.Status) {

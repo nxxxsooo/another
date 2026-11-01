@@ -343,6 +343,7 @@ type uiText struct {
 	setupPluginLabel     string
 	setupPluginLabelPi   string
 	setupPluginLabelAgy  string
+	setupPluginLabelQwen string
 	setupPluginToggleFmt string
 	setupPluginChecking  string
 	setupPluginMissing   string
@@ -657,6 +658,7 @@ var englishText = uiText{
 	setupPluginLabel:     "OpenCode title plugin",
 	setupPluginLabelPi:   "Pi title extension",
 	setupPluginLabelAgy:  "Antigravity title hooks",
+	setupPluginLabelQwen: "Qwen Code title hooks",
 	setupPluginToggleFmt: "%d toggles",
 	setupPluginChecking:  "checking",
 	setupPluginMissing:   "not installed",
@@ -970,6 +972,7 @@ var chineseText = uiText{
 	setupPluginLabel:     "OpenCode 标题插件",
 	setupPluginLabelPi:   "Pi 标题扩展",
 	setupPluginLabelAgy:  "Antigravity 标题钩子",
+	setupPluginLabelQwen: "Qwen Code 标题钩子",
 	setupPluginToggleFmt: "%d 切换",
 	setupPluginChecking:  "检测中",
 	setupPluginMissing:   "未安装",

@@ -417,6 +417,24 @@ func TestIntegrationsTakeOneAdapterAtATime(t *testing.T) {
 		t.Fatal("remove left consent recorded")
 	}
 
+	t.Setenv(integrations.QwenConfigDirEnv, dir)
+	out = mustRun(t, app, "integrations", "install", "qwen")
+	wantContains(t, out, "Installed", "qwen-title-policy")
+	settings, err = config.LoadSettings()
+	if err != nil || !settings.Integrations.QwenTitlePolicy {
+		t.Fatalf("install did not record consent: %+v, %v", settings.Integrations, err)
+	}
+	if !integrations.QwenStatus(dir).State.Installed() {
+		t.Fatal("the hook was not written where Qwen reads it")
+	}
+
+	out = mustRun(t, app, "integrations", "remove", "qwen")
+	wantContains(t, out, "Removed")
+	settings, _ = config.LoadSettings()
+	if settings.Integrations.QwenTitlePolicy {
+		t.Fatal("remove left consent recorded")
+	}
+
 	// A directory belongs to one agent, so it cannot be handed to a run that
 	// covers every adapter.
 	_, err = run(t, app, "integrations", "install", "--config-dir", dir)
