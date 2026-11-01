@@ -175,23 +175,15 @@ func InstallQwen(status Status, version, language string, force bool) (Status, e
 			// the person put there.
 			return status, fmt.Errorf("%s holds a Stop hook value another cannot extend; edit it by hand", util.TildePath(status.Dir))
 		}
-		{
-			for _, r := range rawEntries {
-				var entry qwenMatcherEntry
-				if err := json.Unmarshal(r, &entry); err == nil {
-					hasAnother := false
-					for _, h := range entry.Hooks {
-						if h.Name == QwenName || isQwenCommand(h.Command) {
-							hasAnother = true
-							break
-						}
-					}
-					if !hasAnother {
-						finalStopEntries = append(finalStopEntries, r)
-					}
-				} else {
-					finalStopEntries = append(finalStopEntries, r)
-				}
+		// Take out only another's own hook: an entry it shares with someone
+		// else's hook keeps theirs, along with its matcher and every field.
+		for _, r := range rawEntries {
+			kept, changed := withoutQwenHook(r)
+			switch {
+			case !changed:
+				finalStopEntries = append(finalStopEntries, r)
+			case kept != nil:
+				finalStopEntries = append(finalStopEntries, kept)
 			}
 		}
 	}

@@ -186,6 +186,32 @@ func TestQwenRemoveKeepsUnknownFieldsOfNeighbouringHooks(t *testing.T) {
 	}
 }
 
+// Reinstalling over an entry another shares with someone else's hook replaces
+// only another's hook; the neighbour keeps its place, matcher, and fields.
+func TestQwenInstallKeepsHooksSharingAnothersEntry(t *testing.T) {
+	root := t.TempDir()
+	settings := filepath.Join(root, "settings.json")
+	body := `{"hooks":{"Stop":[{"matcher":"m","note":"mine","hooks":[` +
+		`{"type":"command","command":"node keep.js","name":"keep","env":{"A":"1"}},` +
+		`{"type":"command","command":"` + qwenEarlierCommands[0] + `","name":"` + QwenName + `"}]}]}}`
+	if err := os.WriteFile(settings, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := InstallQwen(QwenStatus(root), "dev", "", false)
+	if err != nil || got.State != StateCurrent {
+		t.Fatalf("install = %+v, %v", got, err)
+	}
+	data, _ := os.ReadFile(settings)
+	for _, want := range []string{"node keep.js", `"A": "1"`, `"note": "mine"`, `"matcher": "m"`, QwenCommand} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("install lost %s:\n%s", want, data)
+		}
+	}
+	if strings.Count(string(data), "another rename") != 1 {
+		t.Fatalf("another's hook is not there exactly once:\n%s", data)
+	}
+}
+
 // A hook an earlier build installed is another's own: it reads as outdated,
 // and an ordinary install replaces it with the dynamic-title command.
 func TestQwenEarlierHookIsOutdatedAndUpgradedInPlace(t *testing.T) {
