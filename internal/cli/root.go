@@ -67,8 +67,8 @@ func (a *App) Root() *cobra.Command {
 	var guided, dryRun, yes, refresh bool
 	root := &cobra.Command{
 		Use:           "another",
-		Short:         "Hop AI coding sessions between agents",
-		Long:          "List, show, and migrate conversation sessions across Claude Code, Codex, Cursor, OpenCode, CommandCode, CodeM, Hermes, and more.",
+		Short:         "Every coding-agent session, in one place — and in any agent",
+		Long:          "Find, resume, manage, @-mention, and migrate native sessions across Pi, Claude Code, Codex, OpenCode, Qwen Code, Antigravity, and more.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version,

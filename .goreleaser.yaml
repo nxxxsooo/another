@@ -144,18 +144,27 @@ release:
 
     ## Compatibility
 
-    v0.20.3 fixes Codex titles that changed in another while ChatGPT Desktop
-    kept the old name. Another now reads the native thread name, renames
-    through Codex's app-server API, and checks the same session's name after
-    the write. Native title changes also refresh the index without rereading
-    every transcript for unrelated database activity.
+    v0.21.0 turns another from a session mover into one place for every
+    coding-agent session.
 
-    Codex rename requires an installed `codex` CLI supporting `app-server`,
-    `thread/name/set`, and `thread/read` (verified with Codex 0.165.0).
-    No settings, flags, keybindings, or migration steps change. An already-open
-    Desktop list may need to reload. Automatic ChatGPT title enforcement and
-    regular cloud ChatGPT conversations are not included in this release.
-    Script installations can run `another update`.
+    - **Changed default scope:** `list`, `search`, and `show` now read the
+      current project, as the TUI does: the repository with its registered
+      worktrees, or the directory and everything below it. Pass `--all` for
+      every project. `--cwd` is removed; scripts that relied on the old
+      all-projects default need `--all`.
+    - **@ mentions (opt-in):** `another integrations install claude-code
+      opencode qwen --kind recall`, or the new rows in `another setup`,
+      register a read-only MCP server (`another mcp`). Claude Code and Qwen
+      Code list this project's sessions in `@`; OpenCode V2 gets an
+      `@another` skill, because its `@` picker does not show MCP resources.
+      OpenCode and Qwen Code receive one entry in their configuration file,
+      added and removed without touching anything else.
+    - **Dynamic titles:** titles another wrote are reconsidered on a later
+      day or after three more user turns; titles set by hand are kept.
+      Rerun setup or `another integrations install` so installed hooks pick
+      up `--if-stale`; the old `--skip-conforming` keeps working.
+    - **New commands:** `another context` and `export --format markdown`.
+    - **Building from source** now needs Go 1.25.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
