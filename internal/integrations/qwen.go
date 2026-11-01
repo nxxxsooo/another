@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/util"
@@ -49,7 +50,23 @@ func QwenSettingsFile(configDir string) string {
 
 // QwenCommand is the hook command as this binary installs it. It is the whole
 // contract: whatever the hook holds instead is not what another wrote.
-const QwenCommand = "another rename --from qwen --auto --skip-conforming --allow-current --refresh --hook-stdin"
+//
+// --replace-native because Qwen Code names every conversation itself: a title
+// another does not own and that breaks the policy is Qwen Code's, not a
+// person's.
+const QwenCommand = "another rename --from qwen --auto --if-stale --replace-native --allow-current --refresh --hook-stdin"
+
+// qwenEarlierCommands are hook commands earlier builds installed. They are
+// still another's own writing, so they read as outdated rather than foreign
+// and an ordinary install replaces them.
+var qwenEarlierCommands = []string{
+	"another rename --from qwen --auto --skip-conforming --allow-current --refresh --hook-stdin",
+}
+
+// isQwenCommand reports a hook command another wrote, now or earlier.
+func isQwenCommand(command string) bool {
+	return command == QwenCommand || slices.Contains(qwenEarlierCommands, command)
+}
 
 // QwenTimeoutSec is the timeout in seconds for the hook execution.
 const QwenTimeoutSec = 180
@@ -107,6 +124,10 @@ func QwenStatus(configDir string) Status {
 					status.State = StateCurrent
 					return status
 				}
+				if slices.Contains(qwenEarlierCommands, h.Command) {
+					status.State = StateOutdated
+					return status
+				}
 				if h.Name == QwenName {
 					status.State = StateForeign
 					return status
@@ -160,7 +181,7 @@ func InstallQwen(status Status, version, language string, force bool) (Status, e
 				if err := json.Unmarshal(r, &entry); err == nil {
 					hasAnother := false
 					for _, h := range entry.Hooks {
-						if h.Name == QwenName || h.Command == QwenCommand {
+						if h.Name == QwenName || isQwenCommand(h.Command) {
 							hasAnother = true
 							break
 						}
@@ -313,7 +334,7 @@ func withoutQwenHook(raw json.RawMessage) (kept json.RawMessage, changed bool) {
 	var rest []json.RawMessage
 	for _, h := range hooks {
 		var spec qwenHookSpec
-		if json.Unmarshal(h, &spec) == nil && (spec.Name == QwenName || spec.Command == QwenCommand) {
+		if json.Unmarshal(h, &spec) == nil && (spec.Name == QwenName || isQwenCommand(spec.Command)) {
 			changed = true
 			continue
 		}

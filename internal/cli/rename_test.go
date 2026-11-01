@@ -1,8 +1,14 @@
 package cli
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/titler"
 )
 
 func TestRenameCommandSurface(t *testing.T) {
@@ -11,10 +17,15 @@ func TestRenameCommandSurface(t *testing.T) {
 	if err != nil || cmd == root {
 		t.Fatalf("missing rename command: %v", err)
 	}
-	for _, flag := range []string{"title", "auto", "from", "allow-current", "dry-run", "refresh", "skip-conforming", "hook-stdin"} {
+	for _, flag := range []string{"title", "auto", "from", "allow-current", "dry-run", "refresh", "if-stale", "replace-native", "skip-conforming", "hook-stdin"} {
 		if cmd.Flags().Lookup(flag) == nil {
 			t.Errorf("missing rename --%s", flag)
 		}
+	}
+	// Hooks installed by earlier releases still pass --skip-conforming, so it
+	// must parse; it is not offered to anyone new.
+	if !cmd.Flags().Lookup("skip-conforming").Hidden {
+		t.Error("rename --skip-conforming should be hidden")
 	}
 	// Renaming the running session stays refused unless a caller that knows it
 	// is a SessionEnd hook says otherwise.
@@ -53,6 +64,113 @@ func TestRenameRequiresExactlyOneTitleSource(t *testing.T) {
 				t.Fatalf("error = %v, want the exactly-one refusal", err)
 			}
 		})
+	}
+}
+
+// Staleness is a property of an automatic title; the flags are refused
+// before anything reads the index when there is no automatic title to judge.
+func TestRenameStaleFlagsNeedTheirPrerequisites(t *testing.T) {
+	for args, want := range map[string][]string{
+		"--if-stale needs --auto":           {"rename", "session", "--title", "x", "--if-stale"},
+		"--replace-native needs --if-stale": {"rename", "session", "--auto", "--replace-native"},
+	} {
+		root := (&App{}).Root()
+		root.SetArgs(want)
+		if err := root.Execute(); err == nil || !strings.Contains(err.Error(), args) {
+			t.Fatalf("%v: error = %v, want %q", want, err, args)
+		}
+	}
+}
+
+// The dynamic title from the hook's point of view: one call after every turn,
+// and the title moves only when the session did.
+func TestRenameIfStaleFollowsTheSession(t *testing.T) {
+	alpha := newFake(t, "alpha")
+	day := func(d, hour int) time.Time { return time.Date(2026, 9, d, hour-8, 0, 0, 0, time.UTC) } // Shanghai hour
+	conv := model.Conversation{
+		ID: "s", ProjectPath: t.TempDir(), CreatedAt: day(1, 9), UpdatedAt: day(1, 9),
+		Messages: []model.Message{
+			{Role: model.RoleUser, Content: "the stripe webhook retries forever", Timestamp: day(1, 9)},
+			{Role: model.RoleAssistant, Content: "make the handler idempotent", Timestamp: day(1, 9)},
+		},
+	}
+	alpha.seed(t, conv)
+	app := newTestApp(t, alpha)
+	if err := config.SaveSettings(config.Settings{TitleModel: &config.TitleModel{Provider: "pi", Language: "zh"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var requests []titler.Request
+	answers := []string{}
+	old := suggestRetrying
+	suggestRetrying = func(_ context.Context, _ titler.Config, req titler.Request) (string, error) {
+		requests = append(requests, req)
+		if len(answers) == 0 {
+			t.Fatalf("unexpected title call %d", len(requests))
+		}
+		answer := answers[0]
+		answers = answers[1:]
+		return answer, nil
+	}
+	t.Cleanup(func() { suggestRetrying = old })
+
+	hook := func() string {
+		t.Helper()
+		return mustRun(t, app, "rename", "s", "--from", "alpha", "--auto", "--if-stale", "--refresh")
+	}
+	talk := func(turns int, at time.Time) {
+		t.Helper()
+		current, err := alpha.read("s")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < turns; i++ {
+			current.Messages = append(current.Messages,
+				model.Message{Role: model.RoleUser, Content: "next step", Timestamp: at},
+				model.Message{Role: model.RoleAssistant, Content: "done", Timestamp: at})
+		}
+		current.UpdatedAt = at
+		alpha.save(t, current)
+	}
+
+	// First turn: an untitled session is named, dated by its activity.
+	answers = []string{"0901｜修复｜Stripe重试"}
+	wantContains(t, hook(), "Renamed s to 0901｜修复｜Stripe重试")
+
+	// A turn that changed nothing costs nothing.
+	wantContains(t, hook(), `keeps "0901｜修复｜Stripe重试" (fresh)`)
+
+	// Three more turns on the same day: the model is asked, keeps the topic,
+	// and nothing is written — but the turn count restarts from here.
+	talk(3, day(1, 15))
+	answers = []string{"0901｜修复｜Stripe重试"}
+	wantContains(t, hook(), "still fits")
+	if !requests[1].Refresh {
+		t.Fatal("drift check was not asked as a refresh")
+	}
+	wantContains(t, hook(), "(fresh)")
+
+	// The next morning: the date follows the activity even when the topic is kept.
+	talk(1, day(2, 10))
+	answers = []string{""} // what Suggest returns when the model answers KEEP
+	wantContains(t, hook(), "Renamed s to 0902｜修复｜Stripe重试")
+	if got := titler.MMDD(requests[2].Date); got != "0902" {
+		t.Fatalf("refresh asked for date %s, want 0902", got)
+	}
+
+	// Three turns later the topic has moved, and the title follows it.
+	talk(3, day(2, 16))
+	answers = []string{"0901｜功能｜动态会话标题"}
+	wantContains(t, hook(), "Renamed s to 0902｜功能｜动态会话标题")
+
+	// A person renames it. No amount of activity replaces that.
+	mustRun(t, app, "rename", "s", "--from", "alpha", "--title", "my own name")
+	talk(5, day(4, 10))
+	wantContains(t, hook(), "(set by hand)")
+	out := mustRun(t, app, "rename", "s", "--from", "alpha", "--auto", "--if-stale", "--replace-native", "--refresh")
+	wantContains(t, out, "(set by hand)")
+	if len(requests) != 4 {
+		t.Fatalf("title calls = %d, want 4", len(requests))
 	}
 }
 

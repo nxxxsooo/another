@@ -186,6 +186,30 @@ func TestQwenRemoveKeepsUnknownFieldsOfNeighbouringHooks(t *testing.T) {
 	}
 }
 
+// A hook an earlier build installed is another's own: it reads as outdated,
+// and an ordinary install replaces it with the dynamic-title command.
+func TestQwenEarlierHookIsOutdatedAndUpgradedInPlace(t *testing.T) {
+	root := t.TempDir()
+	settings := filepath.Join(root, "settings.json")
+	body := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"node keep.js"}]},{"hooks":[{"type":"command","command":"` +
+		qwenEarlierCommands[0] + `","name":"` + QwenName + `","timeout":180}]}]}}`
+	if err := os.WriteFile(settings, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status := QwenStatus(root)
+	if status.State != StateOutdated {
+		t.Fatalf("earlier hook = %s, want outdated", status.State)
+	}
+	got, err := InstallQwen(status, "dev", "", false)
+	if err != nil || got.State != StateCurrent {
+		t.Fatalf("upgrade = %+v, %v", got, err)
+	}
+	data, _ := os.ReadFile(settings)
+	if strings.Count(string(data), "another rename") != 1 || strings.Contains(string(data), "--skip-conforming") || !strings.Contains(string(data), "node keep.js") {
+		t.Fatalf("upgraded settings:\n%s", data)
+	}
+}
+
 // A Stop value another cannot read is refused rather than replaced.
 func TestQwenInstallRefusesAStopValueItCannotExtend(t *testing.T) {
 	root := t.TempDir()

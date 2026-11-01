@@ -12,7 +12,19 @@ It does three things:
     first automatic title; rejected output gets up to three corrective retries,
     then falls back to the original rejected answer with the creation date;
 3. listens for manual `Type｜Topic` renames and dates them through the official
-   `session.update()` API, and repairs still-unnamed sessions on idle.
+   `session.update()` API, and repairs still-unnamed sessions on idle;
+4. keeps its own titles current on idle: on the first turn of a later day, or
+   after three more user turns, it asks the title model whether the session
+   has moved on, and dates the result with the latest activity.
+
+The refresh follows the same rule as `another rename --if-stale`, which names
+the other agents' sessions. The plugin records the last title it wrote in its
+own storage (`ctx.storage`, key `title-mark:<session>`). A title that differs
+from that record was set by someone else and is never refreshed; a policy
+title with no record predates the feature and is adopted. The refresh prompt
+weighs the latest user messages and keeps the current `Type｜Topic` when the
+model repeats it, so it still offers no refusal word. A kept topic on a later
+day is only redated. Turns that meet neither condition make no model call.
 
 The idle repair exists because OpenCode 2 asks for a title once, moments after the
 first prompt, and never asks again. When that single request does not land —
@@ -54,7 +66,8 @@ refusals now go through the same correction budget and original-answer fallback.
 The manual-rename listener still replaces a refusal with a dated generic title.
 Child sessions keep the name of the task that spawned them. A manual rename
 that happens to be exactly `Type｜Topic` is treated as policy output and gets
-the date; write anything else to opt out. This targets the OpenCode 2.0.4
+the date; write anything else to opt out. Either way it is the person's title,
+not the plugin's, so idle refreshes leave it alone. This targets the OpenCode 2.0.4
 plugin API version pinned in `package.json`.
 
 ## Develop

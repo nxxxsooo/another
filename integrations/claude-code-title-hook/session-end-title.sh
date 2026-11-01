@@ -32,12 +32,13 @@ transcript=$(printf '%s\n' "$meta" | sed -n 2p)
 
 [ -n "$session_id" ] || { log "skip: no session_id"; exit 0; }
 
-# Never overwrite a title someone set by hand. Claude Code's own rename and
-# another's both record one as a custom-title row, so the transcript is the
-# whole test — no state of our own to keep in sync.
+# Without a custom-title row the session wears Claude Code's own ai-title,
+# which is safe to replace. With one, the title came from /rename or from
+# another: --if-stale refreshes it only if another wrote it, and keeps a title
+# someone set by hand.
+replace_native="--replace-native"
 if [ -n "$transcript" ] && [ -f "$transcript" ] && grep -q '"type":"custom-title"' "$transcript"; then
-  log "skip $session_id: already has a custom title"
-  exit 0
+  replace_native=""
 fi
 
 another_bin=$(command -v another 2>/dev/null) || another_bin=""
@@ -54,8 +55,9 @@ fi
 # --allow-current because SessionEnd is exactly the case the running-session
 # refusal is wrong about: Claude Code exports this session's id, and the session
 # is already over.
+# shellcheck disable=SC2086 # an empty $replace_native must vanish, not pass "".
 nohup "$another_bin" rename "$session_id" \
-  --from claude-code --auto --allow-current --refresh \
+  --from claude-code --auto --if-stale $replace_native --allow-current --refresh \
   >>"$LOG" 2>&1 &
 
 log "queued $session_id"

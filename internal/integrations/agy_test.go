@@ -161,6 +161,35 @@ func TestAgyStatusRefusesWhatItDidNotWrite(t *testing.T) {
 	}
 }
 
+// The hook an earlier release wrote is still another's: it reads as outdated,
+// and an ordinary install replaces it without --force.
+func TestAgyEarlierHookIsOutdatedAndUpgradesInPlace(t *testing.T) {
+	root := t.TempDir()
+	hooks := filepath.Join(root, "hooks.json")
+	earlier := `{"` + AgyGroup + `": {"Stop": [{"command": "another rename --from agy --auto --skip-conforming --allow-current --refresh --hook-stdin", "timeout": 180}]},
+		"someone-else": {"Stop": [{"command": "echo mine"}]}}`
+	if err := os.WriteFile(hooks, []byte(earlier), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status := AgyStatus(root)
+	if status.State != StateOutdated {
+		t.Fatalf("state = %q, want outdated", status.State)
+	}
+	if _, err := InstallAgy(status, "v9.9.9", "zh", false); err != nil {
+		t.Fatalf("upgrade refused: %v", err)
+	}
+	if got := AgyStatus(root).State; got != StateCurrent {
+		t.Fatalf("after upgrade the state = %q, want current", got)
+	}
+	data, err := os.ReadFile(hooks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "--if-stale --replace-native") || !strings.Contains(string(data), "echo mine") {
+		t.Fatalf("upgraded hooks.json = %s", data)
+	}
+}
+
 // A hooks.json another cannot parse holds someone's work another cannot
 // preserve by merging. No flag makes that loss safe to do silently — the
 // person has to move the file aside themselves, so even --force refuses.

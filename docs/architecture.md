@@ -16,7 +16,8 @@
 | `internal/model` | `Conversation`, `Message`, `Summary`, `MigrationMeta`, and the digests. |
 | `internal/index` | SQLite store: discovery reconciliation, FTS5 search, incremental refresh, path aliases, migration dedup records. |
 | `internal/migrate` | The migration engine: context modes, projection, write, verify, rollback, dedup. |
-| `internal/titler` | AI title suggestions through an installed agent CLI, single and batch. |
+| `internal/titler` | AI title suggestions through an installed agent CLI, single and batch, and the dynamic-title rule (`Decide`) that says when a title another wrote is due for a refresh. |
+| `internal/titlemark` | The last title another wrote per session, under `~/.config/another/title-marks/`, which is how `rename --if-stale` tells another's titles from a person's. |
 | `internal/integrations` | Adapters another installs into other agents: the OpenCode V2 title plugin, the Pi title extension, the Antigravity title hooks, and the Qwen Code title hooks, behind one shared install, compare, and remove path. |
 | `internal/config` | Settings file, paths, atomic writes, permissions. |
 | `internal/i18n` | English and Chinese strings for the TUI. |
