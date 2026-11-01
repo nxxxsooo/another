@@ -188,9 +188,19 @@ func (a *App) renameIfStale(ctx context.Context, p provider.Provider, renamer pr
 	}
 	// The whole session, not a preview: the turn count is the drift signal,
 	// and a refresh is about how the session ends rather than how it opened.
-	conv, err := p.Load(ctx, provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath})
+	ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
+	conv, err := p.Load(ctx, ref)
 	if err != nil {
 		return err
+	}
+	// The summary may show a fallback, such as the first prompt, where the
+	// agent holds no name. Judged as a title, that fallback reads as one a
+	// person chose and the session would never be named.
+	current := strings.TrimSpace(sm.Title)
+	if native, ok := p.(provider.NativeTitler); ok {
+		if current, err = native.NativeTitle(ctx, ref); err != nil {
+			return err
+		}
 	}
 	var msgs []model.Message
 	activity := sm.UpdatedAt
@@ -215,22 +225,22 @@ func (a *App) renameIfStale(ctx context.Context, p provider.Provider, renamer pr
 	}
 
 	decision := titler.Decide(titler.Freshness{
-		Title: sm.Title, Mark: marks.Load(sm.Provider, sm.ID), UserTurns: turns,
+		Title: current, Mark: marks.Load(sm.Provider, sm.ID), UserTurns: turns,
 		Activity: activity, Language: cfg.Language, ReplaceNative: replaceNative,
 	})
 	switch decision.Plan {
 	case titler.PlanSkip:
-		fmt.Printf("Unchanged: %s keeps %q (%s)\n", sm.ID, sm.Title, decision.Reason)
+		fmt.Printf("Unchanged: %s keeps %q (%s)\n", sm.ID, current, decision.Reason)
 		return nil
 	case titler.PlanAdopt:
-		remember(sm.Title)
-		fmt.Printf("Unchanged: %s keeps %q (%s)\n", sm.ID, sm.Title, decision.Reason)
+		remember(current)
+		fmt.Printf("Unchanged: %s keeps %q (%s)\n", sm.ID, current, decision.Reason)
 		return nil
 	}
 
 	refreshing := decision.Plan == titler.PlanRefresh
 	suggestion, err := suggestRetrying(ctx, cfg, titler.Request{
-		Title: sm.Title, ProjectPath: sm.ProjectPath, CreatedAt: sm.CreatedAt,
+		Title: current, ProjectPath: sm.ProjectPath, CreatedAt: sm.CreatedAt,
 		Date: activity, Messages: msgs, Refresh: refreshing,
 	})
 	if err != nil {
@@ -240,11 +250,11 @@ func (a *App) renameIfStale(ctx context.Context, p provider.Provider, renamer pr
 	switch {
 	case title == "" && !refreshing:
 		return fmt.Errorf("%s returned no title matching the policy", cfg.Provider)
-	case refreshing && (title == "" || titler.Topic(title) == titler.Topic(sm.Title)):
+	case refreshing && (title == "" || titler.Topic(title) == titler.Topic(current)):
 		// The model kept the topic. A new day still moves the date.
-		title = titler.Redate(sm.Title, activity)
+		title = titler.Redate(current, activity)
 	}
-	if title == strings.TrimSpace(sm.Title) {
+	if title == current {
 		remember(title)
 		fmt.Printf("Unchanged: %s still fits (%s)\n", sm.ID, title)
 		return nil

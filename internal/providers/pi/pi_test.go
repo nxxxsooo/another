@@ -203,6 +203,29 @@ func TestDiscoverFallsBackToFirstUserMessageTitle(t *testing.T) {
 	}
 }
 
+// The first-prompt fallback is what Discover shows, not a name the session
+// holds: NativeTitle reports only what session_info says, latest row first.
+func TestNativeTitleIgnoresTheDisplayFallback(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PI_AGENT_DIR", root)
+	lines := []string{
+		`{"type":"session","version":3,"id":"sess-n","timestamp":"2026-09-03T05:02:48.316Z","cwd":"/home/user/proj"}`,
+		`{"type":"message","id":"b1","timestamp":"2026-09-03T05:02:49.000Z","message":{"role":"user","content":[{"type":"text","text":"migrate my session"}]}}`,
+	}
+	path := writeSession(t, root, "/home/user/proj", "2026-09-03T05-02-48-316Z_sess-n.jsonl", lines)
+	p := pi.New()
+	ref := provider.SessionRef{ID: "sess-n", StoragePath: path}
+	if got, err := p.NativeTitle(context.Background(), ref); err != nil || got != "" {
+		t.Fatalf("unnamed session: NativeTitle = %q, %v; want empty", got, err)
+	}
+	if err := p.RenameSession(context.Background(), ref, "  my name  "); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := p.NativeTitle(context.Background(), ref); err != nil || got != "my name" {
+		t.Fatalf("named session: NativeTitle = %q, %v", got, err)
+	}
+}
+
 func TestRenameAppendsSessionInfoOnParentChain(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("PI_AGENT_DIR", root)
