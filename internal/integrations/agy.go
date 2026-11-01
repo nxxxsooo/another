@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/util"
@@ -51,7 +52,17 @@ func AgyHooksFile(configDir string) string {
 
 // AgyCommand is the hook command as this binary installs it. It is the whole
 // contract: whatever the group holds instead is not what another wrote.
-const AgyCommand = "another rename --from agy --auto --skip-conforming --allow-current --refresh --hook-stdin"
+//
+// --replace-native because agy names every conversation itself: a title
+// another does not own and that breaks the policy is agy's, not a person's.
+const AgyCommand = "another rename --from agy --auto --if-stale --replace-native --allow-current --refresh --hook-stdin"
+
+// agyEarlierCommands are hook commands earlier releases installed. They are
+// still another's own writing, so they read as outdated rather than foreign
+// and an ordinary install replaces them.
+var agyEarlierCommands = []string{
+	"another rename --from agy --auto --skip-conforming --allow-current --refresh --hook-stdin",
+}
 
 // hookDoc is the shared hooks.json: a group name to a map of events, each
 // event a list of hook specifications. Foreign groups are preserved as raw
@@ -83,13 +94,16 @@ func AgyStatus(configDir string) Status {
 	if !ok {
 		return status
 	}
+	status.State = StateForeign
 	for _, spec := range group["Stop"] {
 		if spec.Command == AgyCommand {
 			status.State = StateCurrent
 			return status
 		}
+		if slices.Contains(agyEarlierCommands, spec.Command) {
+			status.State = StateOutdated
+		}
 	}
-	status.State = StateForeign
 	return status
 }
 

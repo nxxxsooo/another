@@ -16,12 +16,15 @@
 | `internal/model` | `Conversation`, `Message`, `Summary`, `MigrationMeta`, and the digests. |
 | `internal/index` | SQLite store: discovery reconciliation, FTS5 search, incremental refresh, path aliases, migration dedup records. |
 | `internal/migrate` | The migration engine: context modes, projection, write, verify, rollback, dedup. |
-| `internal/titler` | AI title suggestions through an installed agent CLI, single and batch. |
-| `internal/integrations` | Adapters another installs into other agents: the OpenCode V2 title plugin, the Pi title extension, and the Antigravity title hooks, behind one shared install, compare, and remove path. |
+| `internal/titler` | AI title suggestions through an installed agent CLI, single and batch, and the dynamic-title rule (`Decide`) that says when a title another wrote is due for a refresh. |
+| `internal/titlemark` | The last title another wrote per session, under `~/.config/another/title-marks/`, which is how `rename --if-stale` tells another's titles from a person's. |
+| `internal/integrations` | Adapters another installs into other agents: the OpenCode V2 title plugin, the Pi title extension, the Antigravity and Qwen Code title hooks, and the recall adapters that register `another mcp` (plus the `another` skill for OpenCode) for @ mentions, behind one shared install, compare, and remove path. |
+| `internal/recall` | Renders a session as Markdown another agent can read: the bounded excerpt `another context` and MCP reads return, and the full transcript `export --format markdown` writes. |
+| `internal/mcpserver` | `another mcp`: the read-only stdio MCP server that lists the current project's sessions as resources for @ mentions and refuses anything outside that scope. |
 | `internal/config` | Settings file, paths, atomic writes, permissions. |
 | `internal/i18n` | English and Chinese strings for the TUI. |
 | `internal/util` | Paths, project scope and nested-repo detection, JSONL scanning, title picking, display helpers. |
-| `integrations/` | Sources shipped to other agents: the OpenCode V2 title plugin, the Pi title extension, the Claude Code SessionEnd hook. The Antigravity hook is configuration only — a group in agy's shared hooks.json — so it has no source directory of its own. |
+| `integrations/` | Sources shipped to other agents: the OpenCode V2 title plugin, the Pi title extension, the Claude Code SessionEnd hook, and the `another` skill. The Antigravity and Qwen Code hooks are configuration only — groups/entries in shared configuration files — so they have no source directories of their own. |
 | `docs/assets/`, `scripts/` | Generated artwork and the scripts that regenerate it, plus the install script. |
 
 ## Data flow

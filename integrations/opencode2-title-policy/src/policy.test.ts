@@ -2,15 +2,23 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   cleanGenerated,
+  decideRefresh,
   fallbackTitle,
   firstTitle,
   finalizeTitle,
+  isPolicyTitle,
   isRefusal,
   loadLanguage,
+  parseMark,
   parsePartialTitle,
+  redate,
+  refreshPrompt,
+  refreshTurns,
   repairPrompt,
   repairTitle,
+  titleDay,
   titlePrompt,
+  topicOf,
 } from "./policy.ts"
 
 test("prompt is strict and language-specific", () => {
@@ -51,6 +59,18 @@ test("finalizes English and Chinese with Shanghai creation date", () => {
   assert.equal(finalizeTitle("Fix｜Cancel batch naming", created, "en"), "0905｜Fix｜Cancel batch naming")
   assert.equal(finalizeTitle("修复｜取消批量命名", created, "zh"), "0905｜修复｜取消批量命名")
   assert.equal(finalizeTitle("修复｜取消批量命名", created, "en"), undefined)
+})
+
+test("English titles reject Chinese prose even with an English category", () => {
+  const created = Date.parse("2026-10-14T00:00:00+08:00")
+  const mixed = "Fix｜Argon流量未转发至sub2api"
+  assert.equal(finalizeTitle(mixed, created, "en"), undefined)
+  assert.equal(repairTitle(mixed, created, "en"), undefined)
+  assert.equal(firstTitle(mixed, created, "en"), "1014｜Explore｜Untitled session")
+  assert.equal(finalizeTitle("Fix｜Argon traffic not forwarded to sub2api", created, "en"),
+    "1014｜Fix｜Argon traffic not forwarded to sub2api")
+  assert.equal(finalizeTitle("修复｜Argon流量未转发至sub2api", created, "zh"),
+    "1014｜修复｜Argon流量未转发至sub2api")
 })
 
 test("rejects drift", () => {
@@ -122,4 +142,50 @@ test("the repair prompt carries the policy and the opening message", () => {
   assert.match(prompt, /功能 设计 修复 优化 发布 探索 文档 研究/)
   assert.match(prompt, /Name the session that begins with this message/)
   assert.ok(prompt.endsWith("话".repeat(2000)), "the opening message is cut, not carried whole")
+})
+
+test("the refresh rule matches another rename --if-stale", () => {
+  const now = Date.parse("2026-09-02T02:00:00Z") // 10:00 on 09-02 in Shanghai
+  const owned = "0902｜修复｜Stripe重试"
+  const mark = { title: owned, userTurns: 2, at: now }
+  // null means "no mark"; undefined would select the default.
+  const decide = (title: string, userTurns: number, withMark: typeof mark | null = mark) =>
+    decideRefresh({ title, mark: withMark ?? undefined, userTurns, now, language: "auto" }).plan
+  assert.equal(decide(owned, 2), "skip")
+  assert.equal(decide(owned, 4), "skip")
+  assert.equal(decide(owned, 5), "refresh")
+  assert.equal(decide(owned, 1), "adopt")
+  assert.equal(decide(owned, 9, null), "adopt")
+  assert.equal(decide("0901｜修复｜Stripe重试", 2, { ...mark, title: "0901｜修复｜Stripe重试" }), "refresh")
+  assert.equal(decide("0901｜修复｜Stripe重试", 2, null), "refresh")
+  assert.equal(decide("0902｜功能｜我自己起的", 20), "skip")
+  assert.equal(decide("my own name", 20, null), "skip")
+  assert.equal(refreshTurns, 3)
+})
+
+test("redate keeps the topic and only moves a policy date", () => {
+  const late = Date.parse("2026-09-01T17:30:00Z") // 01:30 on 09-02 in Shanghai
+  assert.equal(redate("0901｜修复｜Stripe重试", late), "0902｜修复｜Stripe重试")
+  assert.equal(redate("my own name", late), "my own name")
+  assert.equal(topicOf("0902｜Fix｜Stripe retries"), "Fix｜Stripe retries")
+  assert.equal(titleDay("09a1｜Fix｜x"), undefined)
+  assert.equal(isPolicyTitle("0902｜修复｜Stripe重试", "en"), false)
+})
+
+test("a stored mark is read only when it has the expected shape", () => {
+  assert.deepEqual(parseMark({ title: "t", userTurns: 1, at: 2 }), { title: "t", userTurns: 1, at: 2 })
+  for (const value of [undefined, null, "t", { title: "", userTurns: 1, at: 2 }, { title: "t", userTurns: "1", at: 2 }]) {
+    assert.equal(parseMark(value), undefined)
+  }
+})
+
+test("the refresh prompt weighs the latest messages and never offers a refusal", () => {
+  const users = Array.from({ length: 10 }, (_, i) => `message ${i}`)
+  const prompt = refreshPrompt("auto", "0901｜修复｜Stripe重试", users)
+  assert.match(prompt, /output its Type｜Topic unchanged/)
+  assert.match(prompt, /"修复｜Stripe重试"/)
+  assert.match(prompt, /message 0/)
+  assert.match(prompt, /message 6[\s\S]*message 9/)
+  assert.doesNotMatch(prompt, /message 3/)
+  assert.doesNotMatch(prompt, /KEEP/)
 })

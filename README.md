@@ -15,20 +15,25 @@
 </p>
 
 <p align="center">
-  在多个 coding agent 之间浏览、管理、迁移并继续真实会话，无需粘贴摘要。
+  所有 coding agent 的会话，集中在一处，也能在任一 agent 里继续。
 </p>
 
 <p align="center">
   <img src="docs/assets/tui-preview.svg" width="100%" alt="another TUI 展示多个 coding agent 的会话列表和目标 agent 选择器">
 </p>
 
-模型用完额度，或者当前工作更适合另一个模型时，通常只能总结已有内容，再粘贴到另一端重新解释。`another` 迁移的是会话本身：它把对话写入目标 agent 的原生存储，随后可以在那里直接打开并继续。
+每个 coding agent 都把历史存在自己的格式、自己的目录里。`another` 把它们读进同一个本地列表：按对话内容找到会话，在原 agent 里恢复、改名、归档或清理，还能在你正在用的 agent 里 @ 引用它，之前定过的事不用再解释一遍。
+
+模型用完额度，或者当前工作更适合另一个模型时，`another` 也能把会话本身写进目标 agent 的原生存储，在那里直接打开继续，而不是粘贴一份摘要。
 
 ## 功能
 
-- **原生会话**：在目标 agent 中按其原生格式恢复，不是粘贴一份摘要。
+- **一个列表管所有 agent**：浏览、搜索、预览、恢复、重命名、归档、删除和换目录。
+- **跨 agent @ 引用**：在当前 agent 里引用任一 agent 的旧会话——Claude Code 和 Qwen Code 直接在 `@` 里列出，OpenCode 通过 `@another`；按 agent 单独开启。
+- **可读的会话**：`another context` 输出有长度上限的 Markdown 摘录供 agent 阅读；`another export --format markdown` 导出完整对话。
+- **会跟进的标题**：自动标题随会话推进更新；你自己起的标题不会被改。
+- **原生迁移**：按目标 agent 的原生格式写入，不是粘贴一份摘要。
 - **十个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、CommandCode、CodeM、Hermes、Qwen Code 和 Antigravity。
-- **一个界面**：直接浏览、搜索、预览、重命名、归档、删除、换目录或迁移会话。
 - **项目聚合**：默认只看当前 Git 项目，并把主工作区与所有已登记 worktree 的会话放在一起；按 `f` 可切换到全部项目，按 `g` 可按日期或 worktree 分组。
 - **迁移后校验**：重新读取每次写入，比较内容摘要；不一致时回滚，来源会话始终保持原样。
 - **中英双语界面**：默认跟随终端 locale，也可以在 setup 里固定为 English 或中文；与标题语言各自独立。
@@ -90,7 +95,7 @@ brew install nxxxsooo/tap/another
 <details>
 <summary><strong>从源码安装</strong></summary>
 
-需要 Go 1.24 或更高版本：
+需要 Go 1.25 或更高版本：
 
 ```bash
 go install github.com/nxxxsooo/another/cmd/another@latest
@@ -119,7 +124,7 @@ Windows 上解压 `another_*_windows_amd64.zip`，把 `another.exe` 放到 `PATH
 another
 ```
 
-首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。持续实测的六个 agent 和 CodeM 在同一列表中平铺，首次运行不预选任何 agent。Cursor、CommandCode 和 Hermes 只在已有配置启用它们时出现，方便老用户继续使用或关闭。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。启用了 OpenCode、Pi 或 Antigravity 时，这一页还会出现各自的适配器行（`OpenCode 标题插件`、`Pi 标题扩展`、`Antigravity 标题钩子`）：按对应数字打开，another 才会把适配器写进该 agent 的配置目录，那行同时写明将写到哪个文件、里面现在是什么。之后可随时运行 `another setup` 修改配置。
+首次运行会打开 Charmtone 配置界面。第一页顶部用 `←→` 选界面语言：**Auto**（默认，跟随终端 locale）、**English**、**中文**；按下即时重绘，选错当场就能看见。按 `↑↓` 移动，按 `Space` 开关 agent，按 `Shift+↑↓` 调整它们在来源、去向和 `providers` 中的顺序，再按 `Enter` 继续。持续实测的六个 agent 和 CodeM 在同一列表中平铺，首次运行不预选任何 agent。Cursor、CommandCode 和 Hermes 只在已有配置启用它们时出现，方便老用户继续使用或关闭。第二页可以选择一个已安装的 agent，用于生成 AI 标题建议，默认关闭。启用了 OpenCode、Pi、Antigravity 或 Qwen Code 时，这一页还会出现各自的适配器行（`OpenCode 标题插件`、`Pi 标题扩展`、`Antigravity 标题钩子`、`Qwen Code 标题钩子`）：按对应数字打开，another 才会把适配器写进该 agent 的配置目录，那行同时写明将写到哪个文件、里面现在是什么。之后可随时运行 `another setup` 修改配置。
 
 通过 SSH 使用 Ghostty 时，终端通常只转发 `TERM=xterm-ghostty`，不会转发 `COLORTERM`。`v0.13.3` 起 another 会直接识别这种环境并保留完整配色，同时仍遵守 `NO_COLOR`。
 
@@ -193,6 +198,22 @@ TUI 打开时就在你所在的目录：Git 仓库读作仓库本体加上所有
 底部只列每条会话都用得上的那几个键，最后一个是 `?`。按下去是完整键表，按当前 agent 真正支持的操作过滤——不支持归档的 agent 不会列出归档。终端放不下整张表时它会滚动，而不是把键截掉。
 
 终端窄于 64 列时（比如在手机上通过 SSH 连回电脑），每行把其他列省下的宽度让给标题：只选了一个 agent 时不再显示 agent 标签，顶部已经写了；消息数只留数字；按日期分组时去掉标题开头的 `MMDD｜`，分组带已经说明了时间。底部改为分两行显示选中会话的完整标题，包括这段前缀。更宽的终端保持上面描述的布局。
+
+## @ 引用
+
+在 setup 第二页打开 `<agent> 会话 @ 引用`，或运行 `another integrations install claude-code opencode qwen --kind recall`。another 会把自己的 MCP 服务器（`another mcp`）注册到该 agent，agent 通过它读取当前项目的会话——来自 another 索引的所有 agent：
+
+- **Claude Code** 和 **Qwen Code** 直接在 `@` 选择器里列出当前项目最近的会话。选中后，agent 收到一段有长度上限的摘录：标题、agent、日期，以及对话的开头和结尾几轮（最多 24,000 字符）。
+- **OpenCode V2** 的 `@` 选择器只列 skill，不列 MCP 资源（[anomalyco/opencode#61071](https://github.com/anomalyco/opencode/issues/61071)），所以 another 同时安装一个 `another` skill：`@another 那个 webhook 重试的会话` 会让 agent 找到并读取同样的摘录。
+
+服务器只看启动时所在的项目——仓库及其 worktree，或该目录及其下级——其他项目的会话一律当作不存在。它只读，不提供工具。Claude Code 通过它自己的 `claude mcp add --scope user` 注册；OpenCode 和 Qwen Code 的配置文件里只加一项，注释、顺序和格式都不动，`another integrations remove --kind recall` 会原样撤掉。你引用的内容会发给该 agent 使用的模型。
+
+命令行也能拿到同一段摘录：
+
+```bash
+another context <session-id>                       # 有上限的 Markdown 摘录
+another export <session-id> --format markdown -o - # 完整对话
+```
 
 ## 换目录
 
@@ -269,15 +290,19 @@ setup 第二页用 `←→` 选标题语言（与第一页的界面语言互不�
 
 <img src="docs/assets/tui-batch.svg" width="100%" alt="another 批量命名确认页：原名到新名的对照表与折叠计数">
 
-OpenCode V2 可以在首次自动命名时直接执行同一规则，而不额外调用一次模型。适配器在 OpenCode 2.0.4 的 `title` hook 中把会话创建日期写进完整标题，避免先存下无日期标题、再等待重命名事件补日期；已有会话的标题不会被追改。它随 another 二进制分发：在 `another setup` 第二页把 `OpenCode 标题插件` 那行打开，或运行 `another integrations install opencode`，another 会把插件写进 OpenCode V2 的 `plugins/another-title-policy/` 并记下自己写了什么。它只写这一个目录，从不改你的 `opencode.json(c)`——OpenCode V2 自己就会发现该目录。升级 another 后，用 `another integrations status opencode` 检查，再运行 `another integrations install opencode` 更新已装插件（或重新运行 setup）；被你手工改过的文件不会被覆盖。源码与细节见 [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/)。Pi 走同一条路：another 自带一个扩展，在 `another setup` 第二页打开 `Pi 标题扩展` 那行，或运行 `another integrations install pi`，它会被写进 Pi 的 `extensions/another-title-policy/`——Pi 自己会发现该目录，another 不改你的 `settings.json`。扩展本身不生成标题：一轮结束（`agent_settled`）时调用 `another rename --auto`，策略、语言、标题 agent 都留在二进制里。源码见 [`integrations/pi-title-policy/`](integrations/pi-title-policy/)。Antigravity 同样自带适配器：`Antigravity 标题钩子` 那行打开，或运行 `another integrations install agy`，它会把一个 Stop 钩子组并进 Antigravity 自己的共享 `hooks.json`（`~/.gemini/config/hooks.json`，其他工具写入的组原样保留，一个字节都不动）；钩子在一轮空闲结束时调用 `another rename --auto`，策略、语言、标题 agent 都留在二进制里。钩子只在交互会话里触发（`--print` 不跑任何钩子），有排队的后续轮次时先不命名，留给下一轮空闲的回合；`another` 不在 PATH 里时失败只进 Antigravity 自己的日志。源码与细节见本仓库 `internal/integrations/agy.go`。Claude Code 没有可覆盖的标题 agent，也没有"会话已命名"事件，只能在会话结束之后改名：[`integrations/claude-code-title-hook/`](integrations/claude-code-title-hook/) 里的 SessionEnd 钩子调用 `another rename --auto`，写的是 Claude Code 自己的 `custom-title` 记录，所以它自己的列表里也认。已经手工命名过的会话会跳过，手动标题不会被覆盖；需要手工装。Codex 暂无稳定的原生标题策略接口，仍由 another 整理。
+OpenCode V2 可以在首次自动命名时直接执行同一规则，而不额外调用一次模型。适配器在 OpenCode 2.0.4 的 `title` hook 中把会话创建日期写进完整标题，避免先存下无日期标题、再等待重命名事件补日期。它随 another 二进制分发：在 `another setup` 第二页把 `OpenCode 标题插件` 那行打开，或运行 `another integrations install opencode`，another 会把插件写进 OpenCode V2 的 `plugins/another-title-policy/` 并记下自己写了什么。它只写这一个目录，从不改你的 `opencode.json(c)`——OpenCode V2 自己就会发现该目录。升级 another 后，用 `another integrations status opencode` 检查，再运行 `another integrations install opencode` 更新已装插件（或重新运行 setup）；被你手工改过的文件不会被覆盖。源码与细节见 [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/)。Pi 走同一条路：another 自带一个扩展，在 `another setup` 第二页打开 `Pi 标题扩展` 那行，或运行 `another integrations install pi`，它会被写进 Pi 的 `extensions/another-title-policy/`——Pi 自己会发现该目录，another 不改你的 `settings.json`。扩展本身不生成标题：一轮结束（`agent_settled`）时调用 `another rename --auto`，策略、语言、标题 agent 都留在二进制里。源码见 [`integrations/pi-title-policy/`](integrations/pi-title-policy/)。Antigravity 同样自带适配器：`Antigravity 标题钩子` 那行打开，或运行 `another integrations install agy`，它会把一个 Stop 钩子组并进 Antigravity 自己的共享 `hooks.json`（`~/.gemini/config/hooks.json`，其他工具写入的组原样保留，一个字节都不动）；钩子在一轮空闲结束时调用 `another rename --auto`，策略、语言、标题 agent 都留在二进制里。钩子只在交互会话里触发（`--print` 不跑任何钩子），有排队的后续轮次时先不命名，留给下一轮空闲的回合；`another` 不在 PATH 里时失败只进 Antigravity 自己的日志。源码与细节见本仓库 `internal/integrations/agy.go`。Qwen Code 同样自带适配器：在 `another setup` 第二页打开 `Qwen Code 标题钩子` 那行，或运行 `another integrations install qwen`，它会把一个 Stop 钩子并进 Qwen Code 自己的共享 `settings.json`（`~/.qwen/settings.json`，其他设置与钩子的值都保留，但文件会按缩进 JSON、键名排序重新写出）；钩子在一轮空闲结束时调用 `another rename --auto`，策略、语言、标题 agent 都留在二进制里。源码与细节见本仓库 `internal/integrations/qwen.go`。Claude Code 没有可覆盖的标题 agent，也没有"会话已命名"事件，只能在会话结束之后改名：[`integrations/claude-code-title-hook/`](integrations/claude-code-title-hook/) 里的 SessionEnd 钩子调用 `another rename --auto`，写的是 Claude Code 自己的 `custom-title` 记录，所以它自己的列表里也认。已经手工命名过的会话会跳过，手动标题不会被覆盖；需要手工装。Codex 暂无稳定的原生标题策略接口，仍由 another 整理。
+
+这些适配器写下的标题会跟着会话变（动态标题），不会停在第一轮。another 自己写的标题满足下面任一条件就重新判断一次：会话在新的一天又有了活动（比如隔天继续），或者同一天里比上次命名多了 3 轮用户发言。重新判断时模型主要看最近几轮；话题没变就保留原来的「类型｜主题」，变了就换。标题开头的 `MMDD` 跟着最近一次活动走，所以今天续上的老会话会显示今天的日期；创建日期仍在列表的列里。没到条件的轮次不调用模型。手动起的标题一律保留：another 记下自己最后写过的标题，当前标题和它不一样就说明是别人改的，以后不再动；把标题清空即交还给自动命名。Pi、Antigravity、Qwen Code、Claude Code 走 `another rename --auto --if-stale`，记录存在 another 配置目录的 `title-marks/` 下；OpenCode 插件用插件自己的存储执行同一规则。Claude Code 的钩子只在会话结束时触发，所以它的标题在每次退出时更新。旧版本装的钩子仍带 `--skip-conforming`，这个参数继续可用，含义等同 `--if-stale --replace-native`；重新运行 setup 或 `another integrations install` 即可换成新钩子。
 
 ## CLI
 
 ```bash
 # 浏览和搜索
-another list [--provider ID] [--project PATH] [--cwd] [--limit N] [--json] [--refresh]
-another search "query" [--provider ID] [--project PATH] [--cwd] [--limit N] [--json]
-another show <session-id> [--provider ID] [--limit N]
+# list、search、show、context 默认只看当前项目（仓库及其 worktree，或该目录及其下级）；--all 看全部项目
+another list [--provider ID] [--project PATH] [--all] [--limit N] [--json] [--refresh]
+another search "query" [--provider ID] [--project PATH] [--all] [--limit N] [--json]
+another show <session-id> [--provider ID] [--limit N] [--all]
+another context <session-id> [--provider ID] [--all]   # 供 agent 阅读的 Markdown 摘录
 
 # 迁移会话
 another migrate <session-id> --to <provider> [--from ID] [-y]
@@ -294,6 +319,7 @@ another rename <session-id> --auto [--dry-run]   # 交给已配置的标题 agen
 
 # 可移植备份
 another export <session-id> -o session.another.json
+another export <session-id> --format markdown -o -    # 可读的完整对话
 another import session.another.json --to <provider> [--context MODE] [--dry-run] -y
 
 # 配置和索引
@@ -301,6 +327,8 @@ another setup
 another integrations                      # 适配器状态
 another integrations install [agent...]  # 安装或更新适配器，不写 agent 就是全部
 another integrations remove [agent...]
+another integrations install claude-code opencode qwen --kind recall  # @ 引用
+another mcp                               # agent 为 @ 引用启动的 MCP 服务器
 another index update
 another index rebuild
 
@@ -381,7 +409,7 @@ python3 ./scripts/render-mark-transparent.py                       # 标志透�
 
 ## 名字
 
-字面含义优先：保留当前会话，在 **another** agent 中继续。
+字面含义优先：每个会话，在任一 agent 里——保留当前会话，在 **another** agent 中继续。
 
 这个名字也轻轻借用了 [《Another》](https://www.pa-works.jp/works/another/) 的概念。这部 2012 年悬疑动画由 P.A.WORKS 制作，改编自绫辻行人的小说。作品中那个难以分辨身份的额外存在，给迁移会话提供了第二层隐喻：同一个对话身份会在另一个位置，以另一种原生形式出现。
 

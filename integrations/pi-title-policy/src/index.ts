@@ -21,16 +21,16 @@ export default function register(pi: ExtensionAPI): void {
     const id = ctx.sessionManager.getSessionId()
     if (!id) return
 
-    // --skip-conforming is how a session that already carries a policy title
-    // is left alone. Deciding that here was wrong twice over: it duplicated a
-    // policy another owns, and pi.getSessionName() reports the name Pi holds
-    // in memory, which never learns about the one another wrote into the
-    // session file. The guard therefore never fired after the first rename,
-    // and every settled turn spent another title-model call rewriting a title
-    // that was already correct.
+    // --if-stale lets another decide whether the title is due: an untitled
+    // session is named, a title another wrote is refreshed on a new day or
+    // after a few more turns, and a name set with /name is kept. Deciding that
+    // here would duplicate a policy another owns, and pi.getSessionName()
+    // reports the name Pi holds in memory, which never learns about the one
+    // another wrote into the session file. No --replace-native: Pi does not
+    // name sessions itself, so any other name came from a person.
     const child = spawn(
       "another",
-      ["rename", id, "--from", "pi", "--auto", "--skip-conforming", "--allow-current", "--refresh"],
+      ["rename", id, "--from", "pi", "--auto", "--if-stale", "--allow-current", "--refresh"],
       { detached: true, stdio: "ignore" },
     )
     child.on("error", () => {

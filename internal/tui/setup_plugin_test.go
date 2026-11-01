@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/integrations"
 )
 
@@ -75,6 +76,78 @@ func TestAgyPluginRowTogglesAndNamesItsFile(t *testing.T) {
 		if !strings.Contains(rows, want) {
 			t.Fatalf("rows = %q, want %q", rows, want)
 		}
+	}
+}
+
+// The qwen row follows the same rules: it exists only for someone who manages
+// qwen, starts off, and names the settings.json file it edits.
+func qwenPluginFixture(state integrations.State) setupModel {
+	m := pluginFixture(integrations.StateMissing)
+	m.selected["opencode2"] = false
+	m.selected["qwen"] = true
+	m.plugins = []SetupPlugin{{
+		Integration: integrations.Qwen,
+		Provider:    "qwen",
+		Supported:   true,
+		Dir:         "/tmp/qwen/settings.json",
+		State:       state,
+	}}
+	return m
+}
+
+func TestQwenPluginRowTogglesAndNamesItsFile(t *testing.T) {
+	m := qwenPluginFixture(integrations.StateMissing)
+	if m.wantsPlugin(integrations.Qwen) {
+		t.Fatal("the qwen hook was going to be installed unasked")
+	}
+	next, _ := m.updateTitlePage(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	m = next.(setupModel)
+	if !m.wantsPlugin(integrations.Qwen) {
+		t.Fatal("1 did not turn the qwen hook on")
+	}
+	rows := ansi.Strip(m.pluginRows(72, false))
+	for _, want := range []string{txt.setupPluginLabelQwen, "/tmp/qwen/settings.json"} {
+		if !strings.Contains(rows, want) {
+			t.Fatalf("rows = %q, want %q", rows, want)
+		}
+	}
+}
+
+// A recall row is an opt-in like any other: off until pressed, named for what
+// it does, and saved under its own consent.
+func TestRecallRowStartsOffAndSavesItsOwnConsent(t *testing.T) {
+	m := pluginFixture(integrations.StateMissing)
+	m.selected["opencode2"] = false
+	m.selected["claude-code"] = true
+	m.plugins = []SetupPlugin{{
+		Integration: integrations.ClaudeCodeRecall,
+		Provider:    "claude-code",
+		Supported:   true,
+		Dir:         "/tmp/home/.claude.json",
+		State:       integrations.StateMissing,
+	}}
+	if m.wantsPlugin(integrations.ClaudeCodeRecall) {
+		t.Fatal("the MCP server was going to be registered unasked")
+	}
+	next, _ := m.updateTitlePage(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	m = next.(setupModel)
+	if !m.wantsPlugin(integrations.ClaudeCodeRecall) {
+		t.Fatal("1 did not turn the recall row on")
+	}
+	rows := ansi.Strip(m.pluginRows(72, false))
+	for _, want := range []string{txt.setupRecallLabelClaude, "/tmp/home/.claude.json"} {
+		if !strings.Contains(rows, want) {
+			t.Fatalf("rows = %q, want %q", rows, want)
+		}
+	}
+	adapter, ok := integrations.Find(integrations.ClaudeCodeRecall)
+	if !ok {
+		t.Fatal("setup cannot find the recall adapter")
+	}
+	var saved config.Integrations
+	*adapter.Consent(&saved) = true
+	if !saved.ClaudeCodeRecall || saved.OpenCode2TitlePolicy {
+		t.Fatalf("consent landed in the wrong field: %+v", saved)
 	}
 }
 

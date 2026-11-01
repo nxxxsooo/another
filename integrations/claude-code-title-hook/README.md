@@ -17,7 +17,7 @@ another's Claude provider already reads ahead of `ai-title` and ahead of the
 derived fallback.
 
 So this names sessions **after** they end. It is a weaker contract than the
-OpenCode 2 plugin — one extra model call per session, and it cannot suppress a
+OpenCode 2 plugin — up to one extra model call per session exit, and it cannot suppress a
 title Claude Code generated itself, only outrank it — and it is the strongest
 one Claude Code currently supports.
 
@@ -26,16 +26,22 @@ one Claude Code currently supports.
 On `SessionEnd`:
 
 1. Reads `session_id` and `transcript_path` from the hook payload.
-2. **Skips if the transcript already has a `custom-title` row.** A title someone
-   set by hand is never overwritten — and because both Claude Code's rename and
-   another's write that same row, the transcript is the entire test. The hook
-   keeps no state of its own.
-3. Otherwise runs `another rename <id> --from claude-code --auto --allow-current
+2. Runs `another rename <id> --from claude-code --auto --if-stale --allow-current
    --refresh`, detached, so exiting a session is never delayed by a model call.
+   another names an unnamed session and refreshes a title it wrote once the
+   session has activity on a later day or three more user turns.
+3. Adds `--replace-native` only when the transcript has no `custom-title` row,
+   so Claude Code's own `ai-title` is replaced. With a `custom-title` row the
+   title came from `/rename` or from another, and another refreshes it only if
+   it wrote it: the last title it wrote is recorded under `title-marks/` in
+   another's config directory, and a title set by hand is never overwritten.
 
 The suggestion comes from the agent configured in `another setup` (page 2) and
-follows the same policy as `Ctrl+R`: the date is computed from the indexed
-creation time in `Asia/Shanghai`, never guessed by the model.
+follows the same policy as `Ctrl+R`, except for the date: a title written by
+this hook carries the date of the session's latest activity in `Asia/Shanghai`,
+so a session resumed today reads as today's work. The model is never trusted
+with the date. Because the hook runs only at `SessionEnd`, a long session's
+title catches up when it exits.
 
 `--allow-current` is required here. another normally refuses to rename the
 session the calling process is running in, because the agent rewrites its own

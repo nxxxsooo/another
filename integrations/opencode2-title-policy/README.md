@@ -1,7 +1,7 @@
 # OpenCode 2 title-policy adapter
 
 This adapter makes OpenCode 2's first automatic session title follow another's
-shared `MMDD｜Type｜Topic` policy with one title model call.
+shared `MMDD｜Type｜Topic` policy, normally with one title model call.
 
 It does three things:
 
@@ -9,9 +9,22 @@ It does three things:
    from `~/.config/another/config.json`;
 2. uses the `title` hook to generate and validate `Type｜Topic`, prefixing the
    session's creation date in `Asia/Shanghai` **before** OpenCode persists the
-   first automatic title; an invalid model answer becomes a dated fallback;
+    first automatic title; rejected output gets up to three corrective retries,
+    then falls back to the original rejected answer with the creation date;
 3. listens for manual `Type｜Topic` renames and dates them through the official
-   `session.update()` API, and repairs still-unnamed sessions on idle.
+   `session.update()` API, and repairs still-unnamed sessions on idle;
+4. keeps its own titles current on idle: on the first turn of a later day, or
+   after three more user turns, it asks the title model whether the session
+   has moved on, and dates the result with the latest activity.
+
+The refresh follows the same rule as `another rename --if-stale`, which names
+the other agents' sessions. The plugin records the last title it wrote in its
+own storage (`ctx.storage`, key `title-mark:<session>`). A title that differs
+from that record was set by someone else and is never refreshed; a policy
+title with no record predates the feature and is adopted. The refresh prompt
+weighs the latest user messages and keeps the current `Type｜Topic` when the
+model repeats it, so it still offers no refusal word. A kept topic on a later
+day is only redated. Turns that meet neither condition make no model call.
 
 The idle repair exists because OpenCode 2 asks for a title once, moments after the
 first prompt, and never asks again. When that single request does not land —
@@ -25,9 +38,19 @@ traffic on whatever provider the user routed it to; a title model the catalog
 hides — a relay pinned in the configuration and marked `deprecated` resolves
 for the native request but is refused when asked for directly — costs nothing
 to try, and the default model answers instead. The answer goes through the same
-policy as an automatic one. An answer that is not a policy title is left unwritten
-rather than forced, so the session stays nameless and the next idle tries
-again.
+policy and bounded corrective retries as an automatic one. Once a title is
+written, including the original-answer fallback, later idle events leave it alone.
+
+English-category titles containing Han characters in their topic are rejected,
+even when the category itself is English. Chinese titles may retain English
+technical names. Validation is local and adds no model call for valid output.
+Rejected output gets at most three correction rounds, stopping on the first
+valid answer. If every correction is invalid or throws, the first rejected
+answer is retained, not the last rejection or a generic replacement. Each round
+retains the existing model-to-default routing fallback described above, so
+provider failures can cause more calls than the four generation rounds.
+An empty original answer or a failed initial generation still uses the dated
+`Explore｜Untitled session` / `探索｜未命名会话` fallback when possible.
 
 Automatic titles no longer depend on a later rename event, which can be missed
 after a plugin reload, service restart, or subscription error. Manual renames
@@ -38,12 +61,13 @@ Invalid manual output is left untouched, and a title that already carries a
 date is not processed again, which stops manual renames from looping.
 The prompt never offers the model a way to decline. OpenCode 2 has no sentinel
 for "no title" — it writes the title agent's answer to the session verbatim —
-so an earlier escape hatch named every unsummarizable session `KEEP`. A refusal
-that still arrives is replaced with the dated `Explore｜Untitled session` /
-`探索｜未命名会话` rather than shown.
+so an earlier escape hatch named every unsummarizable session `KEEP`. Automatic
+refusals now go through the same correction budget and original-answer fallback.
+The manual-rename listener still replaces a refusal with a dated generic title.
 Child sessions keep the name of the task that spawned them. A manual rename
 that happens to be exactly `Type｜Topic` is treated as policy output and gets
-the date; write anything else to opt out. This targets the OpenCode 2.0.4
+the date; write anything else to opt out. Either way it is the person's title,
+not the plugin's, so idle refreshes leave it alone. This targets the OpenCode 2.0.4
 plugin API version pinned in `package.json`.
 
 ## Develop
@@ -62,6 +86,19 @@ another ships this plugin inside its own binary and installs it on request:
 another integrations install   # or turn the row on in `another setup`
 another integrations status
 ```
+
+To install the current working-tree plugin without replacing the released binary,
+run from the repository root:
+
+```bash
+go run ./cmd/another integrations install opencode
+go run ./cmd/another integrations status opencode
+```
+
+This installs the embedded source as a development plugin; it is not a release.
+Verify installed `index.ts` and `policy.ts` against `src/`, and inspect OpenCode's
+server log for plugin reload. A reload and matching files do not by themselves
+prove a live model generation succeeded.
 
 The files land in `<opencode2 config dir>/plugins/another-title-policy/`, which
 OpenCode 2 discovers on its own — no `plugins` entry in `opencode.json(c)`, and

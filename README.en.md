@@ -15,24 +15,32 @@
 </p>
 
 <p align="center">
-  Browse, manage, and resume native coding-agent sessions — or carry one into another agent without replacing it with a summary.
+  Every coding-agent session, in one place — and in any agent.
 </p>
 
 <p align="center">
   <img src="docs/assets/tui-preview.svg" width="100%" alt="another TUI showing sessions from several coding agents and the target picker">
 </p>
 
-You are deep in a session when the model runs out of quota, or the work turns
-out to want a different one. The usual escape is to summarize what happened and
-paste it somewhere else, which throws away the conversation and asks you to
-re-explain it. `another` moves the session itself into the other agent's own
-store, so you open it there and keep going.
+Every coding agent keeps its own history, in its own format, in its own
+corner of the disk. `another` reads all of them into one local list: find a
+session by what was said in it, resume it in the agent that recorded it,
+rename, archive, or clean it up there, and @-mention it from whichever agent
+you are working in now, so an earlier decision does not have to be explained
+twice.
+
+And when the model runs out of quota, or the work turns out to want a
+different one, `another` carries the session itself into the other agent's own
+store, so you open it there and keep going instead of pasting a summary.
 
 ## Features
 
-- **Native sessions:** resumes in the target agent's own format — not a pasted summary.
+- **One list for every agent:** browse, search, preview, resume, rename, archive, delete, and relocate sessions from all of them.
+- **@ mentions across agents:** bring a past session from any agent into the one you are using — Claude Code and Qwen Code list them in `@`, OpenCode through `@another`. Opt-in per agent.
+- **Readable sessions:** `another context` prints a bounded Markdown excerpt for an agent to read; `another export --format markdown` writes the whole transcript.
+- **Titles that keep up:** automatic titles follow the session as it moves on; a title you set yourself is never touched.
+- **Native migration:** carries a session into another agent's own format — not a pasted summary.
 - **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, CommandCode, CodeM, Hermes, Qwen Code, and Antigravity.
-- **One screen:** browse, search, preview, rename, archive, delete, relocate, and migrate without leaving the list.
 - **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects, or `g` to group the list by date or by worktree.
 - **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
@@ -107,7 +115,7 @@ A tap you have already trusted stays trusted; no need to repeat `brew trust`.
 <details>
 <summary><strong>From source</strong></summary>
 
-Go 1.24+:
+Go 1.25+:
 
 ```bash
 go install github.com/nxxxsooo/another/cmd/another@latest
@@ -136,7 +144,7 @@ With `~/.local/bin` or your Go bin directory on `PATH`, run:
 another
 ```
 
-The first run opens a Charmtone setup screen. The top of the first page picks the interface language with `←→`: **Auto** (the default, which follows the terminal's locale), **English**, or **中文**. The page redraws as you press, so a wrong choice is visible immediately instead of after saving. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page offers the six continuously tested agents and CodeM in one flat list, with nothing selected on first run. Cursor, CommandCode, and Hermes appear only when already enabled in a saved configuration, so existing users can still turn them off. The second page picks an optional agent for AI title suggestions; it defaults to off. When OpenCode, Pi, or Antigravity is one of your agents, that page also carries each one's adapter row (`OpenCode title plugin`, `Pi title extension`, `Antigravity title hooks`): the row's number turns it on, and only then does another write the adapter into that agent's configuration directory. The row names that file and what is in it already. Run `another setup` any time to change any of these choices.
+The first run opens a Charmtone setup screen. The top of the first page picks the interface language with `←→`: **Auto** (the default, which follows the terminal's locale), **English**, or **中文**. The page redraws as you press, so a wrong choice is visible immediately instead of after saving. Use `↑↓` to move, `Space` to enable or disable an agent, and `Shift+↑↓` to order agents across the source picker, target picker, and `providers` output, then press `Enter` to continue. The page offers the six continuously tested agents and CodeM in one flat list, with nothing selected on first run. Cursor, CommandCode, and Hermes appear only when already enabled in a saved configuration, so existing users can still turn them off. The second page picks an optional agent for AI title suggestions; it defaults to off. When OpenCode, Pi, Antigravity, or Qwen Code is one of your agents, that page also carries each one's adapter row (`OpenCode title plugin`, `Pi title extension`, `Antigravity title hooks`, `Qwen Code title hooks`): the row's number turns it on, and only then does another write the adapter into that agent's configuration directory. The row names that file and what is in it already. Run `another setup` any time to change any of these choices.
 
 Ghostty over SSH usually forwards `TERM=xterm-ghostty` without forwarding
 `COLORTERM`. From `v0.13.3`, another recognizes that environment directly and
@@ -219,6 +227,39 @@ The footer carries only the keys every session uses, ending in `?`. That opens t
 
 On a terminal narrower than 64 columns — a phone reaching a machine over SSH — the rows give the title the cells the other columns can spare. With one agent selected the agent chip goes, since the header already names it; the message count drops its unit; under date bands the `MMDD｜` prefix goes, since the band places the session in time. The footer then spells out the selected session's full title over two lines, prefix included. Wider terminals keep the layout described above.
 
+## @ mentions
+
+Turn on `<agent> session @ mentions` on the second setup page, or run
+`another integrations install claude-code opencode qwen --kind recall`. another
+then registers its own MCP server (`another mcp`) with that agent, and the
+agent reads this project's sessions — from every agent another indexes —
+through it:
+
+- **Claude Code** and **Qwen Code** list the most recent sessions of the
+  project directly in their `@` picker. Pick one and the agent receives a
+  bounded excerpt: the title, agent, and dates, then the opening and closing
+  turns of the conversation (at most 24,000 characters).
+- **OpenCode V2** lists skills but not MCP resources in its `@` picker
+  ([anomalyco/opencode#61071](https://github.com/anomalyco/opencode/issues/61071)),
+  so another also installs an `another` skill: `@another the webhook retry
+  session` has the agent find that session and read the same excerpt.
+
+The server is scoped to the project it starts in — the repository and its
+worktrees, or the directory and what is below it — and a session from any
+other project reads as not found. It is read-only and offers no tools.
+Claude Code registers it through its own `claude mcp add --scope user`;
+OpenCode and Qwen Code get one entry in their configuration file, written
+without disturbing comments, order, or formatting, and removed exactly by
+`another integrations remove --kind recall`. Whatever you mention is sent to
+the model the agent uses.
+
+The same excerpt is available on the command line:
+
+```bash
+another context <session-id>                       # bounded Markdown excerpt
+another export <session-id> --format markdown -o - # the whole transcript
+```
+
 ## Relocate
 
 Same agent, different working directory: a worktree you just created, a repository that moved, or work that belonged in the project next door all along. Press `m` and type the target directory — the box suggests this repository's worktrees, completes the path you are typing, and offers directories you have recently worked in; `↑↓` highlights one and `→` or `Enter` puts it in the box. `Tab` chooses between two readings:
@@ -288,15 +329,20 @@ The batch header names the agent, model, and language this run uses, and `m` ope
 
 Generating titles leaves a trace of its own: Codex, Antigravity, and OpenCode record a session for every headless run with no way to opt out. Claude Code and CodeM offer an off switch, so another uses `--no-session-persistence` and `--no-session`: the run is never written down at all, which beats recognizing the leftover afterwards (the Claude Code run also passes `--disable-slash-commands`, because session content is untrusted input and has no business invoking a command or a skill). another recognizes the leftovers the other agents still write and keeps them out of the index, along with the ones older builds of Claude Code left behind — the prompt's fixed first line, or the `another-titler-*` throwaway directory the run happened in, identifies them. Antigravity evades both, because it names the run after the answer, which leaves the leftover wearing a title that satisfies another's own naming contract, and it records no working directory at all; sessions short enough to be a leftover are therefore opened and matched against the prompt itself, while longer ones are never read. Leftovers an older build already indexed are evicted too. Only another's index is touched; the agent's own session files stay where that agent put them. Once generation finishes or is cancelled, `m` swaps the model for this batch only — empty means that CLI's default — and `Enter` re-runs the same sessions on it. The override is never written back to config: a cheap model for forty old sessions should not become the default for the next single rename.
 
-OpenCode V2 can enforce the same contract during its native first-title request without a second model call. On OpenCode 2.0.4, the adapter uses the `title` hook to include the session creation date before the first title is saved, rather than relying on a later rename event to add it. Existing titles are not rewritten. The adapter ships inside the another binary: turn on the `OpenCode title plugin` row on the second setup page, or run `another integrations install opencode`, and another writes the plugin into OpenCode V2's `plugins/another-title-policy/` and records what it wrote. It writes that one directory and never edits your `opencode.json(c)`, because OpenCode V2 discovers the directory on its own. After upgrading another, check `another integrations status opencode`, then run `another integrations install opencode` to update the installed plugin (or revisit setup); files you have edited are never overwritten. Source and details are under [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/). Pi works the same way: another ships an extension of its own, turned on by the `Pi title extension` row on the second setup page or by `another integrations install pi`, and written into Pi's `extensions/another-title-policy/` — Pi discovers that directory itself, and another never edits your `settings.json`. The extension generates no titles: when a turn settles (`agent_settled`) it calls `another rename --auto`, so the policy, the language, and the title agent all stay in the binary. Source is under [`integrations/pi-title-policy/`](integrations/pi-title-policy/). Antigravity ships its own adapter too: turn on the `Antigravity title hooks` row on the second setup page, or run `another integrations install agy`, and another merges a Stop hook group into Antigravity's shared `hooks.json` (`~/.gemini/config/hooks.json`; groups written by other tools are preserved byte for byte). At the end of an idle turn the hook calls `another rename --auto`, so the policy, the language, and the title agent all stay in the binary. Hooks fire only in interactive sessions (`--print` runs no hook events at all); while a continuation is queued the rename waits for the next idle turn, and if `another` is not on PATH the failure lands only in Antigravity's own log. Source and details live in `internal/integrations/agy.go`. Claude Code exposes no title agent to override and no "session was named" event, so it can only be named after the session ends: the SessionEnd hook under [`integrations/claude-code-title-hook/`](integrations/claude-code-title-hook/) calls `another rename --auto` and writes Claude Code's own `custom-title` record, so the name also shows in its own session list. A session titled by hand is skipped and never overwritten; this one is installed by hand. Codex has no stable native title-policy surface yet and remains managed through another.
+OpenCode V2 can enforce the same contract during its native first-title request without a second model call. On OpenCode 2.0.4, the adapter uses the `title` hook to include the session creation date before the first title is saved, rather than relying on a later rename event to add it. The adapter ships inside the another binary: turn on the `OpenCode title plugin` row on the second setup page, or run `another integrations install opencode`, and another writes the plugin into OpenCode V2's `plugins/another-title-policy/` and records what it wrote. It writes that one directory and never edits your `opencode.json(c)`, because OpenCode V2 discovers the directory on its own. After upgrading another, check `another integrations status opencode`, then run `another integrations install opencode` to update the installed plugin (or revisit setup); files you have edited are never overwritten. Source and details are under [`integrations/opencode2-title-policy/`](integrations/opencode2-title-policy/). Pi works the same way: another ships an extension of its own, turned on by the `Pi title extension` row on the second setup page or by `another integrations install pi`, and written into Pi's `extensions/another-title-policy/` — Pi discovers that directory itself, and another never edits your `settings.json`. The extension generates no titles: when a turn settles (`agent_settled`) it calls `another rename --auto`, so the policy, the language, and the title agent all stay in the binary. Source is under [`integrations/pi-title-policy/`](integrations/pi-title-policy/). Antigravity ships its own adapter too: turn on the `Antigravity title hooks` row on the second setup page, or run `another integrations install agy`, and another merges a Stop hook group into Antigravity's shared `hooks.json` (`~/.gemini/config/hooks.json`; groups written by other tools are preserved byte for byte). At the end of an idle turn the hook calls `another rename --auto`, so the policy, the language, and the title agent all stay in the binary. Hooks fire only in interactive sessions (`--print` runs no hook events at all); while a continuation is queued the rename waits for the next idle turn, and if `another` is not on PATH the failure lands only in Antigravity's own log. Source and details live in `internal/integrations/agy.go`. Qwen Code ships its own adapter as well: turn on the `Qwen Code title hooks` row on the second setup page, or run `another integrations install qwen`, and another merges a Stop hook into Qwen Code's shared `settings.json` (`~/.qwen/settings.json`; every other setting and hook keeps its value, though the file is rewritten as indented JSON with sorted keys). At the end of an idle turn the hook calls `another rename --auto`, so the policy, the language, and the title agent all stay in the binary. Source and details live in `internal/integrations/qwen.go`. Claude Code exposes no title agent to override and no "session was named" event, so it can only be named after the session ends: the SessionEnd hook under [`integrations/claude-code-title-hook/`](integrations/claude-code-title-hook/) calls `another rename --auto` and writes Claude Code's own `custom-title` record, so the name also shows in its own session list. A session titled by hand is skipped and never overwritten; this one is installed by hand. Codex has no stable native title-policy surface yet and remains managed through another.
+
+Titles these adapters write follow the session instead of freezing after the first turn. A title another wrote is reconsidered when the session has activity on a later day — picking it up again tomorrow — or when it has gained three user turns since the title was written. The model then weighs the latest turns and either keeps the `Type｜Topic` or replaces it. The `MMDD` prefix follows the latest activity, so an old session resumed today reads as today's work; the creation date stays in the list's columns. Turns that meet neither condition cost no model call. A title set by hand is always kept: another remembers the last title it wrote, and a title that differs from it was changed by someone else and is never touched again; clearing it hands the session back to automatic naming. Pi, Antigravity, Qwen Code, and Claude Code go through `another rename --auto --if-stale`, which records those titles under `title-marks/` in another's config directory; the OpenCode plugin applies the same rule with the plugin's own storage. Claude Code's hook fires only at SessionEnd, so its titles update each time a session exits. Hooks installed by earlier releases still pass `--skip-conforming`, which keeps working as `--if-stale --replace-native`; rerun setup or `another integrations install` to replace them.
 
 ## CLI
 
 ```bash
 # Browse and search
-another list [--provider ID] [--project PATH] [--cwd] [--limit N] [--json] [--refresh]
-another search "query" [--provider ID] [--project PATH] [--cwd] [--limit N] [--json]
-another show <session-id> [--provider ID] [--limit N]
+# list, search, show, and context read the current project (the repository and
+# its worktrees, or this directory and below); --all reads every project.
+another list [--provider ID] [--project PATH] [--all] [--limit N] [--json] [--refresh]
+another search "query" [--provider ID] [--project PATH] [--all] [--limit N] [--json]
+another show <session-id> [--provider ID] [--limit N] [--all]
+another context <session-id> [--provider ID] [--all]   # bounded Markdown for an agent to read
 
 # Move a session
 another migrate <session-id> --to <provider> [--from ID] [-y]
@@ -313,6 +359,7 @@ another rename <session-id> --auto [--dry-run]   # ask the configured title agen
 
 # Portable backup
 another export <session-id> -o session.another.json
+another export <session-id> --format markdown -o -    # readable transcript
 another import session.another.json --to <provider> [--context MODE] [--dry-run] -y
 
 # Configuration and index
@@ -320,6 +367,8 @@ another setup
 another integrations                      # adapter status
 another integrations install [agent...]  # install or update adapters; no agent means all
 another integrations remove [agent...]
+another integrations install claude-code opencode qwen --kind recall  # @ mentions
+another mcp                               # MCP server agents launch for @ mentions
 another index update
 another index rebuild
 
@@ -401,7 +450,7 @@ python3 ./scripts/render-mark-transparent.py                       # transparent
 
 ## The name
 
-The literal meaning comes first: keep the session, continue in **another** agent.
+The literal meaning comes first: every session, in any agent — keep the session, continue in **another** one.
 
 The name is also a quiet nod to [*Another*](https://www.pa-works.jp/works/another/), the 2012 mystery-horror anime from P.A.WORKS based on Yukito Ayatsuji's novel. Its idea of an extra presence whose identity is hard to distinguish became a secondary metaphor for migrated sessions: the same conversational identity appears somewhere else, in another native form. This is conceptual inspiration, not an affiliation or a visual adaptation; the project does not reuse the series' logo, characters, or artwork.
 

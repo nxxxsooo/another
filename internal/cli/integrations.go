@@ -20,31 +20,49 @@ import (
 // what a person is actually choosing. Naming none means every adapter another
 // ships, which is what an upgrade or a scripted reinstall wants.
 func (a *App) integrationsCmd() *cobra.Command {
+	validArgs := append(integrations.Providers(), integrations.RecallProviders()...)
 	cmd := &cobra.Command{
 		Use:   "integrations",
 		Short: "Adapters another installs into other agents",
 		Args:  cobra.NoArgs,
 	}
-	var configDir string
+	var configDir, kindName string
 	var forceInstall, forceRemove bool
 	cmd.PersistentFlags().StringVar(&configDir, "config-dir", "",
 		"config directory of the named agent (requires naming one adapter)")
+	cmd.PersistentFlags().StringVar(&kindName, "kind", string(integrations.KindTitle),
+		"adapter kind: title (naming policy) or recall (@ mentions of past sessions)")
 
 	// targets resolves the adapter names on the command line. --config-dir
 	// overrides where one agent's configuration is, so it cannot be given to
 	// a run that covers several: the directory would be wrong for all but one.
 	targets := func(args []string) ([]integrations.Adapter, error) {
+		kind := integrations.Kind(kindName)
+		lookup, names := integrations.ForProvider, integrations.Providers()
+		switch kind {
+		case integrations.KindTitle:
+		case integrations.KindRecall:
+			lookup, names = integrations.RecallForProvider, integrations.RecallProviders()
+		default:
+			return nil, fmt.Errorf("unknown --kind %q: title or recall", kindName)
+		}
 		if len(args) == 0 {
 			if configDir != "" {
-				return nil, fmt.Errorf("--config-dir needs one agent: %s", strings.Join(integrations.Providers(), ", "))
+				return nil, fmt.Errorf("--config-dir needs one agent: %s", strings.Join(names, ", "))
 			}
-			return integrations.Adapters(), nil
+			var all []integrations.Adapter
+			for _, adapter := range integrations.Adapters() {
+				if adapter.Of() == kind {
+					all = append(all, adapter)
+				}
+			}
+			return all, nil
 		}
 		chosen := make([]integrations.Adapter, 0, len(args))
 		for _, name := range args {
-			adapter, ok := integrations.ForProvider(name)
+			adapter, ok := lookup(name)
 			if !ok {
-				return nil, fmt.Errorf("no adapter for %q: %s", name, strings.Join(integrations.Providers(), ", "))
+				return nil, fmt.Errorf("no %s adapter for %q: %s", kind, name, strings.Join(names, ", "))
 			}
 			chosen = append(chosen, adapter)
 		}
@@ -65,7 +83,7 @@ func (a *App) integrationsCmd() *cobra.Command {
 	status := &cobra.Command{
 		Use:       "status [agent...]",
 		Short:     "Report the installed adapters",
-		ValidArgs: integrations.Providers(),
+		ValidArgs: validArgs,
 		Args:      cobra.OnlyValidArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			chosen, err := targets(args)
@@ -80,8 +98,8 @@ func (a *App) integrationsCmd() *cobra.Command {
 	}
 	install := &cobra.Command{
 		Use:       "install [agent...]",
-		Short:     "Install or refresh the title-policy adapters",
-		ValidArgs: integrations.Providers(),
+		Short:     "Install or refresh adapters (--kind title or recall)",
+		ValidArgs: validArgs,
 		Args:      cobra.OnlyValidArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			chosen, err := targets(args)
@@ -115,8 +133,8 @@ func (a *App) integrationsCmd() *cobra.Command {
 	install.Flags().BoolVar(&forceInstall, "force", false, "overwrite files another did not write")
 	remove := &cobra.Command{
 		Use:       "remove [agent...]",
-		Short:     "Remove the title-policy adapters",
-		ValidArgs: integrations.Providers(),
+		Short:     "Remove adapters (--kind title or recall)",
+		ValidArgs: validArgs,
 		Args:      cobra.OnlyValidArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			chosen, err := targets(args)
@@ -195,15 +213,34 @@ func applyIntegrations(settings config.Settings, resolvers map[string]func() int
 // adapterLabel names an adapter the way a report should read, rather than by
 // its manifest id.
 func adapterLabel(adapter integrations.Adapter) string {
-	if adapter.ID == integrations.Pi {
+	switch adapter.ID {
+	case integrations.Pi:
 		return "Pi title extension"
+	case integrations.Agy:
+		return "Antigravity title hooks"
+	case integrations.Qwen:
+		return "Qwen Code title hooks"
+	case integrations.ClaudeCodeRecall:
+		return "Claude Code session mentions"
+	case integrations.OpenCodeRecall:
+		return "OpenCode session mentions"
+	case integrations.QwenRecall:
+		return "Qwen Code session mentions"
+	default:
+		return "OpenCode title plugin"
 	}
-	return "OpenCode title plugin"
 }
 
 func printIntegration(adapter integrations.Adapter, status integrations.Status) {
 	fmt.Printf("%-24s %s\n", adapter.ID, integrationStateText(status))
-	fmt.Printf("    files: %s\n", util.TildePath(status.Dir))
+	if adapter.Of() == integrations.KindRecall {
+		fmt.Printf("    config: %s (MCP server %q)\n", util.TildePath(status.Dir), integrations.MCPServerName)
+		if adapter.ID == integrations.OpenCodeRecall {
+			fmt.Printf("    skill: %s (@%s)\n", util.TildePath(integrations.OpenCodeSkillDir(status.ConfigDir)), "another")
+		}
+	} else {
+		fmt.Printf("    files: %s\n", util.TildePath(status.Dir))
+	}
 	if status.Language != "" {
 		fmt.Printf("    title language: %s\n", status.Language)
 	}

@@ -30,7 +30,7 @@ A neighboring tool could copy the browser. It could not truthfully copy "the oth
 
 ## Operating Context
 
-- The product itself is a terminal UI: Go 1.24, Bubble Tea, Lip Gloss, Charmtone palette, run as `another` in a normal terminal.
+- The product itself is a terminal UI: Go 1.25, Bubble Tea, Lip Gloss, Charmtone palette, run as `another` in a normal terminal.
 - `## Platform: web` refers to the public design surface, which is the GitHub repository page: README, badges, TUI preview, release assets, About panel, social preview. The application is terminal-native and is not a web app.
 - Install is `curl -fsSL .../install.sh | bash` or `go install github.com/nxxxsooo/another/cmd/another@latest`. Updates are manual; installed binaries do not self-update.
 - First run opens `another setup`, a multi-select of which agents `another` manages. It is re-runnable at any time.
@@ -50,7 +50,7 @@ A neighboring tool could copy the browser. It could not truthfully copy "the oth
 - Disabling a provider in setup prunes it from the index and registry but never deletes native sessions.
 - Archived sessions are excluded from the default list. There is no archive-browsing view yet — a deliberate omission so roughly ten thousand archived Codex rollouts do not flood the list.
 - The TUI renders in English or Chinese. The preference lives in `ui.language` (`auto`, `en`, `zh`); `auto` resolves the terminal locale and falls back to English. It is deliberately separate from the title language, whose `auto` follows the session's own content. The CLI's help, flags, and errors stay English.
-- macOS and Linux. Go 1.24+ to build from source.
+- macOS and Linux. Go 1.25+ to build from source.
 
 ## Brand Commitments
 

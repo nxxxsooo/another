@@ -13,7 +13,7 @@ make build
 go test ./...
 ```
 
-Requires Go 1.24 or newer. The SQLite index is a cache under `~/.cache/another/`; `another index rebuild` recreates it from the agents' own stores, so deleting it is always safe.
+Requires Go 1.25 or newer. The SQLite index is a cache under `~/.cache/another/`; `another index rebuild` recreates it from the agents' own stores, so deleting it is always safe.
 
 `make build` writes `bin/another`, and running it as `./bin/another` keeps a development build out of `PATH`. To carry one between terminals, `make install` puts it at `~/.local/bin/another-dev` — never at `another`, which belongs to whatever you installed from a release. Both builds stamp their own version, and a build from this Makefile always ends in `+dev`, so `--version` says which one you are looking at even when the tree sits exactly on a tag.
 

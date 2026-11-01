@@ -35,7 +35,7 @@ func TestCommandSurface(t *testing.T) {
 			t.Errorf("index %s missing --metadata-only", name)
 		}
 	}
-	for _, flag := range []string{"provider", "cwd", "include-subagents", "limit", "json", "no-wait"} {
+	for _, flag := range []string{"provider", "all", "include-subagents", "limit", "json", "no-wait"} {
 		if search.Flags().Lookup(flag) == nil {
 			t.Errorf("missing search --%s", flag)
 		}

@@ -14,13 +14,14 @@ import (
 	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/titlemark"
 	"github.com/nxxxsooo/another/internal/titler"
 	"github.com/spf13/cobra"
 )
 
 func (a *App) renameCmd() *cobra.Command {
 	var from, title string
-	var auto, dryRun, refresh, allowCurrent, skipConforming, hookStdin bool
+	var auto, dryRun, refresh, allowCurrent, ifStale, replaceNative, skipConforming, hookStdin bool
 	cmd := &cobra.Command{
 		Use:   "rename <session-id>",
 		Short: "Rename a session in its agent's own title store",
@@ -40,6 +41,19 @@ func (a *App) renameCmd() *cobra.Command {
 			if (title != "") == auto {
 				return fmt.Errorf("pass exactly one of --title or --auto")
 			}
+			// --skip-conforming is what hooks installed by earlier releases
+			// still pass, and they sit in other agents' configuration until
+			// setup refreshes them. It meant "name what lacks a policy
+			// title", which --if-stale with --replace-native still does.
+			if skipConforming {
+				ifStale, replaceNative = true, true
+			}
+			if ifStale && !auto {
+				return fmt.Errorf("--if-stale needs --auto")
+			}
+			if replaceNative && !ifStale {
+				return fmt.Errorf("--replace-native needs --if-stale")
+			}
 			if hookStdin && len(args) > 0 {
 				return fmt.Errorf("pass the session id either as an argument or through --hook-stdin, not both")
 			}
@@ -55,8 +69,8 @@ func (a *App) renameCmd() *cobra.Command {
 				if !idle {
 					// The agent has another invocation queued; renaming now
 					// races the turn still to come. The next idle turn will
-					// name it, and --skip-conforming keeps every later turn
-					// from spending another title call.
+					// name it, and --if-stale keeps turns that changed
+					// nothing from spending another title call.
 					fmt.Println("Skipped: the agent is still running; the next idle turn names it")
 					return nil
 				}
@@ -87,21 +101,13 @@ func (a *App) renameCmd() *cobra.Command {
 			if provider.IsCurrentSession(*sm) && !allowCurrent {
 				return fmt.Errorf("refusing to rename %s: it is the session this process is running in (pass --allow-current from a SessionEnd hook)", sm.ID)
 			}
-			// A title that already follows the policy is left where it is.
-			// The check belongs to another rather than to the caller: an
-			// extension matching the format itself would be a second policy,
-			// and the one place a trigger could read the current title —
-			// the agent's own in-memory session name — cannot see the title
-			// another wrote straight into the session store.
-			if auto && skipConforming {
-				cfg, err := titleConfig()
-				if err != nil {
-					return err
-				}
-				if titler.Conforms(cfg.Language, sm.Title) {
-					fmt.Printf("Unchanged: %s already follows the policy (%s)\n", sm.ID, sm.Title)
-					return nil
-				}
+			// Whether a title is due belongs to another rather than to the
+			// caller: an extension judging the format itself would be a
+			// second policy, and the one place a trigger could read the
+			// current title — the agent's own in-memory session name —
+			// cannot see the title another wrote straight into the store.
+			if ifStale {
+				return a.renameIfStale(ctx, p, renamer, *sm, replaceNative, dryRun)
 			}
 			if auto {
 				suggested, err := a.suggestTitle(ctx, p, *sm)
@@ -114,35 +120,7 @@ func (a *App) renameCmd() *cobra.Command {
 				fmt.Printf("Dry run OK: would rename %s to %q\n", sm.ID, title)
 				return nil
 			}
-			// ErrPartial is a caveat, not a failure: the agent's own store has
-			// the new title and some surface it also reads does not. Reporting
-			// failure would send the caller to redo a rename that happened.
-			var caveat error
-			if err := renamer.RenameSession(ctx, provider.SessionRef{
-				ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath,
-			}, title); err != nil {
-				if !errors.Is(err, provider.ErrPartial) {
-					return err
-				}
-				caveat = err
-			}
-			if st, err := journal.Open(); err == nil {
-				now := time.Now()
-				_ = st.Record(journal.Entry{
-					ID: journal.NewID(now), At: now, Action: journal.ActionRename,
-					Provider: sm.Provider, Session: sm.ID, Title: sm.Title,
-					Project: sm.ProjectPath, Storage: sm.StoragePath,
-					Before: sm.Title, After: title, Revertible: true,
-				})
-			}
-			if _, err := index.UpdateIncremental(ctx, a.Registry, a.Index, sm.Provider); err != nil {
-				fmt.Printf("⚠️  Warning: renamed, but index refresh failed: %s\n", err)
-			}
-			fmt.Printf("✅ Renamed %s to %s\n", sm.ID, title)
-			if caveat != nil {
-				fmt.Printf("   Caveat: %s\n", caveat)
-			}
-			return nil
+			return a.applyRename(ctx, renamer, *sm, title)
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "new title, used verbatim")
@@ -151,9 +129,135 @@ func (a *App) renameCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&allowCurrent, "allow-current", false, "permit renaming the running session (SessionEnd hooks)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "resolve and suggest without writing")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before rename")
-	cmd.Flags().BoolVar(&skipConforming, "skip-conforming", false, "with --auto, leave a title that already follows the policy")
+	cmd.Flags().BoolVar(&ifStale, "if-stale", false,
+		"with --auto, name an untitled session and refresh a title another wrote once the session moves to a new day or gains 3 user turns; titles set by hand are kept")
+	cmd.Flags().BoolVar(&replaceNative, "replace-native", false,
+		"with --if-stale, treat a non-policy title on a session another never titled as the agent's own automatic name and replace it")
+	cmd.Flags().BoolVar(&skipConforming, "skip-conforming", false, "deprecated: same as --if-stale --replace-native")
+	_ = cmd.Flags().MarkHidden("skip-conforming")
 	cmd.Flags().BoolVar(&hookStdin, "hook-stdin", false, "read the session id from a hook payload on stdin")
 	return cmd
+}
+
+// suggestRetrying is the title model call. Tests replace it: a stub agent CLI
+// cannot print the full-width separator reliably through a Windows console.
+var suggestRetrying = titler.SuggestRetrying
+
+// applyRename writes title through the agent's own rename and records it.
+func (a *App) applyRename(ctx context.Context, renamer provider.SessionRenamer, sm model.Summary, title string) error {
+	// ErrPartial is a caveat, not a failure: the agent's own store has the
+	// new title and some surface it also reads does not. Reporting failure
+	// would send the caller to redo a rename that happened.
+	var caveat error
+	if err := renamer.RenameSession(ctx, provider.SessionRef{
+		ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath,
+	}, title); err != nil {
+		if !errors.Is(err, provider.ErrPartial) {
+			return err
+		}
+		caveat = err
+	}
+	if st, err := journal.Open(); err == nil {
+		now := time.Now()
+		_ = st.Record(journal.Entry{
+			ID: journal.NewID(now), At: now, Action: journal.ActionRename,
+			Provider: sm.Provider, Session: sm.ID, Title: sm.Title,
+			Project: sm.ProjectPath, Storage: sm.StoragePath,
+			Before: sm.Title, After: title, Revertible: true,
+		})
+	}
+	if _, err := index.UpdateIncremental(ctx, a.Registry, a.Index, sm.Provider); err != nil {
+		fmt.Printf("⚠️  Warning: renamed, but index refresh failed: %s\n", err)
+	}
+	fmt.Printf("✅ Renamed %s to %s\n", sm.ID, title)
+	if caveat != nil {
+		fmt.Printf("   Caveat: %s\n", caveat)
+	}
+	return nil
+}
+
+// renameIfStale is the dynamic title a hook asks for after each turn: name a
+// session with no title another owns, refresh one another wrote once the
+// session reaches a later day or RefreshTurns more user turns, and never
+// replace a title someone else set. A refreshed title carries the date of the
+// latest activity, so a session resumed today reads as today's work.
+func (a *App) renameIfStale(ctx context.Context, p provider.Provider, renamer provider.SessionRenamer, sm model.Summary, replaceNative, dryRun bool) error {
+	cfg, err := titleConfig()
+	if err != nil {
+		return err
+	}
+	// The whole session, not a preview: the turn count is the drift signal,
+	// and a refresh is about how the session ends rather than how it opened.
+	conv, err := p.Load(ctx, provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath})
+	if err != nil {
+		return err
+	}
+	var msgs []model.Message
+	activity := sm.UpdatedAt
+	if conv != nil {
+		msgs = conv.Messages
+		if conv.UpdatedAt.After(activity) {
+			activity = conv.UpdatedAt
+		}
+	}
+	if activity.Unix() <= 0 {
+		activity = time.Now()
+	}
+	turns := titler.UserTurns(msgs)
+	marks := titlemark.Open()
+	remember := func(title string) {
+		if dryRun {
+			return
+		}
+		if err := marks.Save(sm.Provider, sm.ID, titler.Mark{Title: title, UserTurns: turns, At: time.Now()}); err != nil {
+			fmt.Printf("⚠️  Warning: could not record the title for later refreshes: %s\n", err)
+		}
+	}
+
+	decision := titler.Decide(titler.Freshness{
+		Title: sm.Title, Mark: marks.Load(sm.Provider, sm.ID), UserTurns: turns,
+		Activity: activity, Language: cfg.Language, ReplaceNative: replaceNative,
+	})
+	switch decision.Plan {
+	case titler.PlanSkip:
+		fmt.Printf("Unchanged: %s keeps %q (%s)\n", sm.ID, sm.Title, decision.Reason)
+		return nil
+	case titler.PlanAdopt:
+		remember(sm.Title)
+		fmt.Printf("Unchanged: %s keeps %q (%s)\n", sm.ID, sm.Title, decision.Reason)
+		return nil
+	}
+
+	refreshing := decision.Plan == titler.PlanRefresh
+	suggestion, err := suggestRetrying(ctx, cfg, titler.Request{
+		Title: sm.Title, ProjectPath: sm.ProjectPath, CreatedAt: sm.CreatedAt,
+		Date: activity, Messages: msgs, Refresh: refreshing,
+	})
+	if err != nil {
+		return err
+	}
+	title := titler.Redate(suggestion, activity)
+	switch {
+	case title == "" && !refreshing:
+		return fmt.Errorf("%s returned no title matching the policy", cfg.Provider)
+	case refreshing && (title == "" || titler.Topic(title) == titler.Topic(sm.Title)):
+		// The model kept the topic. A new day still moves the date.
+		title = titler.Redate(sm.Title, activity)
+	}
+	if title == strings.TrimSpace(sm.Title) {
+		remember(title)
+		fmt.Printf("Unchanged: %s still fits (%s)\n", sm.ID, title)
+		return nil
+	}
+	if dryRun {
+		fmt.Printf("Dry run OK: would rename %s to %q (%s)\n", sm.ID, title, decision.Reason)
+		return nil
+	}
+	if err := a.applyRename(ctx, renamer, sm, title); err != nil {
+		return err
+	}
+	remember(title)
+	return nil
 }
 
 // titleConfig reads the title agent the user chose in setup. Both the policy

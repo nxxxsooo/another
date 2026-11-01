@@ -14,9 +14,12 @@ after every automatic retry, compaction, and queued continuation has finished;
 `agent_end` fires earlier and once per retry, so naming on both spends two
 title-model calls on an ordinary turn and races two renames onto one session.
 
-A session whose name already matches the policy is left alone, so a title set
-by hand survives. `--skip-conforming` is what decides that, which puts the
-decision in the same place as the policy. The extension used to decide it here
+The extension passes `--if-stale`, so another decides whether a title is due:
+an unnamed session is named, a title another wrote is refreshed on the first
+turn of a later day or after three more user turns, and a name set with `/name`
+is kept. That puts the decision in the same place as the policy. It passes no
+`--replace-native`, because Pi never names a session itself — any other name
+came from a person. The extension used to decide whether to rename here
 by matching the format itself and reading `pi.getSessionName()` — the name Pi
 holds in memory, which never learns about the title another wrote into the
 session file. The guard therefore stopped working after the first rename, and

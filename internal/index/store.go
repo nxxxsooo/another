@@ -501,7 +501,6 @@ type ListOpts struct {
 	Provider      string
 	ProjectFilter string
 	ProjectExact  string
-	ProjectCWD    string   // sessions whose project_path equals this directory exactly
 	ProjectRoots  []string // sessions at or below any root (used for one Git repository's worktrees)
 	// Since drops sessions whose last message is older than it, which is what a
 	// display window means. Zero is no window. It is Unix seconds, the unit the
@@ -571,16 +570,6 @@ func (s *Store) listWhere(opts ListOpts) (string, []any) {
 			q += `0`
 		}
 		q += `)`
-	} else if opts.ProjectCWD != "" {
-		norm := util.NormalizeProjectPath(opts.ProjectCWD)
-		home := util.HomeDir()
-		if home != "" && norm == home {
-			q += ` AND project_path LIKE ? ESCAPE '\'`
-			args = append(args, util.EscapeLikeChildPrefix(norm))
-		} else {
-			q += ` AND project_path = ?`
-			args = append(args, norm)
-		}
 	} else if opts.ProjectExact != "" {
 		norm := util.NormalizeProjectPath(opts.ProjectExact)
 		if norm == opts.ProjectExact {

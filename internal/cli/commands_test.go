@@ -2,8 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -35,10 +37,10 @@ func seededApp(t *testing.T) (*App, *fakeProvider, *fakeProvider, string) {
 
 func TestListPrintsIndexedSessions(t *testing.T) {
 	app, _, _, _ := seededApp(t)
-	out := mustRun(t, app, "list")
+	out := mustRun(t, app, "list", "--all")
 	wantContains(t, out, "PROVIDER", "TITLE", "Stripe webhook retry", "Old project notes", "Fake alpha")
 
-	out = mustRun(t, app, "list", "--json", "--provider", "alpha")
+	out = mustRun(t, app, "list", "--all", "--json", "--provider", "alpha")
 	var items []model.Summary
 	if err := json.Unmarshal([]byte(out), &items); err != nil {
 		t.Fatalf("json: %v\n%s", err, out)
@@ -47,7 +49,7 @@ func TestListPrintsIndexedSessions(t *testing.T) {
 		t.Fatalf("items = %d", len(items))
 	}
 
-	out = mustRun(t, app, "list", "--limit", "1", "--json")
+	out = mustRun(t, app, "list", "--all", "--limit", "1", "--json")
 	items = nil
 	if err := json.Unmarshal([]byte(out), &items); err != nil || len(items) != 1 {
 		t.Fatalf("limit: %d items, %v", len(items), err)
@@ -61,12 +63,12 @@ func TestListPrintsIndexedSessions(t *testing.T) {
 
 func TestShowPrintsMessages(t *testing.T) {
 	app, _, _, _ := seededApp(t)
-	out := mustRun(t, app, "show", "alpha-one")
+	out := mustRun(t, app, "show", "alpha-one", "--all")
 	wantContains(t, out, "Session alpha-one (alpha)", "Messages: 3", "[user]", "stripe webhook", "[assistant]")
-	out = mustRun(t, app, "show", "alpha-two")
+	out = mustRun(t, app, "show", "alpha-two", "--all")
 	wantContains(t, out, "Messages: 2", "wiki export")
 
-	out = mustRun(t, app, "show", "alpha-one", "--limit", "1", "--raw")
+	out = mustRun(t, app, "show", "alpha-one", "--all", "--limit", "1", "--raw")
 	if strings.Contains(out, "stripe webhook") || !strings.Contains(out, "ship it") {
 		t.Fatalf("--limit 1 should keep only the last message:\n%s", out)
 	}
@@ -77,7 +79,7 @@ func TestShowPrintsMessages(t *testing.T) {
 
 func TestSearchFindsMessageText(t *testing.T) {
 	app, _, _, _ := seededApp(t)
-	out := mustRun(t, app, "search", "idempotent", "--json")
+	out := mustRun(t, app, "search", "idempotent", "--all", "--json")
 	var res struct {
 		Results []struct {
 			Session model.Summary `json:"session"`
@@ -89,8 +91,113 @@ func TestSearchFindsMessageText(t *testing.T) {
 	if len(res.Results) != 1 || res.Results[0].Session.ID != "alpha-one" {
 		t.Fatalf("results = %+v", res.Results)
 	}
-	out = mustRun(t, app, "search", "webhook", "--no-wait")
+	out = mustRun(t, app, "search", "webhook", "--all", "--no-wait")
 	wantContains(t, out, "TITLE / SNIPPET", "Stripe webhook retry")
+}
+
+// list, search, and show read the directory they run in the way the browser
+// does: the project and everything below it, never a sibling that merely shares
+// its name prefix, and nothing from elsewhere until --all says so.
+func TestCLIDefaultsToCurrentProject(t *testing.T) {
+	alpha, beta := newFake(t, "alpha"), newFake(t, "beta")
+	base := t.TempDir()
+	project := filepath.Join(base, "repo")
+	child := filepath.Join(project, "internal", "cli")
+	sibling := filepath.Join(base, "repo-old")
+	for _, dir := range []string{child, sibling} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alpha.seed(t, sampleConversation("here", project, "Here webhook"))
+	beta.seed(t, sampleConversation("below", child, "Below webhook"))
+	alpha.seed(t, sampleConversation("sibling", sibling, "Sibling webhook"))
+	beta.seed(t, sampleConversation("elsewhere", t.TempDir(), "Elsewhere webhook"))
+	app := newTestApp(t, alpha, beta)
+	t.Chdir(project)
+
+	ids := func(args ...string) []string {
+		t.Helper()
+		var items []model.Summary
+		if err := json.Unmarshal([]byte(mustRun(t, app, append([]string{"list", "--json"}, args...)...)), &items); err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, s := range items {
+			out = append(out, s.ID)
+		}
+		sort.Strings(out)
+		return out
+	}
+	if got := ids(); strings.Join(got, ",") != "below,here" {
+		t.Fatalf("default list = %v, want [below here]", got)
+	}
+	if got := ids("--all"); len(got) != 4 {
+		t.Fatalf("--all list = %v, want all four", got)
+	}
+	if got := ids("--project", "repo-old"); strings.Join(got, ",") != "sibling" {
+		t.Fatalf("--project list = %v, want [sibling]", got)
+	}
+
+	out := mustRun(t, app, "search", "webhook")
+	wantContains(t, out, "Here webhook", "Below webhook")
+	if strings.Contains(out, "Sibling webhook") || strings.Contains(out, "Elsewhere webhook") {
+		t.Fatalf("search leaked outside the project:\n%s", out)
+	}
+	out = mustRun(t, app, "search", "webhook", "--all")
+	wantContains(t, out, "Sibling webhook", "Elsewhere webhook")
+
+	mustRun(t, app, "show", "below")
+	_, err := run(t, app, "show", "sibling")
+	wantErr(t, err, "outside this project; pass --all")
+	wantContains(t, mustRun(t, app, "show", "sibling", "--all"), "Session sibling (alpha)")
+}
+
+func TestContextPrintsBoundedMarkdownInScope(t *testing.T) {
+	alpha := newFake(t, "alpha")
+	project, elsewhere := t.TempDir(), t.TempDir()
+	long := sampleConversation("long", project, "Long webhook session")
+	long.Messages = nil
+	for i := 0; i < 30; i++ {
+		role := model.RoleUser
+		if i%2 == 1 {
+			role = model.RoleAssistant
+		}
+		long.Messages = append(long.Messages, model.Message{Role: role, Content: fmt.Sprintf("turn-%02d\nsecond line", i+1)})
+	}
+	alpha.seed(t, long)
+	alpha.seed(t, sampleConversation("away", elsewhere, "Away session"))
+	app := newTestApp(t, alpha)
+	t.Chdir(project)
+
+	out := mustRun(t, app, "context", "long")
+	wantContains(t, out, "# Long webhook session", "- Agent: Fake alpha (`alpha`)", "turn-01\nsecond line", "turn-30", "*… 21 turns omitted …*", "- Turns: 30, 9 shown")
+	if strings.Contains(out, "turn-04\n") {
+		t.Fatalf("middle turn leaked into the bounded view:\n%s", out)
+	}
+	_, err := run(t, app, "context", "away")
+	wantErr(t, err, "outside this project; pass --all")
+	wantContains(t, mustRun(t, app, "context", "away", "--all"), "# Away session")
+}
+
+func TestExportMarkdownWritesTheWholeTranscript(t *testing.T) {
+	app, _, _, _ := seededApp(t)
+	file := filepath.Join(t.TempDir(), "s.md")
+	mustRun(t, app, "export", "alpha-one", "--format", "markdown", "-o", file)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantContains(t, string(data), "# Stripe webhook retry", "- Turns: 3", "## 1 · User", "the stripe webhook retries forever", "## 3 · User", "ship it")
+	if strings.Contains(string(data), "Excerpt") {
+		t.Fatalf("a full export is not an excerpt:\n%s", data)
+	}
+
+	out := mustRun(t, app, "export", "alpha-one", "--format", "markdown", "-o", "-")
+	wantContains(t, out, "# Stripe webhook retry", "ship it")
+
+	_, err = run(t, app, "export", "alpha-one", "--format", "html")
+	wantErr(t, err, `unknown format "html"`)
 }
 
 func TestMigrateResumeAndDedup(t *testing.T) {
@@ -195,7 +302,7 @@ func TestRenameWritesTheProviderAndRefreshesTheIndex(t *testing.T) {
 	if alpha.renamed["alpha-one"] != "0901|Fix|Stripe retries" {
 		t.Fatalf("provider title = %q", alpha.renamed["alpha-one"])
 	}
-	out = mustRun(t, app, "list", "--provider", "alpha")
+	out = mustRun(t, app, "list", "--all", "--provider", "alpha")
 	wantContains(t, out, "0901|Fix|Stripe retries")
 
 	_, err := run(t, app, "rename", "alpha-one", "--auto")
@@ -390,6 +497,38 @@ func TestIntegrationsInstallStatusRemove(t *testing.T) {
 	wantContains(t, out, "Nothing installed at")
 }
 
+// Recall adapters live beside the title adapters under --kind recall: the same
+// agent can have one of each, and naming the agent alone means its title
+// adapter, as it always did.
+func TestIntegrationsRecallKind(t *testing.T) {
+	app := newTestApp(t, newFake(t, "alpha"))
+	dir := t.TempDir()
+
+	out := mustRun(t, app, "integrations", "install", "opencode", "--kind", "recall", "--config-dir", dir)
+	wantContains(t, out, "Installed", "opencode-recall", "installed", `MCP server "another"`)
+	settings, err := config.LoadSettings()
+	if err != nil || !settings.Integrations.OpenCodeRecall || settings.Integrations.OpenCode2TitlePolicy {
+		t.Fatalf("consent = %+v, %v", settings.Integrations, err)
+	}
+	if !integrations.OpenCodeRecallStatus(dir).State.Installed() {
+		t.Fatal("the MCP server was not added where OpenCode reads it")
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "opencode.json")); !strings.Contains(string(data), `"mcp"`) {
+		t.Fatalf("config = %s", data)
+	}
+
+	out = mustRun(t, app, "integrations", "remove", "opencode", "--kind", "recall", "--config-dir", dir)
+	wantContains(t, out, "Removed")
+	if integrations.OpenCodeRecallStatus(dir).State.Installed() {
+		t.Fatal("remove left the MCP server registered")
+	}
+
+	_, err = run(t, app, "integrations", "install", "claude-code", "--config-dir", dir)
+	wantErr(t, err, `no title adapter for "claude-code"`)
+	_, err = run(t, app, "integrations", "status", "--kind", "skills")
+	wantErr(t, err, `unknown --kind "skills"`)
+}
+
 // Each adapter is installed, recorded, and removed on its own: consent to one
 // agent's configuration directory is not consent to another's.
 func TestIntegrationsTakeOneAdapterAtATime(t *testing.T) {
@@ -414,6 +553,24 @@ func TestIntegrationsTakeOneAdapterAtATime(t *testing.T) {
 	wantContains(t, out, "Removed")
 	settings, _ = config.LoadSettings()
 	if settings.Integrations.PiTitlePolicy {
+		t.Fatal("remove left consent recorded")
+	}
+
+	t.Setenv(integrations.QwenConfigDirEnv, dir)
+	out = mustRun(t, app, "integrations", "install", "qwen")
+	wantContains(t, out, "Installed", "qwen-title-policy")
+	settings, err = config.LoadSettings()
+	if err != nil || !settings.Integrations.QwenTitlePolicy {
+		t.Fatalf("install did not record consent: %+v, %v", settings.Integrations, err)
+	}
+	if !integrations.QwenStatus(dir).State.Installed() {
+		t.Fatal("the hook was not written where Qwen reads it")
+	}
+
+	out = mustRun(t, app, "integrations", "remove", "qwen")
+	wantContains(t, out, "Removed")
+	settings, _ = config.LoadSettings()
+	if settings.Integrations.QwenTitlePolicy {
 		t.Fatal("remove left consent recorded")
 	}
 
