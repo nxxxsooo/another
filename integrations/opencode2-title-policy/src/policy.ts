@@ -96,6 +96,9 @@ export function finalizeTitle(partial: string, created: number, configured: Titl
   const date = mmdd(created)
   if (!parsed || !date) return
   if (configured !== "auto" && parsed.language !== configured) return
+  // The category alone does not establish the topic's language: a model can
+  // emit an English category followed by Chinese prose.
+  if (parsed.language === "en" && /\p{Script=Han}/u.test(parsed.topic)) return
   return `${date}｜${parsed.type}｜${parsed.topic}`
 }
 

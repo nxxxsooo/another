@@ -53,6 +53,18 @@ test("finalizes English and Chinese with Shanghai creation date", () => {
   assert.equal(finalizeTitle("修复｜取消批量命名", created, "en"), undefined)
 })
 
+test("English titles reject Chinese prose even with an English category", () => {
+  const created = Date.parse("2026-10-14T00:00:00+08:00")
+  const mixed = "Fix｜Argon流量未转发至sub2api"
+  assert.equal(finalizeTitle(mixed, created, "en"), undefined)
+  assert.equal(repairTitle(mixed, created, "en"), undefined)
+  assert.equal(firstTitle(mixed, created, "en"), "1014｜Explore｜Untitled session")
+  assert.equal(finalizeTitle("Fix｜Argon traffic not forwarded to sub2api", created, "en"),
+    "1014｜Fix｜Argon traffic not forwarded to sub2api")
+  assert.equal(finalizeTitle("修复｜Argon流量未转发至sub2api", created, "zh"),
+    "1014｜修复｜Argon流量未转发至sub2api")
+})
+
 test("rejects drift", () => {
   for (const value of ["Other｜Cleanup", "Fix|Cleanup", "KEEP", "Fix｜one two three four five six seven eight nine"]) {
     assert.equal(parsePartialTitle(value), undefined, value)
