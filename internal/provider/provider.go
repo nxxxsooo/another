@@ -121,6 +121,14 @@ type SessionRenamer interface {
 	RenameSession(context.Context, SessionRef, string) error
 }
 
+// NativeTitler reports the name a session holds in the agent's own store, or
+// "" when it has none. A provider implements it when its summaries show a
+// display fallback in place of a missing name, such as the first prompt:
+// the title policy must not mistake that fallback for a name a person chose.
+type NativeTitler interface {
+	NativeTitle(context.Context, SessionRef) (string, error)
+}
+
 // SessionArchiver toggles a provider's native reversible archive state. It is
 // intentionally separate from deletion: archived sessions remain recoverable.
 type SessionArchiver interface {

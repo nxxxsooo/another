@@ -2,12 +2,16 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nxxxsooo/another/internal/config"
 	"github.com/nxxxsooo/another/internal/model"
+	"github.com/nxxxsooo/another/internal/provider"
+	"github.com/nxxxsooo/another/internal/providers/pi"
 	"github.com/nxxxsooo/another/internal/titler"
 )
 
@@ -171,6 +175,64 @@ func TestRenameIfStaleFollowsTheSession(t *testing.T) {
 	wantContains(t, out, "(set by hand)")
 	if len(requests) != 4 {
 		t.Fatalf("title calls = %d, want 4", len(requests))
+	}
+}
+
+// Pi never names a session itself, so its extension passes no
+// --replace-native. An unnamed Pi session still shows its first prompt as a
+// title; that fallback must be named rather than kept as a person's choice,
+// while a name set with /name stays.
+func TestRenameIfStaleNamesAnUnnamedPiSession(t *testing.T) {
+	t.Setenv(pi.AgentDirEnv, t.TempDir())
+	p := pi.New()
+	app := newTestApp(t, p)
+	conv := sampleConversation("source", t.TempDir(), "")
+	res, err := p.Write(context.Background(), &conv, provider.WriteOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Write always names what it writes; a session Pi starts has no name.
+	data, err := os.ReadFile(res.StoragePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []string
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var row struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal([]byte(line), &row) == nil && row.Type == "session_info" {
+			continue
+		}
+		rows = append(rows, line)
+	}
+	if err := os.WriteFile(res.StoragePath, []byte(strings.Join(rows, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveSettings(config.Settings{TitleModel: &config.TitleModel{Provider: "pi", Language: "zh"}}); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	old := suggestRetrying
+	suggestRetrying = func(context.Context, titler.Config, titler.Request) (string, error) {
+		calls++
+		return "0901｜修复｜Stripe重试", nil
+	}
+	t.Cleanup(func() { suggestRetrying = old })
+
+	hook := func() string {
+		t.Helper()
+		return mustRun(t, app, "rename", res.SessionID, "--from", "pi", "--auto", "--if-stale", "--allow-current", "--refresh")
+	}
+	wantContains(t, hook(), "Renamed "+res.SessionID+" to ", "｜修复｜Stripe重试")
+
+	ref := provider.SessionRef{ID: res.SessionID, StoragePath: res.StoragePath}
+	if err := p.RenameSession(context.Background(), ref, "my own name"); err != nil {
+		t.Fatal(err)
+	}
+	wantContains(t, hook(), `keeps "my own name" (set by hand)`)
+	if calls != 1 {
+		t.Fatalf("title calls = %d, want 1", calls)
 	}
 }
 

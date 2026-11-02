@@ -673,6 +673,29 @@ func (p *Provider) RenameSession(_ context.Context, ref provider.SessionRef, tit
 	return f.Sync()
 }
 
+// NativeTitle is the name the latest session_info holds, the one Pi shows. A
+// session without one is unnamed: the first prompt Discover shows in its place
+// is another's fallback, not a name Pi or a person gave it.
+func (p *Provider) NativeTitle(_ context.Context, ref provider.SessionRef) (string, error) {
+	path := ref.StoragePath
+	if path == "" {
+		var err error
+		path, err = p.findSessionFile(ref)
+		if err != nil {
+			return "", err
+		}
+	}
+	name := ""
+	err := util.ReadJSONLLines(path, 0, func(line []byte) error {
+		var e piEvent
+		if json.Unmarshal(line, &e) == nil && e.Type == "session_info" {
+			name = strings.TrimSpace(e.Name)
+		}
+		return nil
+	})
+	return name, err
+}
+
 // SupportsRelocate reports both modes. Pi keys a session's project off the
 // encoded directory name and the header cwd, so both are file operations.
 func (p *Provider) SupportsRelocate(mode provider.RelocateMode) bool {
