@@ -144,20 +144,19 @@ release:
 
     ## Compatibility
 
-    v0.21.1 fixes two regressions in v0.21.0. No settings, flags, or
-    commands change.
+    v0.22.0 adds one command form; nothing existing changes.
 
-    - **Pi:** new Pi sessions get automatic titles again. v0.21.0 took the
-      first prompt Pi shows for an unnamed session as a title someone had
-      set, and left it alone. Names set with `/name` are still kept.
-    - **Qwen Code:** reinstalling the title hook (setup or `another
-      integrations install qwen`) no longer removes other hooks that share
-      its `Stop` entry.
+    - **`another tui <session-id>`** opens the browser on that session,
+      whichever directory you start it from. If your scope, recent window,
+      or page would leave the session out, it is shown at the top. The
+      first key press hands the list back to your scope and search.
+      `--provider` and `--refresh` work as they do for `show`. Other tools
+      can use it to link straight to a session; toodo does.
 
-    The v0.21.0 notes still apply: `list`, `search`, and `show` read the
-    current project unless you pass `--all`, @ mentions are opt-in per
-    agent, and building from source needs Go 1.25. Run `another update`
-    to upgrade.
+    Plain `another tui` and `another` behave as before. The v0.21 notes
+    still apply: `list`, `search`, and `show` read the current project
+    unless you pass `--all`, @ mentions are opt-in per agent, and building
+    from source needs Go 1.25. Run `another update` to upgrade.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
