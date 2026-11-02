@@ -144,27 +144,20 @@ release:
 
     ## Compatibility
 
-    v0.21.0 turns another from a session mover into one place for every
-    coding-agent session.
+    v0.21.1 fixes two regressions in v0.21.0. No settings, flags, or
+    commands change.
 
-    - **Changed default scope:** `list`, `search`, and `show` now read the
-      current project, as the TUI does: the repository with its registered
-      worktrees, or the directory and everything below it. Pass `--all` for
-      every project. `--cwd` is removed; scripts that relied on the old
-      all-projects default need `--all`.
-    - **@ mentions (opt-in):** `another integrations install claude-code
-      opencode qwen --kind recall`, or the new rows in `another setup`,
-      register a read-only MCP server (`another mcp`). Claude Code and Qwen
-      Code list this project's sessions in `@`; OpenCode V2 gets an
-      `@another` skill, because its `@` picker does not show MCP resources.
-      OpenCode and Qwen Code receive one entry in their configuration file,
-      added and removed without touching anything else.
-    - **Dynamic titles:** titles another wrote are reconsidered on a later
-      day or after three more user turns; titles set by hand are kept.
-      Rerun setup or `another integrations install` so installed hooks pick
-      up `--if-stale`; the old `--skip-conforming` keeps working.
-    - **New commands:** `another context` and `export --format markdown`.
-    - **Building from source** now needs Go 1.25.
+    - **Pi:** new Pi sessions get automatic titles again. v0.21.0 took the
+      first prompt Pi shows for an unnamed session as a title someone had
+      set, and left it alone. Names set with `/name` are still kept.
+    - **Qwen Code:** reinstalling the title hook (setup or `another
+      integrations install qwen`) no longer removes other hooks that share
+      its `Stop` entry.
+
+    The v0.21.0 notes still apply: `list`, `search`, and `show` read the
+    current project unless you pass `--all`, @ mentions are opt-in per
+    agent, and building from source needs Go 1.25. Run `another update`
+    to upgrade.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
