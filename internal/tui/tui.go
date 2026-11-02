@@ -167,7 +167,12 @@ type modelState struct {
 	// must not land in the new list.
 	batchGen uint64
 
-	selected        *sessionItem
+	selected *sessionItem
+	// focus is the session a deep link (`another tui <id>`) opened on. Until
+	// the first key press it stays in the list and under the cursor, whatever
+	// the scope or window would otherwise leave out, so a background reload
+	// cannot move the person off the session they came for.
+	focus           *model.Summary
 	loading         bool
 	indexing        bool
 	contentIndexing bool
@@ -237,7 +242,17 @@ type modelState struct {
 }
 
 func Run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, contextMode migrate.ContextMode) error {
-	return run(reg, idx, engine, nil, contextMode)
+	return run(reg, idx, engine, nil, nil, contextMode)
+}
+
+// RunFocused opens the browser with one session selected, for links from other
+// tools that want to hand the person straight to that session's actions.
+func RunFocused(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, sessionID, from string, contextMode migrate.ContextMode) error {
+	sm, _, err := migrate.ResolveSession(context.Background(), reg, idx, sessionID, from)
+	if err != nil {
+		return err
+	}
+	return run(reg, idx, engine, nil, sm, contextMode)
 }
 
 // RunMigrate opens the picker with a session preselected and its target overlay
@@ -251,10 +266,10 @@ func RunMigrate(reg *registry.Registry, idx *index.Store, engine *migrate.Engine
 		}
 		selected = sm
 	}
-	return run(reg, idx, engine, selected, contextMode)
+	return run(reg, idx, engine, selected, nil, contextMode)
 }
 
-func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initial *model.Summary, contextMode migrate.ContextMode) error {
+func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initial, focus *model.Summary, contextMode migrate.ContextMode) error {
 	cwd, err := os.Getwd()
 	if err == nil {
 		cwd = util.NormalizeProjectPath(cwd)
@@ -341,6 +356,11 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		m.setSessionItems([]list.Item{sel})
 		m.targets.SetItems(targetItems(reg, initial.Provider))
 		m.overlay = overlayTarget
+	}
+	if focus != nil {
+		m.focus = focus
+		m.setSessionItems([]list.Item{sessionItem{summary: *focus}})
+		m.showFocus()
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus())
 	restoreInputSource := temporarilyUseASCIIInputSource()
