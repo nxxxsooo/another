@@ -1,6 +1,6 @@
 # Build Contract: all-in-one session manager, recall and @ mentions (v0.21.0)
 
-Status: confirmed 2026-10-29. Product Brief confirmed the same day in session; Hindsight initiative `kp-dfdfbf79a0c4451d8d8c8732768f110b`.
+Status: slices 1–4, 6 and 7 shipped in v0.21.0 (2026-11-02), with regressions fixed in v0.21.1; see [`docs/releases/v0.21.0.md`](../../releases/v0.21.0.md) and [`v0.21.1.md`](../../releases/v0.21.1.md). Open: slice 5 (Pi @ autocomplete extension, Codex `another` skill install, Antigravity check) and the six-agent end-to-end regression pass. Confirmed 2026-10-29. Product Brief confirmed the same day in session; Hindsight initiative `kp-dfdfbf79a0c4451d8d8c8732768f110b`.
 
 OpenCode decision: the recall integration makes a tracked, comment-preserving edit that adds only `mcp.another` to `opencode.json(c)`, recorded in the manifest and removed cleanly. The title plugin's never-edit promise is unchanged.
 
