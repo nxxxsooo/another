@@ -343,6 +343,7 @@ another list [--provider ID] [--project PATH] [--all] [--limit N] [--json] [--re
 another search "query" [--provider ID] [--project PATH] [--all] [--limit N] [--json]
 another show <session-id> [--provider ID] [--limit N] [--all]
 another context <session-id> [--provider ID] [--all]   # bounded Markdown for an agent to read
+another tui [<session-id>] [--provider ID]   # the browser; with an ID, it opens on that session (any project)
 
 # Move a session
 another migrate <session-id> --to <provider> [--from ID] [-y]

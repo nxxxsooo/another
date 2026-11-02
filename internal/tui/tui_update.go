@@ -105,6 +105,7 @@ func (m modelState) onSessionsPage(msg sessionsPageMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.setSessionItems(msg.items)
+	m.showFocus()
 	m.totalSessions = msg.total
 	m.scopeProjects = msg.scopeProjects
 	m.updateSourceCounts(msg.counts)
@@ -446,6 +447,9 @@ func (m modelState) onSearchResults(msg searchResultsMsg) (tea.Model, tea.Cmd) {
 // updateKey dispatches a key press to the search box, the active overlay, or
 // the session list, in that order of ownership.
 func (m modelState) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// From the first key on, the person is driving: the list follows their
+	// scope and search again, not the link they arrived by.
+	m.focus = nil
 	if m.searching {
 		return m.updateSearching(msg)
 	}

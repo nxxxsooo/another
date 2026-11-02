@@ -720,20 +720,33 @@ func (a *App) exportCmd() *cobra.Command {
 }
 
 func (a *App) tuiCmd() *cobra.Command {
-	var contextMode string
+	var contextMode, from string
+	var refresh bool
 	cmd := &cobra.Command{
-		Use:   "tui",
-		Short: "Interactive terminal UI",
+		Use:   "tui [session-id]",
+		Short: "Interactive terminal UI; with a session ID, opens on that session",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mode, err := migrate.ParseContextMode(contextMode)
 			if err != nil {
 				return err
 			}
 			a.ensureAliases(cmd)
+			if len(args) == 1 {
+				if !stdinIsTerminal() {
+					return fmt.Errorf("opening a session requires a terminal")
+				}
+				if err := a.ensureIndex(cmd.Context(), from, refresh); err != nil {
+					return err
+				}
+				return tui.RunFocused(a.Registry, a.Index, a.Migrate, args[0], from, mode)
+			}
 			return tui.Run(a.Registry, a.Index, a.Migrate, mode)
 		},
 	}
 	cmd.Flags().StringVar(&contextMode, "context", "auto", "context mode: auto, full, or recent")
+	cmd.Flags().StringVar(&from, "provider", "", "source provider of the session")
+	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before lookup")
 	return cmd
 }
 

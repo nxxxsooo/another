@@ -96,6 +96,7 @@ type uiText struct {
 
 	// Status and errors.
 	cwdUnreadable        string
+	focusedPrefix        string
 	archivedPrefix       string
 	undoHint             string
 	unarchivedPrefix     string
@@ -443,6 +444,7 @@ var englishText = uiText{
 	migrateSameAgent:           "already in that agent",
 
 	cwdUnreadable:        "Could not read the current directory, showing every session: ",
+	focusedPrefix:        "Opened ",
 	archivedPrefix:       "Archived ",
 	undoDeleteHint:       "  ·  u undo",
 	restoredPrefix:       "Restored ",
@@ -760,6 +762,7 @@ var chineseText = uiText{
 	migrateSameAgent:           "已在该 agent 中",
 
 	cwdUnreadable:        "无法读取当前目录，已显示全部会话：",
+	focusedPrefix:        "已打开 ",
 	archivedPrefix:       "已归档 ",
 	undoDeleteHint:       "  ·  u 撤销",
 	restoredPrefix:       "已恢复 ",

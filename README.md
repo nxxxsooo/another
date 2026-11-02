@@ -303,6 +303,7 @@ another list [--provider ID] [--project PATH] [--all] [--limit N] [--json] [--re
 another search "query" [--provider ID] [--project PATH] [--all] [--limit N] [--json]
 another show <session-id> [--provider ID] [--limit N] [--all]
 another context <session-id> [--provider ID] [--all]   # 供 agent 阅读的 Markdown 摘录
+another tui [<session-id>] [--provider ID]   # 浏览器；带 ID 时直接停在该会话上（不限项目）
 
 # 迁移会话
 another migrate <session-id> --to <provider> [--from ID] [-y]

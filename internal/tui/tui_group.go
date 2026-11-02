@@ -240,6 +240,27 @@ func (m *modelState) selectSession(id string) {
 	m.skipGroupHeader(true)
 }
 
+// showFocus keeps a deep-linked session on the page and under the cursor. A
+// page that lacks it — another scope, outside the recent window, past the
+// first page — gets it at the top rather than losing it.
+func (m *modelState) showFocus() {
+	if m.focus == nil {
+		return
+	}
+	present := false
+	for _, item := range m.ungrouped {
+		if row, ok := item.(sessionItem); ok && row.summary.ID == m.focus.ID {
+			present = true
+			break
+		}
+	}
+	if !present {
+		m.setSessionItems(append([]list.Item{sessionItem{summary: *m.focus}}, m.ungrouped...))
+	}
+	m.selectSession(m.focus.ID)
+	m.status = okStyle.Render(txt.focusedPrefix + truncateDisplay(m.focus.Title, 48))
+}
+
 // skipGroupHeader moves the cursor to the nearest row it can act from in the
 // direction the user was already travelling. An open band is a label, not a
 // destination: stopping on one would make ↑↓ pause on a row that enter, space,
