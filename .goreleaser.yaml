@@ -144,14 +144,14 @@ release:
 
     ## Compatibility
 
-    v0.22.0 adds one command form; nothing existing changes.
+    v0.22.1 fixes one thing in v0.22.0's session links.
 
-    - **`another tui <session-id>`** opens the browser on that session,
-      whichever directory you start it from. If your scope, recent window,
-      or page would leave the session out, it is shown at the top. The
-      first key press hands the list back to your scope and search.
-      `--provider` and `--refresh` work as they do for `show`. Other tools
-      can use it to link straight to a session; toodo does.
+    - **`another tui <session-id>`** now opens that session's preview, the
+      same view space gives you, instead of only placing the cursor on it in
+      the list. Esc returns to the list with the session still selected.
+      The list still shows the session even when your scope, recent window,
+      or page would leave it out, and `--provider` and `--refresh` work as
+      before. toodo's "Open in Another" relies on this.
 
     Plain `another tui` and `another` behave as before. The v0.21 notes
     still apply: `list`, `search`, and `show` read the current project
