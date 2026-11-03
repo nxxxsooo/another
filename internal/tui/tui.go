@@ -361,6 +361,9 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		m.focus = focus
 		m.setSessionItems([]list.Item{sessionItem{summary: *focus}})
 		m.showFocus()
+		sel := sessionItem{summary: *focus}
+		m.selected = &sel
+		m.loading = true
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus())
 	restoreInputSource := temporarilyUseASCIIInputSource()
@@ -466,12 +469,25 @@ func (m *modelState) updateSourceCounts(counts map[string]int) {
 
 func (m modelState) Init() tea.Cmd {
 	cmds := []tea.Cmd{tea.HideCursor, tea.SetWindowTitle(windowTitle), m.spinner.Tick, probeSizeCmd(0), screenCheckCmd(), loadSessionsPageCmd(m, m.pageGen)}
+	if cmd := m.focusPreviewCmd(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	if m.indexing {
 		cmds = append(cmds, backgroundIndexCmd(m.ctx, m.reg, m.idx))
 	} else {
 		cmds = append(cmds, contentIndexCmd(m.ctx, m.reg, m.idx))
 	}
 	return tea.Batch(cmds...)
+}
+
+// focusPreviewCmd opens a deep-linked session the way space would: the person
+// asked for that conversation, so they land reading it, with the list and its
+// actions one esc away.
+func (m modelState) focusPreviewCmd() tea.Cmd {
+	if m.focus == nil {
+		return nil
+	}
+	return loadPreviewCmd(m.ctx, m.reg, *m.focus)
 }
 
 // newWaitSpinner builds the one animation another waits with, so every wait

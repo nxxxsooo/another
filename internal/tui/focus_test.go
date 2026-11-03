@@ -72,3 +72,23 @@ func TestKeyPressReleasesFocus(t *testing.T) {
 		t.Fatalf("rows = %v, want only the page", ids)
 	}
 }
+
+// The link names one conversation: the browser opens straight into its
+// preview, not the list it sits in.
+func TestFocusedSessionOpensItsPreview(t *testing.T) {
+	m := focusModel("s9")
+	cmd := m.focusPreviewCmd()
+	if cmd == nil {
+		t.Fatal("a deep link must load the session's preview")
+	}
+	if _, ok := cmd().(previewLoadedMsg); !ok {
+		t.Fatal("the focus command must load a preview")
+	}
+	res, _ := m.Update(previewLoadedMsg{content: "conversation"})
+	if got := res.(modelState); got.overlay != overlayPreview {
+		t.Fatalf("overlay = %v, want the preview", got.overlay)
+	}
+	if focusModel("").focusPreviewCmd() != nil {
+		t.Fatal("without a link there is nothing to preview")
+	}
+}
