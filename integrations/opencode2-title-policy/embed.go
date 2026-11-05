@@ -27,13 +27,17 @@ var indexTS []byte
 //go:embed src/policy.ts
 var policyTS []byte
 
+//go:embed src/diagnostics.ts
+var diagnosticsTS []byte
+
 // Files is the plugin as it must appear on disk, keyed by the path each file
 // takes inside the installed directory. The test files and the npm project
 // around them stay in the repository and out of the binary.
 func Files() map[string][]byte {
 	return map[string][]byte{
-		"index.ts":  indexTS,
-		"policy.ts": policyTS,
+		"index.ts":       indexTS,
+		"policy.ts":      policyTS,
+		"diagnostics.ts": diagnosticsTS,
 	}
 }
 

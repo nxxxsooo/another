@@ -1,5 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import {
   cleanGenerated,
   decideRefresh,
@@ -16,6 +19,9 @@ import {
   refreshTurns,
   repairPrompt,
   repairTitle,
+  retryAttempts,
+  sameLocation,
+  titleContext,
   titleDay,
   titlePrompt,
   topicOf,
@@ -44,7 +50,7 @@ test("a refusal is recognized however it is written", () => {
   }
 })
 
-test("a refused session is named, dated, and left alone afterwards", () => {
+test("a fallback has a recognizable dated shape", () => {
   const created = Date.parse("2026-09-04T23:30:00Z")
   assert.equal(fallbackTitle(created, "zh"), "0905｜探索｜未命名会话")
   assert.equal(fallbackTitle(created, "en"), "0905｜Explore｜Untitled session")
@@ -104,7 +110,9 @@ test("an already dated title is left alone", () => {
 })
 
 test("missing config defaults to auto", () => {
-  assert.equal(loadLanguage({ HOME: "/definitely/missing" }), "auto")
+  const root = mkdtempSync(join(tmpdir(), "another-missing-config-"))
+  try { assert.equal(loadLanguage({ XDG_CONFIG_HOME: root }), "auto") }
+  finally { rmSync(root, { recursive: true, force: true }) }
 })
 
 // The repair reads a model's answer directly instead of a rename event, so it
@@ -170,6 +178,7 @@ test("redate keeps the topic and only moves a policy date", () => {
   assert.equal(topicOf("0902｜Fix｜Stripe retries"), "Fix｜Stripe retries")
   assert.equal(titleDay("09a1｜Fix｜x"), undefined)
   assert.equal(isPolicyTitle("0902｜修复｜Stripe重试", "en"), false)
+  assert.equal(isPolicyTitle("0902｜Fix｜错误", "en"), false)
 })
 
 test("a stored mark is read only when it has the expected shape", () => {
@@ -188,4 +197,57 @@ test("the refresh prompt weighs the latest messages and never offers a refusal",
   assert.match(prompt, /message 6[\s\S]*message 9/)
   assert.doesNotMatch(prompt, /message 3/)
   assert.doesNotMatch(prompt, /KEEP/)
+})
+
+test("provisional ownership takes precedence over title conformance, but never a manual rename", () => {
+  const now = Date.parse("2026-11-05T02:00:00Z")
+  for (const title of ["1105｜Explore｜Untitled session", "1105｜not a title", "1105｜Fix｜错误"]) {
+    const mark = { title, userTurns: 1, at: now, provisional: true, attempts: 0 }
+    const input = { title, mark, userTurns: 1, now, language: "en" as const, turn: "msg_1" }
+    assert.equal(decideRefresh(input).plan, "retry")
+    assert.equal(decideRefresh({ ...input, title: "Human title" }).plan, "skip")
+    assert.equal(decideRefresh({ ...input, mark: { ...mark, manual: true } }).plan, "skip")
+    assert.equal(decideRefresh({ ...input, mark: { ...mark, lastAttempt: "msg_1" } }).plan, "skip")
+    const exhausted = { ...mark, attempts: retryAttempts, lastAttempt: "msg_previous" }
+    assert.equal(decideRefresh({ ...input, mark: exhausted }).reason, "retry budget exhausted")
+    assert.equal(decideRefresh({ ...input, mark: exhausted, userTurns: 4 }).plan, "retry")
+    assert.equal(decideRefresh({ ...input, mark: exhausted, now: now + 86400000 }).plan, "retry")
+  }
+})
+
+test("invalid persisted retry state is rejected at the storage boundary", () => {
+  const mark = { title: "t", userTurns: 1, at: 2, provisional: true, attempts: 1, lastAttempt: "msg_1" }
+  assert.deepEqual(parseMark(mark), mark)
+  for (const invalid of [{ userTurns: NaN }, { at: Infinity }, { attempts: -1 }, { attempts: 0.5 }, { lastAttempt: {} }, { manual: "yes" }]) {
+    assert.equal(parseMark({ ...mark, ...invalid }), undefined)
+  }
+})
+
+test("context is bounded and excludes image bytes, URIs, tools, and reasoning", () => {
+  const context = titleContext([
+    { id: "msg_1", type: "user", text: "", files: [{ name: "capture.png", mime: "image/png", description: "Ghostty settings", data: "SECRET_IMAGE_BYTES", source: { uri: "https://secret.invalid" } }] },
+    { id: "msg_2", type: "assistant", content: [{ type: "reasoning", text: "SECRET_REASONING" }, { type: "tool", text: "SECRET_TOOL" }, { type: "text", text: "Visible explanation " + "x".repeat(4000) }] },
+  ] as Parameters<typeof titleContext>[0])
+  assert.equal(context.users.length, 1)
+  assert.match(context.users[0], /capture.png.*Ghostty settings/)
+  assert.equal(context.needsContext, false)
+  assert.equal(context.assistant.length, 1000)
+  assert.doesNotMatch(JSON.stringify(context), /SECRET_|secret.invalid/)
+  assert.equal(context.turn, "msg_1")
+  assert.equal(titleContext([{ id: "msg_1", type: "user", text: "", files: [{ mime: "image/png" }] }]).needsContext, true)
+  assert.equal(titleContext([{ type: "user", text: "Inspect this bug", files: [{ mime: "image/png" }] }]).needsContext, false)
+  for (const text of ["Image 1", "[Image 1]", '"Image 1"', '""']) {
+    assert.equal(titleContext([{ type: "user", text, files: [{ mime: "image/png" }] }]).needsContext, true)
+  }
+})
+
+test("location matching is exact after native normalization and includes workspace identity", () => {
+  const root = join(tmpdir(), "another-location-test")
+  const location = { directory: root }
+  assert.equal(sameLocation(location, { directory: join(root, ".") }), true)
+  assert.equal(sameLocation(location, { directory: join(root, "child") }), false)
+  assert.equal(sameLocation(location, { directory: root + "-sibling" }), false)
+  assert.equal(sameLocation(location, { directory: join(root, "..", "outside") }), false)
+  assert.equal(sameLocation(location, { directory: root, workspaceID: "different" }), false)
+  if (process.platform === "win32") assert.equal(sameLocation(location, { directory: root.toUpperCase() }), true)
 })

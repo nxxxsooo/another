@@ -294,6 +294,8 @@ OpenCode V2 可以在首次自动命名时直接执行同一规则，而不额�
 
 这些适配器写下的标题会跟着会话变（动态标题），不会停在第一轮。another 自己写的标题满足下面任一条件就重新判断一次：会话在新的一天又有了活动（比如隔天继续），或者同一天里比上次命名多了 3 轮用户发言。重新判断时模型主要看最近几轮；话题没变就保留原来的「类型｜主题」，变了就换。标题开头的 `MMDD` 跟着最近一次活动走，所以今天续上的老会话会显示今天的日期；创建日期仍在列表的列里。没到条件的轮次不调用模型。手动起的标题一律保留：another 记下自己最后写过的标题，当前标题和它不一样就说明是别人改的，以后不再动；把标题清空即交还给自动命名。Pi、Antigravity、Qwen Code、Claude Code 走 `another rename --auto --if-stale`，记录存在 another 配置目录的 `title-marks/` 下；OpenCode 插件用插件自己的存储执行同一规则。Claude Code 的钩子只在会话结束时触发，所以它的标题在每次退出时更新。旧版本装的钩子仍带 `--skip-conforming`，这个参数继续可用，含义等同 `--if-stale --replace-native`；重新运行 setup 或 `another integrations install` 即可换成新钩子。
 
+OpenCode 标题请求失败后会重试临时标题，重试次数会持久保存，每个会话只由所属目录的插件实例处理。仅含截图的开场可在一轮结束时结合附件信息与助手解释重新命名。诊断日志写入 `~/.local/state/another/opencode-title-policy.log`（或对应的 `XDG_STATE_HOME` 路径），详见[适配器说明](integrations/opencode2-title-policy/)。
+
 ## CLI
 
 ```bash

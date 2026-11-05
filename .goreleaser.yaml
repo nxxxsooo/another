@@ -144,19 +144,27 @@ release:
 
     ## Compatibility
 
-    v0.22.1 fixes one thing in v0.22.0's session links.
+    v0.23.0 improves OpenCode automatic titles. After upgrading, run
+    `another integrations install opencode` to update the installed plugin.
 
-    - **`another tui <session-id>`** now opens that session's preview, the
-      same view space gives you, instead of only placing the cursor on it in
-      the list. Esc returns to the list with the session still selected.
-      The list still shows the session even when your scope, recent window,
-      or page would leave it out, and `--provider` and `--refresh` work as
-      before. toodo's "Open in Another" relies on this.
+    - **Titles recover after a failed request.** Fallbacks and rejected
+      generated titles remain provisional and retry when the turn finishes.
+      Recovery has a persisted limit; manual renames remain protected.
+    - **One location handles each session.** Completion and idle events
+      share the same guards, avoiding repeated title requests across loaded
+      project locations. This also restores refresh on OpenCode 2.2.5, which
+      delivered completion events without idle events in live testing.
+    - **Screenshot-only openings get more context.** Bounded attachment
+      metadata and assistant replies help replace labels such as `Image 1`
+      with a useful topic once the assistant has answered.
+    - **Failures are identifiable.** Redacted diagnostics are written to
+      `~/.local/state/another/opencode-title-policy.log`, or under
+      `XDG_STATE_HOME` when set.
 
-    Plain `another tui` and `another` behave as before. The v0.21 notes
-    still apply: `list`, `search`, and `show` read the current project
-    unless you pass `--all`, @ mentions are opt-in per agent, and building
-    from source needs Go 1.25. Run `another update` to upgrade.
+    The plugin remains compatible with the OpenCode 2.0.4 API and was tested
+    live on 2.2.5. Building another from source requires Go 1.25 or newer.
+    Existing session-link, project-scope, and opt-in integration behavior
+    remains available.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
