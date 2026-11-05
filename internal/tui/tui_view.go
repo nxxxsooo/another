@@ -883,6 +883,9 @@ func (m modelState) recentWindowLabel() string {
 		if days <= 0 {
 			return txt.recentWindowAll
 		}
+		if days <= hourWindowDays {
+			return fmt.Sprintf(txt.recentWindowHoursFmt, days*24)
+		}
 		return fmt.Sprintf(txt.recentWindowChipFmt, days)
 	}
 	widest := ansi.StringWidth(label(m.recentDays))

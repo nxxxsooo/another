@@ -259,6 +259,7 @@ type uiText struct {
 	helpHistory          string
 	helpKeyWindow        string
 	recentWindowChipFmt  string
+	recentWindowHoursFmt string
 	recentWindowAll      string
 	helpListBase         string
 	helpListNarrow       string
@@ -591,8 +592,9 @@ var englishText = uiText{
 	helpDeleted:          " u undo delete · esc keep it deleted · ↑↓ keep browsing",
 	helpFoldedBand:       " z opens the group · ↑↓ move · ? keys",
 	helpHistory:          " ↑↓ change · enter revert · esc close",
-	helpKeyWindow:        "window: 90 / 30 / 7 days, then all",
+	helpKeyWindow:        "window: 90d → 24h, then all · T widens",
 	recentWindowChipFmt:  "last %d days",
+	recentWindowHoursFmt: "last %dh",
 	recentWindowAll:      "all time",
 	helpListBase:         " ↑↓ session · enter open · → other agent · space preview · / search · ? keys",
 	helpListNarrow:       " enter open · → other agent · / search · ? keys",
@@ -909,8 +911,9 @@ var chineseText = uiText{
 	helpDeleted:          " u 撤销删除 · esc 保持删除 · ↑↓ 继续浏览",
 	helpFoldedBand:       " z 展开该分组 · ↑↓ 移动 · ? 快捷键",
 	helpHistory:          " ↑↓ 选择 · 回车撤销 · esc 关闭",
-	helpKeyWindow:        "时间窗：90 / 30 / 7 天，再按全部",
+	helpKeyWindow:        "时间窗：90 天 → 24 小时，再按全部 · T 放宽",
 	recentWindowChipFmt:  "最近 %d 天",
+	recentWindowHoursFmt: "最近 %d 小时",
 	recentWindowAll:      "全部时间",
 	helpListBase:         " ↑↓ 选会话 · enter 进入 · → 跨 agent · space 预览 · / 搜索 · ? 快捷键",
 	helpListNarrow:       " enter 进入 · → 跨 agent · / 搜索 · ? 快捷键",

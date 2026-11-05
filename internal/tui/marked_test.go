@@ -290,11 +290,24 @@ func (noArchiveProvider) DisplayName() string { return "Codex" }
 // still steps down, so the key always means the same thing.
 func TestTheWindowKeyNarrowsThenOpensEverything(t *testing.T) {
 	for _, tc := range []struct{ from, want int }{
-		{90, 30}, {30, 7}, {7, 0}, {0, 90},
-		{180, 90}, {45, 30}, {1, 0},
+		{90, 30}, {30, 7}, {7, 3}, {3, 2}, {2, 1}, {1, 0}, {0, 90},
+		{180, 90}, {45, 30}, {5, 3},
 	} {
 		if got := nextRecentWindow(tc.from); got != tc.want {
 			t.Errorf("nextRecentWindow(%d) = %d, want %d", tc.from, got, tc.want)
+		}
+	}
+	// T walks the same stops back, so every t press is undone by one T.
+	for _, preset := range recentWindowPresets {
+		if got := prevRecentWindow(nextRecentWindow(preset)); got != preset {
+			t.Errorf("T after t from %d landed on %d", preset, got)
+		}
+	}
+	for _, tc := range []struct{ from, want int }{
+		{180, 0}, {45, 90}, {5, 7},
+	} {
+		if got := prevRecentWindow(tc.from); got != tc.want {
+			t.Errorf("prevRecentWindow(%d) = %d, want %d", tc.from, got, tc.want)
 		}
 	}
 	if got := configuredRecentDays(config.UI{}); got != defaultRecentDays {

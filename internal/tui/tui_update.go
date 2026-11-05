@@ -966,11 +966,15 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				searchCmd(m.ctx, m.reg, m.idx, searchOptsFor(m, m.searchQuery), providerCountOpts(m)))
 		}
 		return dispatchPageLoadModel(m)
-	case "t":
+	case "t", "T":
 		// The window is a view of the index, like scope and grouping: nothing
 		// is deleted and nothing is re-fetched from an agent, so narrowing and
-		// widening are both instant. Presses narrow first.
-		m.recentDays = nextRecentWindow(m.recentDays)
+		// widening are both instant. t narrows; T widens.
+		if msg.String() == "T" {
+			m.recentDays = prevRecentWindow(m.recentDays)
+		} else {
+			m.recentDays = nextRecentWindow(m.recentDays)
+		}
 		m.err = ""
 		m.status = ""
 		m.lastResume = ""
