@@ -144,27 +144,17 @@ release:
 
     ## Compatibility
 
-    v0.23.0 improves OpenCode automatic titles. After upgrading, run
-    `another integrations install opencode` to update the installed plugin.
+    v0.24.0 adds short time windows to the session browser.
 
-    - **Titles recover after a failed request.** Fallbacks and rejected
-      generated titles remain provisional and retry when the turn finishes.
-      Recovery has a persisted limit; manual renames remain protected.
-    - **One location handles each session.** Completion and idle events
-      share the same guards, avoiding repeated title requests across loaded
-      project locations. This also restores refresh on OpenCode 2.2.5, which
-      delivered completion events without idle events in live testing.
-    - **Screenshot-only openings get more context.** Bounded attachment
-      metadata and assistant replies help replace labels such as `Image 1`
-      with a useful topic once the assistant has answered.
-    - **Failures are identifiable.** Redacted diagnostics are written to
-      `~/.local/state/another/opencode-title-policy.log`, or under
-      `XDG_STATE_HOME` when set.
+    - **Last 3 days, 48h, and 24h.** `t` now narrows through
+      90 days → 30 → 7 → 3 → 48h → 24h → all time. Windows are rolling,
+      counted back from now by each session's last message, so the shortest
+      stops are named in hours rather than read as calendar days.
+    - **`T` widens.** It walks the same stops back, undoing one `t` press.
 
-    The plugin remains compatible with the OpenCode 2.0.4 API and was tested
-    live on 2.2.5. Building another from source requires Go 1.25 or newer.
-    Existing session-link, project-scope, and opt-in integration behavior
-    remains available.
+    The window remains a display filter: nothing is deleted or rescanned.
+    `ui.recent_days` and the remembered `ui.last` view keep their meaning.
+    Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
