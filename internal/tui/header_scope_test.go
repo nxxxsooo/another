@@ -58,8 +58,22 @@ func TestAllProjectsHeaderOmitsPathTail(t *testing.T) {
 	}
 }
 
-// t steps the window through 90, 30, 7 days and everything. The header keeps
-// one shape through all four: "all time" holds the chip's place, padded to
+// The window is rolling, so its shortest stops are named in the hours they
+// cover: "last 2 days" would read as today and yesterday, which it is not.
+func TestShortWindowsAreNamedInHours(t *testing.T) {
+	previous := applyLanguage(i18n.LangEnglish)
+	defer applyLanguage(previous)
+	m := sampleModel(t, 120, 24)
+	for days, want := range map[int]string{1: "last 24h", 2: "last 48h", 3: "last 3 days", 0: "all time"} {
+		m.recentDays = days
+		if got := strings.TrimSpace(m.recentWindowLabel()); got != want {
+			t.Errorf("%d-day window is named %q, want %q", days, got, want)
+		}
+	}
+}
+
+// t steps the window from 90 days down to 24 hours and then everything. The
+// header keeps one shape through every stop: "all time" holds the chip's place, padded to
 // the widest window, so nothing after it moves and the line never changes
 // length at any terminal width.
 func TestWindowKeyKeepsTheHeaderStill(t *testing.T) {

@@ -193,7 +193,7 @@ d         delete after an explicit confirmation (the whole marked set when there
 u         undo the latest archive or reversible delete; Esc dismisses the offer
 h         open the action history — what another archived, renamed or deleted, newest first; enter reverses one
 /         search titles and normalized conversation text (`path:folder text` narrows to that subtree)
-t         narrow the window: 90 days → 30 → 7 → all time (the header always names it)
+t / T     narrow / widen the window: 90 days → 30 → 7 → 3 → 48h → 24h → all time (rolling, by last message; the header always names it)
 s         refresh the local index
 Esc       close a picker or dismiss transient state
 q         quit

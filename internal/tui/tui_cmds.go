@@ -156,8 +156,14 @@ func configuredPathBase(ui config.UI) string {
 
 // recentWindowPresets is what the t key walks, in the order it walks them: the
 // window narrows first, because looking further back is the rare direction, and
-// the last stop is no window at all.
-var recentWindowPresets = []int{90, 30, 7, 0}
+// the last stop is no window at all. The window is rolling — now minus whole
+// days — so the one- and two-day stops are the last 24 and 48 hours, and are
+// named that way.
+var recentWindowPresets = []int{90, 30, 7, 3, 2, 1, 0}
+
+// hourWindowDays is the widest window named in hours rather than days: "last 2
+// days" reads as a calendar question the rolling cutoff does not answer.
+const hourWindowDays = 2
 
 // defaultRecentDays is the window a configuration that states none opens with.
 // It is wide enough that nothing on an ordinary index disappears by surprise —
@@ -175,6 +181,21 @@ func nextRecentWindow(current int) int {
 		}
 	}
 	return recentWindowPresets[0]
+}
+
+// prevRecentWindow walks the same stops the other way, so T undoes t: the next
+// preset above the current window, then no window once nothing is wider, and
+// from no window back round to the narrowest.
+func prevRecentWindow(current int) int {
+	if current <= 0 {
+		return recentWindowPresets[len(recentWindowPresets)-2]
+	}
+	for i := len(recentWindowPresets) - 1; i >= 0; i-- {
+		if recentWindowPresets[i] > current {
+			return recentWindowPresets[i]
+		}
+	}
+	return 0
 }
 
 // configuredRecentDays is ui.recent_days, or the default. A negative value is
