@@ -144,16 +144,17 @@ release:
 
     ## Compatibility
 
-    v0.24.0 adds short time windows to the session browser.
+    v0.24.1 fixes OpenCode title authentication when ordinary chats work
+    but title requests fail with 401.
 
-    - **Last 3 days, 48h, and 24h.** `t` now narrows through
-      90 days → 30 → 7 → 3 → 48h → 24h → all time. Windows are rolling,
-      counted back from now by each session's last message, so the shortest
-      stops are named in hours rather than read as calendar days.
-    - **`T` widens.** It walks the same stops back, undoing one `t` press.
+    - The optional OpenCode title plugin now requires **OpenCode 2.2.5+**.
+      After upgrading, run `another integrations install opencode`.
+    - Titles use temporary title-agent sessions so authentication and routing
+      hooks apply. Sessions are removed after the request; your configured
+      model and explicit variant are preserved. No gateway or account is built in.
+    - Successful generation is logged alongside failures for diagnostics.
 
-    The window remains a display filter: nothing is deleted or rescanned.
-    `ui.recent_days` and the remembered `ui.last` view keep their meaning.
+    Other agent integrations and session-browser behavior are unchanged.
     Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see

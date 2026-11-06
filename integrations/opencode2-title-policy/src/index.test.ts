@@ -39,6 +39,7 @@ function deferred<T>() {
 
 async function harness(options: {
   title?: string; answer?: Answer | Answer[]; created?: number; parentID?: string; mark?: Mark;
+  titleModel?: { providerID: string; id: string; variant?: string };
   location?: Location; sessionLocation?: Location; messages?: Message[]; storage?: Map<string, unknown>;
 } = {}) {
   const location = options.location ?? { directory: configRoot }
@@ -49,6 +50,8 @@ async function harness(options: {
   if (options.mark) storage.set("title-mark:ses_test", options.mark)
   const updates: string[] = []
   const prompts: string[] = []
+  const created: { id: string; agent: string; model: unknown; location: Location }[] = []
+  const removed: string[] = []
   let titleHook!: (event: TitleEvent) => Promise<void>
   let reads = 0
   const queue: Event[] = []
@@ -59,11 +62,26 @@ async function harness(options: {
   }
   const ctx = {
     location,
+    model: { default: async () => ({ data: { providerID: "fallback", id: "default" } }) },
     agent: {
       transform: async () => ({ dispose: async () => {} }),
-      list: async () => ({ data: [] }),
+      list: async () => ({ data: options.titleModel ? [{ id: "title", model: options.titleModel }] : [] }),
     },
     session: {
+      create: async (input: { agent: string; model: unknown; location: Location }) => {
+        const temporary = { ...input, id: `ses_temporary_${created.length}` }
+        created.push(temporary)
+        return temporary
+      },
+      remove: async ({ sessionID }: { sessionID: string }) => { removed.push(sessionID) },
+      generate: async ({ sessionID, prompt }: { sessionID: string; prompt: string }) => {
+        assert.ok(created.some((session) => session.id === sessionID), "generation must use an isolated session")
+        prompts.push(prompt)
+        const answers = Array.isArray(state.answer) ? state.answer : [state.answer]
+        const answer = answers[Math.min(prompts.length - 1, answers.length - 1)]
+        if (answer instanceof Error) throw answer
+        return { text: typeof answer === "function" ? await answer() : answer }
+      },
       hook: async (_kind: string, callback: typeof titleHook) => { titleHook = callback; return { dispose: async () => {} } },
       get: async () => { reads++; return { ...session } },
       wait: async () => {},
@@ -79,13 +97,7 @@ async function harness(options: {
       set: async (key: string, value: unknown) => { storage.set(key, value) },
     },
     generate: {
-      text: async ({ prompt }: { prompt: string }) => {
-        prompts.push(prompt)
-        const answers = Array.isArray(state.answer) ? state.answer : [state.answer]
-        const answer = answers[Math.min(prompts.length - 1, answers.length - 1)]
-        if (answer instanceof Error) throw answer
-        return { text: typeof answer === "function" ? await answer() : answer }
-      },
+      text: async () => { assert.fail("standalone generation bypasses authentication hooks") },
     },
     event: {
       subscribe: async function* ({ signal }: { signal: AbortSignal }) {
@@ -118,7 +130,7 @@ async function harness(options: {
     session.title = title
     await idle({ type: "session.renamed", data: { sessionID: "ses_test", title } })
   }
-  return { title, state, session, prompts, updates, reads: () => reads, storage, mark, idle, emit, rename, cleanup }
+  return { title, state, session, prompts, created, removed, updates, reads: () => reads, storage, mark, idle, emit, rename, cleanup }
 }
 
 test("native titles are dated and owned before persistence, with one successful call", async () => {
@@ -126,6 +138,10 @@ test("native titles are dated and owned before persistence, with one successful 
   try {
     assert.equal(await f.title(), "0916｜Research｜OpenCode title dates")
     assert.equal(f.prompts.length, 1)
+    assert.equal(f.created[0].agent, "title")
+    assert.deepEqual(f.created[0].model, { providerID: "test", id: "title" })
+    assert.deepEqual(f.created[0].location, f.session.location)
+    assert.deepEqual(f.removed, f.created.map((session) => session.id))
     assert.equal(f.mark()?.title, f.session.title)
     assert.equal(f.mark()?.provisional, false)
     assert.equal(f.mark()?.manual, undefined)
@@ -138,6 +154,16 @@ test("child sessions keep their native names on both title and idle paths", asyn
     assert.equal(await f.title(), undefined)
     await f.idle()
     assert.equal(f.prompts.length, 0)
+  } finally { await f.cleanup() }
+})
+
+for (const variant of [undefined, "high"]) test(`configured title model wins over native selection: ${variant ?? "default"}`, async () => {
+  const model = { providerID: "gateway", id: "configured", ...(variant ? { variant } : {}) }
+  const f = await harness({ titleModel: model })
+  try {
+    await f.title()
+    assert.deepEqual(f.created[0].model, model)
+    assert.deepEqual(f.removed, f.created.map((session) => session.id))
   } finally { await f.cleanup() }
 })
 
@@ -168,6 +194,8 @@ test("provider failure becomes an owned fallback and recovers without three new 
   try {
     assert.equal(await f.title(), `${today()}｜Explore｜Untitled session`)
     assert.equal(f.mark()?.provisional, true)
+    assert.deepEqual(f.created.map((session) => session.model), [{ providerID: "test", id: "title" }, { providerID: "fallback", id: "default" }])
+    assert.deepEqual(f.removed, f.created.map((session) => session.id))
     f.state.answer = "Fix｜Gateway title recovery"
     await f.idle()
     assert.equal(f.session.title, `${today()}｜Fix｜Gateway title recovery`)
@@ -329,6 +357,7 @@ for (const action of ["rename", "move", "dispose"] as const) test(`late generati
     result.resolve("Fix｜Late answer")
     await pause()
     assert.deepEqual(f.updates, [])
+    assert.deepEqual(f.removed, f.created.map((session) => session.id), "late or aborted work still removes temporary sessions")
     assert.equal(f.session.title, action === "rename" ? "Human choice" : `${yesterday()}｜Fix｜Stripe retries`)
   } finally { await f.cleanup() }
 })

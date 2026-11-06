@@ -49,11 +49,33 @@ const plugin = {
       const call = async (selected?: Model) => {
         controller.signal.throwIfAborted()
         log("generation_started", sessionID, { model: selected ?? "default" })
+        let temporaryID: string | undefined
         try {
-          return (await ctx.generate.text({ prompt, ...(selected ? { model: selected } : {}) }, request)).text
+          // Standalone generate bypasses session transport hooks (including
+          // gateway authentication). Use an empty title-agent session so the
+          // selected model takes the same route as ordinary session requests,
+          // without switching the user's model or sending their full history.
+          const model = selected ?? (await ctx.model.default()).data
+          if (!model) throw new Error("No default model available for title generation")
+          const temporary = await ctx.session.create({
+            title: "another title generation",
+            agent: "title",
+            model: { providerID: model.providerID, id: model.id, ...("variant" in model ? { variant: model.variant } : {}) },
+            location: { directory: ctx.location.directory },
+          }, request)
+          temporaryID = temporary.id
+          const result = await ctx.session.generate({ sessionID: temporary.id, prompt }, request)
+          log("generation_succeeded", sessionID, { model: selected ?? "default" })
+          return result.text
         } catch (error) {
           failed("generation_failed", sessionID, error, { model: selected ?? "default" })
           throw error
+        } finally {
+          // Cleanup must still run after plugin disposal aborts the request.
+          if (temporaryID) {
+            try { await ctx.session.remove({ sessionID: temporaryID }) }
+            catch (error) { diagnostic("cleanup_failed", { sessionID, temporaryID, error: errorDetail(error) }) }
+          }
         }
       }
       // Preserve the configured-title-model -> default-model routing, including
@@ -95,7 +117,11 @@ const plugin = {
         if (!owns(session) || session.parentID || session.title?.trim()) return
         const context = titleContext(await ctx.session.context({ sessionID: event.sessionID }))
         if (!context.users.length) return
-        const result = await generateTitle(event.sessionID, repairPrompt(language, context.users[0], context.assistant), session.time.created, event.model)
+        // Native title dispatch may synthesize a minimal variant that a routed
+        // provider lowers differently. Preserve the user's configured title
+        // selection, including an explicit variant, just as idle repair does.
+        const model = await titleModel() ?? event.model
+        const result = await generateTitle(event.sessionID, repairPrompt(language, context.users[0], context.assistant), session.time.created, model)
         if (!result || controller.signal.aborted) return
         const current = await ctx.session.get({ sessionID: event.sessionID })
         if (!owns(current)) return

@@ -335,6 +335,8 @@ Titles these adapters write follow the session instead of freezing after the fir
 
 OpenCode also retries provisional titles after a failed title request, with a persisted retry limit and one processing instance per location. Screenshot-only openings can use attachment metadata and the assistant's explanation when the turn finishes. Diagnostics are written to `~/.local/state/another/opencode-title-policy.log` (or the corresponding `XDG_STATE_HOME` path); see the [adapter guide](integrations/opencode2-title-policy/).
 
+The OpenCode title plugin in `v0.24.1` requires **OpenCode 2.2.5 or newer**. It generates through an automatically cleaned-up temporary title-agent session, so session authentication and gateway-routing hooks apply to titles too. This fixes title requests returning 401 while ordinary chats work. It uses your configured title model and explicit variant, with no personal gateway, account, or model built in. Direct-provider users take the same path; each request creates and removes a temporary session. After upgrading, run `another integrations install opencode` to refresh the plugin.
+
 ## CLI
 
 ```bash

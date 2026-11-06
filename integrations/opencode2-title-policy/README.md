@@ -76,7 +76,14 @@ provider failures can cause more calls than the four generation rounds.
 An empty or refused original answer, or a failed initial generation, uses the dated
 `Explore｜Untitled session` / `探索｜未命名会话` fallback when possible.
 
-Generation attempts and failures are recorded as JSON lines at
+Generation uses an empty, temporary `title`-agent session and `session.generate`,
+so session HTTP/WebSocket routing and credential hooks apply. Standalone
+`generate.text` bypasses those hooks and can return 401 even when the same model
+works in ordinary sessions. The original session's model and history remain
+untouched; temporary sessions are removed after success, failure, or cancellation.
+Cleanup failures are logged with the temporary session ID for recovery.
+
+Generation attempts, successes, and failures are recorded as JSON lines at
 `$XDG_STATE_HOME/another/opencode-title-policy.log`, defaulting to
 `~/.local/state/another/opencode-title-policy.log`. Records identify the session,
 location, model, and error type/message/status; credentials are redacted and
@@ -98,7 +105,7 @@ The manual-rename listener still replaces a refusal with a dated generic title.
 Child sessions keep the name of the task that spawned them. A manual rename
 that happens to be exactly `Type｜Topic` is treated as policy output and gets
 the date; write anything else to opt out. Either way it is the person's title,
-not the plugin's, so idle refreshes leave it alone. This targets the OpenCode 2.0.4
+not the plugin's, so idle refreshes leave it alone. This targets the OpenCode 2.2.5
 plugin API version pinned in `package.json`.
 
 ## Develop
