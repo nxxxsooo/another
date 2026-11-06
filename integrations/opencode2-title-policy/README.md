@@ -7,11 +7,11 @@ It does four things:
 
 1. overrides the built-in hidden `title` agent with another's language policy
    from `~/.config/another/config.json`;
-2. uses the `title` hook to generate and validate `Type｜Topic`, prefixing the
-   session's creation date in `Asia/Shanghai` **before** OpenCode persists the
-    first automatic title; rejected output gets up to three corrective retries,
-     then retains the original rejected answer with the creation date as a
-     provisional title;
+2. uses the `title` hook to rewrite OpenCode's own title request so the model
+   answers with the finished `MMDD｜Type｜Topic`, dated with the session's
+   creation day in `Asia/Shanghai`; an answer that misses the policy is dated
+   or corrected (up to three corrective retries), then retained with the
+   creation date as a provisional title;
 3. listens for manual `Type｜Topic` renames and dates them through the official
    `session.update()` API, and repairs unnamed or provisional titles when a
    turn settles;
@@ -35,12 +35,8 @@ the title provider fails, or the server restarts mid-session — the session
 keeps no name at all, and nothing repairs it: OpenCode 2 lists it as
 `New session - <timestamp>`, and another falls back to showing the raw prompt.
 On a completed turn with an empty title the plugin waits five seconds in case the native
-title is merely slow, checks again, and then asks the `title` agent's own model
-for one line, using the opening user message and bounded supporting context. That keeps background title
-traffic on whatever provider the user routed it to; a title model the catalog
-hides — a relay pinned in the configuration and marked `deprecated` resolves
-for the native request but is refused when asked for directly — costs nothing
-to try, and the default model answers instead. The answer goes through the same
+title is merely slow, then asks the session's model for one line, using the
+opening user message and bounded supporting context. The answer goes through the same
 policy and bounded corrective retries as an automatic one.
 
 Fallbacks and retained rejected answers are explicitly **plugin-owned and
@@ -70,30 +66,49 @@ even when the category itself is English. Chinese titles may retain English
 technical names. Validation is local and adds no model call for valid output.
 Rejected output gets at most three correction rounds, stopping on the first
 valid answer. If every correction is invalid or throws, the first rejected
-answer is retained, not the last rejection or a generic replacement. Each round
-retains the existing model-to-default routing fallback described above, so
-provider failures can cause more calls than the four generation rounds.
-An empty or refused original answer, or a failed initial generation, uses the dated
+answer is retained, not the last rejection or a generic replacement. An empty
+or refused original answer, or a failed initial generation, uses the dated
 `Explore｜Untitled session` / `探索｜未命名会话` fallback when possible.
 
-Generation uses an empty, temporary `title`-agent session and `session.generate`,
-so session HTTP/WebSocket routing and credential hooks apply. Standalone
-`generate.text` bypasses those hooks and can return 401 even when the same model
-works in ordinary sessions. The original session's model and history remain
-untouched; temporary sessions are removed after success, failure, or cancellation.
-Cleanup failures are logged with the temporary session ID for recovery.
+The first title is OpenCode 2's own title request: the `title` hook replaces
+its system and user message with the dated policy and the plugin's prompt, so
+it runs once on the `title` agent's model and variant and usually lands final.
+OpenCode stores that answer itself; the plugin learns it from the rename that
+follows and renames again only when the answer misses the policy. OpenCode
+stores it only if nobody renamed the session meanwhile, and the plugin tells the
+answer from a person's rename by the usage OpenCode records just before it, or
+else by the answer's `Type｜Topic` shape. A person's rename always wins.
+
+Repairs, corrections, and refreshes call `session.generate` on the session
+itself, which returns the answer without storing anything. The `generate` hook
+strips that request to the title prompt alone — no agent instructions,
+conversation history, or tool definitions — so it costs about what a title
+should (around 1.5 KB). It routes like the session's own requests: the
+session's model, through every session HTTP/WebSocket routing and credential
+hook. No session is created. Standalone `generate.text` is not used: it
+bypasses those hooks and can return 401 even when the same model works in
+ordinary sessions.
+
+If the title model rejects the low reasoning variant OpenCode picks for it, the
+first attempt fails and the session's own model answers. Pin a variant to keep
+the first title on the title model:
+
+```jsonc
+"agents": { "title": { "model": { "providerID": "openai", "model": "gpt-5-mini", "variant": "low" } } }
+```
 
 Generation attempts, successes, and failures are recorded as JSON lines at
 `$XDG_STATE_HOME/another/opencode-title-policy.log`, defaulting to
 `~/.local/state/another/opencode-title-policy.log`. Records identify the session,
-location, model, and error type/message/status; credentials are redacted and
+location, and error type/message/status; credentials are redacted and
 request/response payloads are excluded. The Promise plugin API has no server
 logger, and console output alone is not reliably captured in `opencode.log`.
 
-Automatic titles no longer depend on a later rename event, which can be missed
-after a plugin reload, service restart, or subscription error. Manual renames
-are dated when appropriate and stored as manually owned. An
-event failure does not stop the listener from processing later renames.
+The first automatic title is learned from its rename event. If that event is
+missed after a plugin reload, service restart, or subscription error, a dated
+policy answer is adopted on the next idle; anything else stays as OpenCode
+wrote it. Manual renames are dated when appropriate and stored as manually
+owned. An event failure does not stop the listener from processing later renames.
 
 Invalid manual output is left untouched, and a title that already carries a
 date is not processed again, which stops manual renames from looping.

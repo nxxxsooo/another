@@ -145,11 +145,20 @@ test("first-title hook always supplies a dated title, even for invalid model out
   assert.equal(firstTitle("研究｜日期缺失", 0, "auto"), undefined)
 })
 
-test("the repair prompt carries the policy and the opening message", () => {
-  const prompt = repairPrompt("zh", `  ${"话".repeat(3000)}  `)
-  assert.match(prompt, /功能 设计 修复 优化 发布 探索 文档 研究/)
+test("the repair prompt carries the opening message, cut short", () => {
+  const prompt = repairPrompt(`  ${"话".repeat(3000)}  `)
   assert.match(prompt, /Name the session that begins with this message/)
   assert.ok(prompt.endsWith("话".repeat(2000)), "the opening message is cut, not carried whole")
+})
+
+// OpenCode 2 stores the answer verbatim, so a dated request asks for the
+// finished title and an undated one keeps the date out of the answer.
+test("a dated prompt asks for the finished title", () => {
+  const dated = titlePrompt("zh", "0916")
+  assert.match(dated, /exact form 0916｜Type｜Topic, starting with the date 0916/)
+  assert.match(dated, /such as 0916｜探索｜打招呼/)
+  assert.doesNotMatch(dated, /without a date/)
+  assert.match(titlePrompt("en"), /exact form Type｜Topic \(without a date\)/)
 })
 
 test("the refresh rule matches another rename --if-stale", () => {
@@ -190,7 +199,7 @@ test("a stored mark is read only when it has the expected shape", () => {
 
 test("the refresh prompt weighs the latest messages and never offers a refusal", () => {
   const users = Array.from({ length: 10 }, (_, i) => `message ${i}`)
-  const prompt = refreshPrompt("auto", "0901｜修复｜Stripe重试", users)
+  const prompt = refreshPrompt("0901｜修复｜Stripe重试", users)
   assert.match(prompt, /output its Type｜Topic unchanged/)
   assert.match(prompt, /"修复｜Stripe重试"/)
   assert.match(prompt, /message 0/)
