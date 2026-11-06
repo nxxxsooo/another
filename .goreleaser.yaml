@@ -144,17 +144,17 @@ release:
 
     ## Compatibility
 
-    v0.24.1 fixes OpenCode title authentication when ordinary chats work
-    but title requests fail with 401.
+    v0.24.2 fixes moving an OpenCode session that is mid-turn, which was
+    reported as "OpenCode V2 refused the move" even though the move went
+    through moments later.
 
-    - The optional OpenCode title plugin now requires **OpenCode 2.2.5+**.
-      After upgrading, run `another integrations install opencode`.
-    - Titles use temporary title-agent sessions so authentication and routing
-      hooks apply. Sessions are removed after the request; your configured
-      model and explicit variant are preserved. No gateway or account is built in.
-    - Successful generation is logged alongside failures for diagnostics.
+    - OpenCode V2 queues a move for a busy session and applies it when the
+      running turn ends. another now reports that move as queued, in the CLI
+      and the TUI, and fails only when no matching move was accepted.
+    - Idle sessions, Pi relocation, and fork behave as before.
 
     Other agent integrations and session-browser behavior are unchanged.
+    The optional OpenCode title plugin still requires **OpenCode 2.2.5+**.
     Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
