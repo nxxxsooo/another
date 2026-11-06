@@ -132,11 +132,17 @@ func (a *App) relocateOne(ctx context.Context, id, from, directory string, mode 
 }
 
 func printRelocated(p provider.Provider, sm model.Summary, res *provider.RelocateResult, directory string) {
-	if res.Moved {
+	switch {
+	case res.Moved && res.Pending:
+		fmt.Printf("⏳ Queued the move of %s to %s\n", res.SessionID, directory)
+	case res.Moved:
 		fmt.Printf("✅ Moved %s to %s\n", res.SessionID, directory)
-	} else {
+	default:
 		fmt.Printf("✅ Forked %s into %s as %s\n", sm.ID, directory, res.SessionID)
 		fmt.Printf("   Source session %s is unchanged\n", sm.ID)
+	}
+	if res.Pending {
+		fmt.Printf("   %s applies it when the session's running turn ends\n", p.DisplayName())
 	}
 	fmt.Printf("   Resume: %s\n", p.ResumeCommand(provider.WriteResult{
 		SessionID: res.SessionID, StoragePath: res.StoragePath, ProjectPath: res.ProjectPath,

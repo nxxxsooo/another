@@ -149,6 +149,9 @@ type uiText struct {
 	relocateBatchAllFailedFmt string
 	relocateTagWorktree       string
 	relocateTagProject        string
+	// A move the agent queued behind a running turn.
+	relocatePendingNote     string
+	relocateBatchPendingFmt string
 
 	// Modals.
 	sourceModalTitle   string
@@ -496,6 +499,8 @@ var englishText = uiText{
 	relocateBatchAllFailedFmt: "Relocate failed on %d: %s · marks kept, m retries",
 	relocateTagWorktree:       "worktree",
 	relocateTagProject:        "project",
+	relocatePendingNote:       "queued: lands when the running turn ends",
+	relocateBatchPendingFmt:   "  ·  %d queued: land when their running turn ends",
 
 	sourceModalTitle:      "Source",
 	sourceModalHint:       "Which agent is this session from?",
@@ -815,6 +820,8 @@ var chineseText = uiText{
 	relocateBatchAllFailedFmt: "换目录失败 %d 条：%s · 标记保留，m 重试",
 	relocateTagWorktree:       "worktree",
 	relocateTagProject:        "项目",
+	relocatePendingNote:       "已排队：当前这一轮结束后生效",
+	relocateBatchPendingFmt:   "  ·  %d 条已排队：当前这一轮结束后生效",
 
 	sourceModalTitle:      "选择来源",
 	sourceModalHint:       "会话来自哪个 agent？",

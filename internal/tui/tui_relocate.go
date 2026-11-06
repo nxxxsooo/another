@@ -30,6 +30,7 @@ type relocateBatchDoneMsg struct {
 	resume     string
 	moved      bool
 	done       []string
+	pending    int
 	failed     []relocateFailure
 	caveat     error
 }
@@ -210,6 +211,9 @@ func relocateManyCmd(ctx context.Context, reg *registry.Registry, idx *index.Sto
 			}
 			touched[sm.Provider] = true
 			done.done = append(done.done, sm.ID)
+			if res.Pending {
+				done.pending++
+			}
 			done.providerID = sm.Provider
 			done.resume = p.ResumeCommand(provider.WriteResult{
 				SessionID: res.SessionID, StoragePath: res.StoragePath, ProjectPath: res.ProjectPath,
@@ -241,6 +245,9 @@ func (m modelState) onRelocateBatchDone(msg relocateBatchDoneMsg) (tea.Model, te
 		verb = txt.relocateBatchMovedFmt
 	}
 	m.status = okStyle.Render(fmt.Sprintf(verb, len(msg.done), elidePath(util.TildePath(msg.directory), 40)))
+	if msg.pending > 0 {
+		m.status += mutedStyle.Render(fmt.Sprintf(txt.relocateBatchPendingFmt, msg.pending))
+	}
 	if len(msg.failed) > 0 {
 		m.status += errStyle.Render(fmt.Sprintf(txt.relocateBatchFailedFmt, len(msg.failed), relocateFailureText(msg.failed)))
 	}

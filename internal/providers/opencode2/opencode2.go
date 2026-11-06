@@ -685,12 +685,13 @@ func (p *Provider) RelocateSession(ctx context.Context, ref provider.SessionRef,
 				ProjectPath: directory, Moved: true,
 			}, nil
 		}
-		if err := p.moveTo(ctx, ref.ID, directory); err != nil {
+		pending, err := p.moveTo(ctx, ref.ID, directory)
+		if err != nil {
 			return nil, err
 		}
 		return &provider.RelocateResult{
 			SessionID: ref.ID, StoragePath: p.dbPath + "#" + ref.ID,
-			ProjectPath: directory, Moved: true,
+			ProjectPath: directory, Moved: true, Pending: pending,
 		}, nil
 	case provider.RelocateFork:
 		if opts.DryRun {
@@ -702,7 +703,8 @@ func (p *Provider) RelocateSession(ctx context.Context, ref provider.SessionRef,
 		if err != nil {
 			return nil, err
 		}
-		if err := p.moveTo(ctx, forkID, directory); err != nil {
+		pending, err := p.moveTo(ctx, forkID, directory)
+		if err != nil {
 			// A fork left in the source directory is not what was asked for
 			// and would look like an accidental duplicate. Take it back.
 			if cleanupErr := p.delete(ctx, forkID); cleanupErr != nil {
@@ -715,7 +717,7 @@ func (p *Provider) RelocateSession(ctx context.Context, ref provider.SessionRef,
 		}
 		return &provider.RelocateResult{
 			SessionID: forkID, StoragePath: p.dbPath + "#" + forkID,
-			ProjectPath: directory,
+			ProjectPath: directory, Pending: pending,
 		}, nil
 	default:
 		return nil, provider.ErrRelocateUnsupported
@@ -746,11 +748,13 @@ func (p *Provider) fork(ctx context.Context, sessionID string) (string, error) {
 	return payload.Data.ID, nil
 }
 
-func (p *Provider) moveTo(ctx context.Context, sessionID, directory string) error {
+// moveTo reports pending when the server queued the move behind a running turn
+// instead of applying it.
+func (p *Provider) moveTo(ctx context.Context, sessionID, directory string) (bool, error) {
 	body, _ := json.Marshal(map[string]string{"directory": directory})
 	cmd := exec.CommandContext(ctx, p.command, "api", "POST", "/api/session/"+sessionID+"/move", "--data", string(body))
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("OpenCode relocate: %w: %s", err, strings.TrimSpace(string(out)))
+		return false, fmt.Errorf("OpenCode relocate: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	// The same silent refusal as rename and delete: exit 0 does not mean the
 	// server accepted it. The session's own row decides.
@@ -758,29 +762,68 @@ func (p *Provider) moveTo(ctx context.Context, sessionID, directory string) erro
 }
 
 // awaitDirectory waits for the server to persist the new directory, because the
-// API call returns before the write is visible in the database.
-func (p *Provider) awaitDirectory(ctx context.Context, sessionID, want string) error {
+// API call returns before the write is visible in the database. A busy session
+// takes the move as an inbox item and applies it only at its next step
+// boundary, which can be minutes away; that queued move is an acceptance, not
+// a refusal.
+func (p *Provider) awaitDirectory(ctx context.Context, sessionID, want string) (bool, error) {
 	deadline := time.Now().Add(2 * time.Second)
 	var stored string
 	for {
 		var err error
 		stored, err = p.storedDirectory(sessionID)
 		if err != nil {
-			return fmt.Errorf("OpenCode relocate: %w", err)
+			return false, fmt.Errorf("OpenCode relocate: %w", err)
 		}
 		if stored == want {
-			return nil
+			return false, nil
 		}
 		if time.Now().After(deadline) {
 			break
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return false, ctx.Err()
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("OpenCode relocate: OpenCode V2 refused the move, the directory is still %q; check that %s exists and is a project OpenCode V2 can open", stored, want)
+	queued, err := p.queuedMove(sessionID, want)
+	if err != nil {
+		return false, fmt.Errorf("OpenCode relocate: %w", err)
+	}
+	if queued {
+		return true, nil
+	}
+	return false, fmt.Errorf("OpenCode relocate: OpenCode V2 refused the move, the directory is still %q; check that %s exists and is a project OpenCode V2 can open", stored, want)
+}
+
+// queuedMove reports whether the session's inbox holds a move to directory.
+func (p *Provider) queuedMove(sessionID, directory string) (bool, error) {
+	db, err := p.openRO()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = db.Close() }()
+	rows, err := db.Query(`SELECT payload FROM session_inbox WHERE session_id = ? AND type = 'move'`, sessionID)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var payload string
+		if err := rows.Scan(&payload); err != nil {
+			return false, err
+		}
+		var move struct {
+			Location struct {
+				Directory string `json:"directory"`
+			} `json:"location"`
+		}
+		if json.Unmarshal([]byte(payload), &move) == nil && move.Location.Directory == directory {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func (p *Provider) storedDirectory(sessionID string) (string, error) {

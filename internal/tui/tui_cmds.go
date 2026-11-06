@@ -92,6 +92,7 @@ type relocateDoneMsg struct {
 	directory  string
 	resume     string
 	moved      bool
+	pending    bool
 	err        error
 }
 
@@ -716,6 +717,7 @@ func relocateSessionCmd(ctx context.Context, reg *registry.Registry, idx *index.
 		done.resume = p.ResumeCommand(provider.WriteResult{
 			SessionID: res.SessionID, StoragePath: res.StoragePath, ProjectPath: res.ProjectPath,
 		})
+		done.pending = res.Pending
 		if _, err := index.UpdateIncremental(ctx, reg, idx, sm.Provider); err != nil {
 			// The session really did move. Saying so and naming the stale
 			// index is more useful than reporting a failure that did not

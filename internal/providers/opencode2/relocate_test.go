@@ -174,6 +174,57 @@ func TestRelocateReportsARefusalTheCLIHides(t *testing.T) {
 	}
 }
 
+// A session in the middle of a turn takes the move into its inbox and applies
+// it at the next step boundary. That is an accepted move arriving late, and
+// calling it a refusal tells the person a move failed that then happens.
+func TestRelocateReportsAMoveQueuedBehindARunningTurn(t *testing.T) {
+	requireShellStub(t)
+	path := fixtureDB(t)
+	apiStub(t, path, "")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO session_inbox VALUES
+		('msg_move','ses_fixture','move','{"location":{"directory":"/tmp/worktree"},"projectID":"p","subpath":""}','steer',7,3000)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	res, err := opencode2.New().RelocateSession(context.Background(),
+		provider.SessionRef{ID: "ses_fixture", ProjectPath: "/tmp/project"},
+		provider.RelocateOpts{Directory: "/tmp/worktree", Mode: provider.RelocateMove})
+	if err != nil {
+		t.Fatalf("a queued move was reported as %v", err)
+	}
+	if !res.Moved || !res.Pending || res.ProjectPath != "/tmp/worktree" {
+		t.Fatalf("relocate result = %+v", res)
+	}
+}
+
+// A move queued for some other directory is not the one asked for.
+func TestRelocateRefusesWhenOnlyAnotherMoveIsQueued(t *testing.T) {
+	requireShellStub(t)
+	path := fixtureDB(t)
+	apiStub(t, path, "")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO session_inbox VALUES
+		('msg_move','ses_fixture','move','{"location":{"directory":"/tmp/elsewhere"},"projectID":"p","subpath":""}','steer',7,3000)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	_, err = opencode2.New().RelocateSession(context.Background(),
+		provider.SessionRef{ID: "ses_fixture", ProjectPath: "/tmp/project"},
+		provider.RelocateOpts{Directory: "/tmp/worktree", Mode: provider.RelocateMove})
+	if err == nil || !strings.Contains(err.Error(), "refused the move") {
+		t.Fatalf("a move to another directory was reported as %v", err)
+	}
+}
+
 // A fork that cannot be moved is not what was asked for, and left alone it
 // looks like an accidental duplicate in the source directory.
 func TestRelocateRollsBackAForkItCannotMove(t *testing.T) {

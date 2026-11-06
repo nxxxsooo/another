@@ -173,6 +173,10 @@ type RelocateResult struct {
 	ProjectPath string
 	// Moved reports whether the source session was carried rather than copied.
 	Moved bool
+	// Pending reports a move the agent accepted but applies only once the
+	// session's running turn reaches a boundary, so the old directory still
+	// holds it for now.
+	Pending bool
 }
 
 // SessionRelocator changes the project directory a session belongs to, in the

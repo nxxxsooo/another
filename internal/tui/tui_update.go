@@ -346,6 +346,9 @@ func (m modelState) onRelocateDone(msg relocateDoneMsg) (tea.Model, tea.Cmd) {
 		verb = txt.movedPrefix
 	}
 	m.status = okStyle.Render(verb + elidePath(util.TildePath(msg.directory), 48))
+	if msg.pending {
+		m.status += mutedStyle.Render("  ·  " + txt.relocatePendingNote)
+	}
 	if msg.err != nil {
 		m.status += mutedStyle.Render("  ·  " + msg.err.Error())
 	}

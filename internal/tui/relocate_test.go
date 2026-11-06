@@ -203,6 +203,27 @@ func TestRelocateReportsAStaleIndexAsACaveat(t *testing.T) {
 	}
 }
 
+// A move queued behind a running turn is accepted, but the list still shows the
+// old directory until it lands, so the status has to say why.
+func TestRelocateReportsAQueuedMove(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.LangEnglish, i18n.LangChinese} {
+		useLanguage(t, lang)
+		m := relocateReadyModel(t, "opencode")
+		m.overlay = overlayRelocate
+		updated, _ := m.Update(relocateDoneMsg{
+			providerID: "opencode", directory: "/tmp/worktree", moved: true, pending: true,
+			resume: "cd '/tmp/worktree' && opencode --session 'ses_x'",
+		})
+		m = updated.(modelState)
+		if m.err != "" {
+			t.Fatalf("%s: a queued move was reported as a failure: %q", lang, m.err)
+		}
+		if status := ansi.Strip(m.status); !strings.Contains(status, "/tmp/worktree") || !strings.Contains(status, txt.relocatePendingNote) {
+			t.Fatalf("%s: status = %q", lang, status)
+		}
+	}
+}
+
 // A failure before anything landed has no resume command, and that is what
 // separates it from the caveat above.
 func TestRelocateFailureKeepsTheBoxClosedAndReportsIt(t *testing.T) {
