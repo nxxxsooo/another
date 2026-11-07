@@ -144,14 +144,18 @@ release:
 
     ## Compatibility
 
-    v0.24.2 fixes moving an OpenCode session that is mid-turn, which was
-    reported as "OpenCode V2 refused the move" even though the move went
-    through moments later.
+    v0.24.3 makes the optional OpenCode title plugin stop creating a
+    temporary session for every title request.
 
-    - OpenCode V2 queues a move for a busy session and applies it when the
-      running turn ends. another now reports that move as queued, in the CLI
-      and the TUI, and fails only when no matching move was accepted.
-    - Idle sessions, Pi relocation, and fork behave as before.
+    - The first title is OpenCode's own title request: the plugin only
+      swaps in the dated prompt, so it runs once on the `title` agent's
+      model and usually lands final.
+    - Repairs, corrections, and refreshes generate on the session itself,
+      stripped to the title prompt (about 1.5 KB instead of the full agent
+      context). Gateway and credential hooks still apply; nothing is stored.
+    - If your title model rejects the low reasoning variant OpenCode picks,
+      pin one in `agents.title.model`.
+    - After upgrading, run `another integrations install opencode`.
 
     Other agent integrations and session-browser behavior are unchanged.
     The optional OpenCode title plugin still requires **OpenCode 2.2.5+**.
