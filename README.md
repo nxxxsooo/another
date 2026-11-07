@@ -296,7 +296,7 @@ OpenCode V2 可以在首次自动命名时直接执行同一规则，而不额�
 
 OpenCode 标题请求失败后会重试临时标题，重试次数会持久保存，每个会话只由所属目录的插件实例处理。仅含截图的开场可在一轮结束时结合附件信息与助手解释重新命名。诊断日志写入 `~/.local/state/another/opencode-title-policy.log`（或对应的 `XDG_STATE_HOME` 路径），详见[适配器说明](integrations/opencode2-title-policy/)。
 
-`v0.24.1` 的 OpenCode 标题插件要求 OpenCode **2.2.5 或更新版本**。它通过自动清理的临时 title-agent session 生成标题，让认证、网关路由等 session hook 同样生效，修复普通对话可用但标题请求返回 401 的问题。使用你配置的标题模型及显式 variant，没有内置个人网关、账号或模型。直接连接模型服务的用户也走同一路径，每次请求会创建并删除一个临时 session。升级后运行 `another integrations install opencode` 更新插件。
+OpenCode 标题插件要求 OpenCode **2.2.5 或更新版本**。首个标题就是 OpenCode 自己的标题请求：插件只在 `title` hook 里把提示词换成带日期的规范，请求照常走 `title` agent 的模型和 variant，答案通常一次到位。补救、修正和刷新改用会话自身的 `session.generate`，`generate` hook 把请求裁剪到只剩标题提示词（约 1.5 KB），不带 agent 指令、对话历史和工具定义，走会话模型和全部认证、网关路由 hook，不创建额外 session。标题模型若拒绝 OpenCode 自动选的低推理 variant，请在 `agents.title.model` 里写明 variant。升级后运行 `another integrations install opencode` 更新插件。
 
 ## CLI
 
