@@ -52,6 +52,32 @@ func (s Store) Load(provider, session string) *titler.Mark {
 	return &mark
 }
 
+// Latest returns the most recently written mark for a provider. It is a
+// diagnostic: event checks from another client can follow a successful rename
+// and would otherwise leave only a no-op visible in the last-event status.
+func (s Store) Latest(provider string) (titler.Mark, bool) {
+	entries, err := os.ReadDir(filepath.Join(s.dir, provider))
+	if err != nil {
+		return titler.Mark{}, false
+	}
+	var latest titler.Mark
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(s.dir, provider, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var mark titler.Mark
+		if json.Unmarshal(data, &mark) != nil || mark.Title == "" || !mark.At.After(latest.At) {
+			continue
+		}
+		latest = mark
+	}
+	return latest, !latest.At.IsZero()
+}
+
 // Save replaces the mark for a session atomically.
 func (s Store) Save(provider, session string, mark titler.Mark) error {
 	if provider == "" || session == "" {

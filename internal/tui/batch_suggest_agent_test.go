@@ -49,17 +49,34 @@ func TestBatchAcceptsAConfiguredAgentThatCanSuggest(t *testing.T) {
 	}
 }
 
-// Every provider another can rename is also one it can ask for titles. The
-// old per-row check tested the session's provider and survived only because
-// these two sets coincide; if they ever diverge, the batch needs a real
-// per-row rule and this test is the warning.
-func TestRenamableProvidersCanAllSuggestTitles(t *testing.T) {
-	for _, p := range registry.New().All() {
-		if _, ok := p.(provider.SessionRenamer); !ok {
-			continue
-		}
-		if !titler.Supports(p.ID()) {
-			t.Errorf("%s can be renamed but has no titler launcher", p.ID())
-		}
+// Doubao can persist a title without being a title-generation backend. Exercise
+// preparation with a native-like transcript, without touching cloud accounts.
+func TestDoubaoBatchUsesConfiguredTitleAgent(t *testing.T) {
+	p, err := registry.New().Get("doubao")
+	if err != nil {
+		t.Fatal(err)
 	}
+	if _, ok := p.(provider.SessionRenamer); !ok {
+		t.Fatal("Doubao must support native renaming")
+	}
+	sm := batchRow()
+	sm.Provider = "doubao"
+	reg := registry.NewWith(batchDoubaoProvider{Provider: p})
+	ready := batchPrepareCmd(context.Background(), 1, reg, titler.Config{Provider: "agy"}, []model.Summary{sm}, nil)().(batchReadyMsg)
+	if len(ready.items) != 1 || len(ready.frozen) != 0 {
+		t.Fatalf("Doubao row did not reach configured title agent: %+v", ready)
+	}
+	if len(ready.items[0].Request.Messages) != 1 {
+		t.Fatal("native transcript not passed to title generation")
+	}
+}
+
+type batchDoubaoProvider struct{ provider.Provider }
+
+func (p batchDoubaoProvider) Load(context.Context, provider.SessionRef) (*model.Conversation, error) {
+	return &model.Conversation{Messages: []model.Message{{Role: model.RoleUser, Content: "test automatic naming"}}}, nil
+}
+
+func (p batchDoubaoProvider) RenameSession(context.Context, provider.SessionRef, string) error {
+	return nil
 }

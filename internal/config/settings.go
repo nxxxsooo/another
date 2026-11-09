@@ -61,7 +61,11 @@ type PathAlias struct {
 }
 
 type TitlePolicy struct {
-	Language string `json:"language,omitempty"`
+	Language     string `json:"language,omitempty"`
+	DoubaoEvents bool   `json:"doubao_events,omitempty"`
+	// DoubaoEnabledAt is the consent cutoff (Unix seconds): existing unmarked
+	// conversations are never adopted or renamed by a newly enabled policy.
+	DoubaoEnabledAt int64 `json:"doubao_enabled_at,omitempty"`
 }
 
 // UI collects preferences about another's own screens rather than the content

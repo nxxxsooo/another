@@ -40,11 +40,11 @@ store, so you open it there and keep going instead of pasting a summary.
 - **Readable sessions:** `another context` prints a bounded Markdown excerpt for an agent to read; `another export --format markdown` writes the whole transcript.
 - **Titles that keep up:** automatic titles follow the session as it moves on; a title you set yourself is never touched.
 - **Native migration:** carries a session into another agent's own format — not a pasted summary.
-- **Ten agents:** Pi, Codex, Claude Code, Cursor, OpenCode, CommandCode, CodeM, Hermes, Qwen Code, and Antigravity.
+- **Eleven agents:** Pi, Codex, Claude Code, Cursor, OpenCode, CommandCode, CodeM, Hermes, Qwen Code, Antigravity, and Doubao.
 - **Project-aware:** starts with the current Git project and combines sessions from its main worktree and every registered linked worktree; press `f` to see all projects, or `g` to group the list by date or by worktree.
 - **English or Chinese:** the interface follows your terminal's locale by default, or is pinned in setup; the title language is a separate setting.
 - **Verified migration:** reloads every write, compares a content digest, rolls back on mismatch, and never mutates the source.
-- **Local and fast:** reads native local stores; the private SQLite index (under `~/.cache/another/`, `%LOCALAPPDATA%\another` on Windows) skips unchanged sessions on re-scan.
+- **Local index:** the private SQLite index (under `~/.cache/another/`, `%LOCALAPPDATA%\another` on Windows) skips unchanged sessions on re-scan. Most providers read native local stores; opt-in Doubao support reads its cloud service and requires a signed-in macOS desktop client and network access.
 - **Duplicate-source reconciliation:** when one session ID remains in both an old and a new project directory, the message-bearing transcript wins over a newer empty state snapshot, keeping its title, path, and count aligned with native resume.
 
 ## Install
@@ -297,6 +297,9 @@ The session list marks each agent with a fixed-width color chip. Agent names dif
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
 | Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | ✓ | — | ✓ |
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | ✓ |
+| Doubao | `doubao` | `DOU` | `doubao --resume <id>` | ✓ | — | — | — |
+
+Doubao is an opt-in, cloud-backed compatibility provider for shared desktop Work and CLI sessions. It currently requires macOS desktop authentication; resume also requires its CLI. For automatic naming in both clients, configure a title model, then run `another title-policy doubao --enable --background`. The listener reacts to native turn-completion log events, without periodic polling. See [Doubao setup and limitations](docs/providers.md#doubao).
 
 A dash means that agent has no verified native contract for the operation. Rename, archive, relocate, and delete change the corresponding agent's native state rather than an another-only marker; `another` shows only operations the selected agent actually supports and does not keep private state that disappears on refresh.
 

@@ -15,6 +15,7 @@ import (
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/titlemark"
+	"github.com/nxxxsooo/another/internal/titlepolicy"
 	"github.com/nxxxsooo/another/internal/titler"
 	"github.com/spf13/cobra"
 )
@@ -186,88 +187,11 @@ func (a *App) renameIfStale(ctx context.Context, p provider.Provider, renamer pr
 	if err != nil {
 		return err
 	}
-	// The whole session, not a preview: the turn count is the drift signal,
-	// and a refresh is about how the session ends rather than how it opened.
-	ref := provider.SessionRef{ID: sm.ID, Provider: sm.Provider, StoragePath: sm.StoragePath, ProjectPath: sm.ProjectPath}
-	conv, err := p.Load(ctx, ref)
-	if err != nil {
-		return err
-	}
-	// The summary may show a fallback, such as the first prompt, where the
-	// agent holds no name. Judged as a title, that fallback reads as one a
-	// person chose and the session would never be named.
-	current := strings.TrimSpace(sm.Title)
-	if native, ok := p.(provider.NativeTitler); ok {
-		if current, err = native.NativeTitle(ctx, ref); err != nil {
-			return err
-		}
-	}
-	var msgs []model.Message
-	activity := sm.UpdatedAt
-	if conv != nil {
-		msgs = conv.Messages
-		if conv.UpdatedAt.After(activity) {
-			activity = conv.UpdatedAt
-		}
-	}
-	if activity.Unix() <= 0 {
-		activity = time.Now()
-	}
-	turns := titler.UserTurns(msgs)
-	marks := titlemark.Open()
-	remember := func(title string) {
-		if dryRun {
-			return
-		}
-		if err := marks.Save(sm.Provider, sm.ID, titler.Mark{Title: title, UserTurns: turns, At: time.Now()}); err != nil {
-			fmt.Printf("⚠️  Warning: could not record the title for later refreshes: %s\n", err)
-		}
-	}
-
-	decision := titler.Decide(titler.Freshness{
-		Title: current, Mark: marks.Load(sm.Provider, sm.ID), UserTurns: turns,
-		Activity: activity, Language: cfg.Language, ReplaceNative: replaceNative,
+	return titlepolicy.Rename(ctx, p, renamer, sm, titlepolicy.Options{
+		Config: cfg, Marks: titlemark.Open(), ReplaceNative: replaceNative, DryRun: dryRun,
+		Suggest: suggestRetrying, Apply: a.applyRename,
+		Log: func(format string, args ...any) { fmt.Printf(format, args...) },
 	})
-	switch decision.Plan {
-	case titler.PlanSkip:
-		fmt.Printf("Unchanged: %s keeps %q (%s)\n", sm.ID, current, decision.Reason)
-		return nil
-	case titler.PlanAdopt:
-		remember(current)
-		fmt.Printf("Unchanged: %s keeps %q (%s)\n", sm.ID, current, decision.Reason)
-		return nil
-	}
-
-	refreshing := decision.Plan == titler.PlanRefresh
-	suggestion, err := suggestRetrying(ctx, cfg, titler.Request{
-		Title: current, ProjectPath: sm.ProjectPath, CreatedAt: sm.CreatedAt,
-		Date: activity, Messages: msgs, Refresh: refreshing,
-	})
-	if err != nil {
-		return err
-	}
-	title := titler.Redate(suggestion, activity)
-	switch {
-	case title == "" && !refreshing:
-		return fmt.Errorf("%s returned no title matching the policy", cfg.Provider)
-	case refreshing && (title == "" || titler.Topic(title) == titler.Topic(current)):
-		// The model kept the topic. A new day still moves the date.
-		title = titler.Redate(current, activity)
-	}
-	if title == current {
-		remember(title)
-		fmt.Printf("Unchanged: %s still fits (%s)\n", sm.ID, title)
-		return nil
-	}
-	if dryRun {
-		fmt.Printf("Dry run OK: would rename %s to %q (%s)\n", sm.ID, title, decision.Reason)
-		return nil
-	}
-	if err := a.applyRename(ctx, renamer, sm, title); err != nil {
-		return err
-	}
-	remember(title)
-	return nil
 }
 
 // titleConfig reads the title agent the user chose in setup. Both the policy
