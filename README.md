@@ -33,11 +33,11 @@
 - **可读的会话**：`another context` 输出有长度上限的 Markdown 摘录供 agent 阅读；`another export --format markdown` 导出完整对话。
 - **会跟进的标题**：自动标题随会话推进更新；你自己起的标题不会被改。
 - **原生迁移**：按目标 agent 的原生格式写入，不是粘贴一份摘要。
-- **十个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、CommandCode、CodeM、Hermes、Qwen Code 和 Antigravity。
+- **十一个 agent**：Pi、Codex、Claude Code、Cursor、OpenCode、CommandCode、CodeM、Hermes、Qwen Code、Antigravity 和 Doubao。
 - **项目聚合**：默认只看当前 Git 项目，并把主工作区与所有已登记 worktree 的会话放在一起；按 `f` 可切换到全部项目，按 `g` 可按日期或 worktree 分组。
 - **迁移后校验**：重新读取每次写入，比较内容摘要；不一致时回滚，来源会话始终保持原样。
 - **中英双语界面**：默认跟随终端 locale，也可以在 setup 里固定为 English 或中文；与标题语言各自独立。
-- **本地运行**：读取各 agent 的本地原生存储；私有 SQLite 索引（`~/.cache/another/`，Windows 下为 `%LOCALAPPDATA%\another`）会在重新扫描时跳过未变会话。
+- **本地运行**：私有 SQLite 索引（`~/.cache/another/`，Windows 下为 `%LOCALAPPDATA%\another`）会在重新扫描时跳过未变会话。多数 agent 读取本地原生存储；Doubao 为显式启用的云端适配器，需要 macOS 客户端登录和网络。
 - **重复源仲裁**：同一个会话 ID 同时留在新旧项目目录时，优先选择含真实消息的 transcript，不让较新的空状态快照覆盖标题、路径和消息数。
 
 ## 安装
@@ -252,6 +252,9 @@ OpenCode V2 正式版与 V1 历史会话共用一个 `opencode` provider。anoth
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |
 | Qwen Code | `qwen` | `QWN` | `qwen --resume <id>` | ✓ | ✓ | — | ✓ |
 | Antigravity | `agy` | `AGY` | `agy --conversation <id>` | ✓ | — | — | ✓ |
+| Doubao | `doubao` | `DOU` | `doubao --resume <id>` | ✓ | — | — | — |
+
+Doubao 是显式启用的云端兼容适配器，客户端 Work 和 CLI 共用会话。目前需要 macOS 客户端认证，恢复还需安装 CLI。若要两个客户端的新对话自动命名，先配置标题模型，再运行 `another title-policy doubao --enable --background`，后台监听原生回合完成日志事件，不做定时轮询。详见 [Doubao 配置与限制](docs/providers.zh.md#doubao)。
 
 `—` 表示这个 agent 没有经过验证的原生操作契约。重命名、归档、换目录和删除都直接修改对应 agent 的原生状态，不是 Another 私有标记；Another 只展示当前 agent 真正支持的操作，不会维护一份刷新后消失的私有状态。
 

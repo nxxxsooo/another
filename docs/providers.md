@@ -54,6 +54,26 @@ If a recorded working directory has moved or become a symlink whose physical pat
 
 **The Feishu client's sessions are ordinary sessions.** A conversation started from Feishu is written to the same store with an id like `sess_feishu_p2p_…`, so it lists, opens, and migrates like any other. The loose `sess_*.json` files at the top of the store are that client's own records, not transcripts, and are not indexed.
 
+## Doubao
+
+**One account, one session.** Desktop Work and CLI conversations share native conversation IDs and appear once under **Doubao**. The adapter intersects the selected desktop account's Work conversations with desktop session artifacts and `doubao --list`; local directories alone do not prove a conversation is still active. General chats and enterprise bot entries are excluded.
+
+**Cloud-backed, opt-in, currently macOS.** Discovery, transcript reads, and renames require network access and an authenticated Doubao desktop profile. Another reads the active profile from Chromium's `Local State`; `DOUBAO_PROFILE` selects an explicit profile without falling back to another account. Cookies are decrypted in memory through macOS Keychain and are never saved by another. Sign the CLI and desktop into the same account. CLI-only authentication and native Windows/Linux authentication are not supported yet.
+
+**Native operations.** Titles are written through Doubao's native thread update endpoint and read back before success is reported. Resume uses `doubao --resume <id>` when its CLI is installed. Export and migration out are supported; import, archive, deletion, and relocation are not. A CLI conversation without verified local workspace evidence has no invented project path; use `--all` to find it.
+
+**Automatic titles.** Configure a title model through `another setup`, then opt in:
+
+```sh
+another title-policy doubao --enable --background
+another title-policy doubao
+another title-policy doubao --disable
+```
+
+The optional macOS LaunchAgent listens for native log file changes using OS notifications. Successful desktop `on_message_session_end` and CLI `im_task_finished` events trigger naming of that conversation only. There is no periodic scan or network polling. These are observed native telemetry signals, not a documented public hook. New titles become visible after native writeback and the clients' next list update; allow time for the title model to answer. Startup begins at the end of existing logs, without replaying older conversations. A title manually changed after another named it is preserved. Disable removes the background job and stops automatic naming. Development testing uses `another-dev` for these commands.
+
+Short openings such as `test` still receive a policy title with a neutral topic; the model must not invent a development task from the assistant's suggestions. Status records bounded diagnostics without conversation text and always shows the latest managed title, even when a later cross-client event was a no-op. A failed model request leaves the native title intact; a later completion event can retry. Events while the listener is stopped are not replayed automatically.
+
 ## Child sessions
 
 Child sessions stay out of the list because their parent leads back to them. When the parent is no longer indexed that reasoning fails, so such a child is listed directly; otherwise only knowing its ID would find it, which is indistinguishable from losing it. It becomes a child again as soon as its parent is indexed. A child thread that records no parent at all stays hidden: Codex's guardian threads are written that way, and they are machine assessments of a requested action rather than anyone's conversation.

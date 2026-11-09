@@ -138,6 +138,9 @@ type Request struct {
 	// Refresh asks whether Title still names the session as it is now,
 	// weighting the latest messages, rather than naming it from scratch.
 	Refresh bool
+	// RequireTitle names a new conversation even when its opening is sparse.
+	// Optional suggestions and stale-title refreshes leave this false.
+	RequireTitle bool
 }
 
 // day is the date the title must carry.
@@ -187,7 +190,17 @@ func BuildPrompt(req Request, lang Language) string {
 		b.WriteString("- 主题 is a short concrete Chinese topic, at most 16 characters, distinct from the project name.\n")
 		b.WriteString("- Write the title in Chinese even if the session below is in another language.\n")
 	}
-	fmt.Fprintf(&b, "- If the type or the topic cannot be determined from the content below, reply with exactly %s.\n", keepMarker)
+	if req.RequireTitle {
+		b.WriteString("- A title is required even for a sparse opening. Do not reply KEEP solely because the opening is short or lacks a concrete task.\n")
+		b.WriteString("- Ground the topic in user-expressed intent. Never invent concrete project work from tasks merely suggested by the assistant.\n")
+		if lang == LangEnglish {
+			b.WriteString("- If user evidence is too sparse to determine a concrete task, use exactly type Explore with neutral topic Conversation Test when the user only tests or checks the connection; otherwise use New Conversation.\n")
+		} else {
+			b.WriteString("- If user evidence is too sparse to determine a concrete task, use exactly type 探索 with neutral topic 会话测试 when the user only tests or checks the connection; otherwise use 新会话.\n")
+		}
+	} else {
+		fmt.Fprintf(&b, "- If the type or the topic cannot be determined from the content below, reply with exactly %s.\n", keepMarker)
+	}
 	if req.Refresh && strings.TrimSpace(req.Title) != "" {
 		b.WriteString("- The session has continued since its current title was written. Name what it is about now, weighting the latest messages.\n")
 		b.WriteString("- If the current title still describes the latest work, repeat its 类型 and 主题 unchanged.\n")

@@ -13,6 +13,7 @@ import (
 	"github.com/nxxxsooo/another/internal/providers/codex"
 	"github.com/nxxxsooo/another/internal/providers/commandcode"
 	"github.com/nxxxsooo/another/internal/providers/cursor"
+	"github.com/nxxxsooo/another/internal/providers/doubao"
 	"github.com/nxxxsooo/another/internal/providers/hermes"
 	"github.com/nxxxsooo/another/internal/providers/opencodeunified"
 	"github.com/nxxxsooo/another/internal/providers/pi"
@@ -73,6 +74,7 @@ func newRegistry(allowed map[string]bool) *Registry {
 		pi.New(),
 		qwen.New(),
 		agy.New(),
+		doubao.New(),
 	}
 	providers := make([]provider.Provider, 0, len(available))
 	for _, p := range available {
@@ -154,6 +156,7 @@ func CLICommand(id string) string {
 		"pi":          "pi",
 		"qwen":        "qwen",
 		"agy":         "agy",
+		"doubao":      "doubao",
 	}
 	return commands[NormalizeID(id)]
 }

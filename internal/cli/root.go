@@ -46,6 +46,15 @@ func NewApp() (*App, error) {
 		reg = registry.NewEnabled(settings.EnabledProviders)
 	} else if !os.IsNotExist(settingsErr) {
 		return nil, fmt.Errorf("load config: %w", settingsErr)
+	} else {
+		var local []string
+		for _, p := range reg.All() {
+			if remote, ok := p.(interface{ RequiresRemoteDiscovery() bool }); ok && remote.RequiresRemoteDiscovery() {
+				continue
+			}
+			local = append(local, p.ID())
+		}
+		reg = registry.NewEnabled(local)
 	}
 	// Resolve the interface language before anything can draw. A missing
 	// configuration is not a missing language: it means auto, which reads the
@@ -136,6 +145,7 @@ func (a *App) Root() *cobra.Command {
 	root.AddCommand(a.tuiCmd())
 	root.AddCommand(a.updateCmd())
 	root.AddCommand(a.aliasesCmd())
+	root.AddCommand(a.titlePolicyCmd())
 	return root
 }
 
@@ -559,7 +569,26 @@ func (a *App) runSetup(ctx context.Context) (bool, error) {
 		row.Dir, row.State = status.Dir, status.State
 		return row
 	}
-	settings, done, err := tui.RunSetup(all, counts, initial, plugins, probe, sessionCounter(ctx, all))
+	count := sessionCounter(ctx, all)
+	countAllowed := func(id string) (int, error) {
+		p, err := all.Get(id)
+		if err != nil {
+			return 0, err
+		}
+		if remote, ok := p.(interface{ RequiresRemoteDiscovery() bool }); ok && remote.RequiresRemoteDiscovery() {
+			enabled := false
+			for _, selected := range initial.EnabledProviders {
+				if selected == id {
+					enabled = true
+				}
+			}
+			if !enabled {
+				return counts[id], nil
+			}
+		}
+		return count(id)
+	}
+	settings, done, err := tui.RunSetup(all, counts, initial, plugins, probe, countAllowed)
 	if err != nil || !done {
 		return false, err
 	}

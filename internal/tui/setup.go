@@ -245,6 +245,11 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 		// page is up: that is the first run, where the index is empty and the
 		// choice this page asks for is the one the numbers inform.
 		item.counted = item.sessions > 0 || !data
+		// Counting a cloud-backed provider would contact its server (and may
+		// prompt for Keychain access). Detection is not permission to do that.
+		if remote, ok := p.(interface{ RequiresRemoteDiscovery() bool }); ok && remote.RequiresRemoteDiscovery() && !chosen[p.ID()] {
+			item.counted = true
+		}
 		items = append(items, item)
 	}
 	// The fold needs the two tiers contiguous; a saved display order is kept
@@ -308,7 +313,7 @@ func RunSetup(reg *registry.Registry, counts map[string]int, initial config.Sett
 	saved := initial
 	saved.EnabledProviders = enabled
 	saved.TitleModel = model.titleModel()
-	saved.TitlePolicy = config.TitlePolicy{Language: string(model.language())}
+	saved.TitlePolicy.Language = string(model.language())
 	saved.UI = config.UI{Language: string(model.uiLanguage())}
 	for _, p := range plugins {
 		if adapter, ok := integrations.Find(p.Integration); ok {

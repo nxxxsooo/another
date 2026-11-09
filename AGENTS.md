@@ -40,7 +40,7 @@ Before publishing, record the target version and all surfaces. Do not mix unexpl
 ## Provider Support Tiers
 
 - **Continuously tested:** Pi, OpenCode, Claude Code, Codex, Antigravity, and Qwen Code. Include all six in every release regression plan.
-- **Compatibility adapters:** CodeM is offered in setup alongside the tested six, in one flat list with no fold. Cursor, CommandCode, and Hermes stay registered (`registry.HiddenFromSetup`) so existing configurations keep working, but setup no longer offers them to new users. Preserve working adapters, but do not imply they receive end-to-end maintainer testing on every release.
+- **Compatibility adapters:** CodeM and Doubao are offered in setup in one flat list; Doubao is opt-in and macOS-only, without release-level end-to-end testing. Cursor, CommandCode, and Hermes stay registered (`registry.HiddenFromSetup`) for existing configurations. Preserve working adapters without implying per-release testing.
 - Setup must start with no providers selected on first run. Detection means “available”, never “chosen”; users explicitly select which agents another indexes and exposes.
 - Session management is capability-driven. Show rename, archive, relocate, and delete only when the selected provider implements the corresponding native operation. Never emulate unsupported lifecycle actions with another-only state.
 - Relocation is native or absent. Carrying a session into another directory uses that agent's own move or copy — currently OpenCode V2's `fork`/`move` endpoints and Pi's session file — never a re-render through the portable model, which would silently drop tool calls and reasoning. A same-provider migration is not a relocation.

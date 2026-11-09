@@ -82,6 +82,12 @@ func TestNewOrderedPutsSavedProvidersFirstAndKeepsTheRest(t *testing.T) {
 
 func TestRegistryProviders(t *testing.T) {
 	reg := registry.New()
+	if p, err := reg.Get("doubao"); err != nil || p.DisplayName() != "Doubao" {
+		t.Fatalf("Doubao missing or incorrectly named: %v %v", p, err)
+	}
+	if got := registry.CLICommand("doubao"); got != "doubao" {
+		t.Fatalf("Doubao CLI command = %q", got)
+	}
 	if len(reg.All()) < 10 {
 		t.Fatalf("expected at least 10 providers, got %d", len(reg.All()))
 	}
