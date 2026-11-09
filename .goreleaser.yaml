@@ -144,22 +144,22 @@ release:
 
     ## Compatibility
 
-    v0.24.3 makes the optional OpenCode title plugin stop creating a
-    temporary session for every title request.
+    v0.25.0 adds Doubao as an opt-in provider for shared desktop Work
+    and CLI conversations.
 
-    - The first title is OpenCode's own title request: the plugin only
-      swaps in the dated prompt, so it runs once on the `title` agent's
-      model and usually lands final.
-    - Repairs, corrections, and refreshes generate on the session itself,
-      stripped to the title prompt (about 1.5 KB instead of the full agent
-      context). Gateway and credential hooks still apply; nothing is stored.
-    - If your title model rejects the low reasoning variant OpenCode picks,
-      pin one in `agents.title.model`.
-    - After upgrading, run `another integrations install opencode`.
-
-    Other agent integrations and session-browser behavior are unchanged.
-    The optional OpenCode title plugin still requires **OpenCode 2.2.5+**.
-    Building another from source requires Go 1.25 or newer.
+    - Discovery, transcript reads, export, migration out, native rename,
+      and `doubao --resume` work from a signed-in Doubao desktop client on
+      macOS. CLI-only authentication and native Windows/Linux Doubao
+      authentication are not supported yet.
+    - Automatic Doubao titles are opt-in. Configure a title agent, then run
+      `another title-policy doubao --enable --background`. The listener
+      reacts to native completed-turn events, not a periodic scan, and writes
+      titles back through Doubao's native API.
+    - Only conversations created after enabling the policy are named;
+      existing titles are left alone. `another title-policy doubao --disable`
+      removes the background listener.
+    - Other agents and the existing title integrations are unchanged.
+    - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
     [Linux verification](https://github.com/nxxxsooo/another/blob/main/docs/linux-support.md)
