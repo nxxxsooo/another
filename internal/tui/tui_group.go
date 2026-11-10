@@ -20,6 +20,8 @@ type groupHeader struct {
 	// header belongs to. It is what gives the band its color, so a header and
 	// the rows beneath it carry the same hue.
 	path string
+	// projectLabel is native display metadata; path still owns identity/color.
+	projectLabel string
 	// base is what the label is read against, the same base the project column
 	// uses, so a header says ".worktrees/list-layout" rather than repeating the
 	// project root every band already shares.
@@ -87,10 +89,23 @@ func groupKeyFor(path string, roots []string) string {
 // A single group is returned ungrouped: one band over the whole list names
 // something every row already shares, and costs a line to say it.
 func groupSessions(items []list.Item, roots []string, base string) []list.Item {
+	labels := make(map[string]string)
+	for _, item := range items {
+		if row, ok := item.(sessionItem); ok && filepath.Clean(row.summary.ProjectPath) == groupKeyFor(row.summary.ProjectPath, roots) {
+			key := groupKeyFor(row.summary.ProjectPath, roots)
+			label := strings.TrimSpace(util.SanitizeDisplay(row.summary.ProjectLabel))
+			if previous, seen := labels[key]; seen && previous != label {
+				// Conflicting display metadata must never choose a name by row order.
+				labels[key] = ""
+			} else if !seen {
+				labels[key] = label
+			}
+		}
+	}
 	return groupSessionsBy(items,
 		func(row sessionItem) string { return groupKeyFor(row.summary.ProjectPath, roots) },
 		func(key string, count int) groupHeader {
-			return groupHeader{path: key, base: base, count: count}
+			return groupHeader{path: key, base: base, projectLabel: labels[key], count: count}
 		})
 }
 
@@ -376,6 +391,9 @@ func (d sessionDelegate) renderGroupHeader(h groupHeader, width int, selected bo
 		label = h.label
 	case h.path != "":
 		label = util.SanitizeDisplay(projectCellText(h.path, h.base))
+		if h.projectLabel != "" {
+			label = h.projectLabel
+		}
 		ink, tint = chipColors(projectColor(h.path))
 	}
 	room := min(projectColumnCap, width-rowGutterWidth-projectChipPad)
@@ -390,7 +408,7 @@ func (d sessionDelegate) renderGroupHeader(h groupHeader, width int, selected bo
 	if d.global {
 		shown = elidePathTail(label, room, d.pathDepth)
 	}
-	if h.label != "" {
+	if h.label != "" || h.projectLabel != "" {
 		shown = ansi.Truncate(label, room, "…")
 	}
 	chip := projectChip(shown, ink, tint)

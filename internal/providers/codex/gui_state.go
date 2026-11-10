@@ -14,19 +14,22 @@ import (
 )
 
 // guiTitles is Codex Desktop's own session-title catalog. A title here is also
-// authoritative evidence that a rollout is user-visible: desktop-launched
-// threads can carry subagent-shaped source metadata even while appearing in the
-// sidebar.
+// evidence that a rollout is user-visible, except for metadata-identified
+// Guardian reviews: desktop-launched threads can carry subagent-shaped source
+// metadata even while appearing in the sidebar.
 type guiTitles struct {
 	names           map[string]string
 	nativeRevisions map[string]uint64
 	mtime           int64
 	size            int64
+	projects        projectLabels
+	projectRevision uint64
 }
 
 func (p *Provider) loadGUITitles(ctx context.Context) (guiTitles, error) {
 	root := filepath.Dir(p.sessionsRoot)
 	out := guiTitles{names: make(map[string]string), nativeRevisions: make(map[string]uint64)}
+	out.projects = newProjectLabels(root)
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
@@ -35,6 +38,7 @@ func (p *Provider) loadGUITitles(ctx context.Context) (guiTitles, error) {
 	// state. Keep this as the broad fallback.
 	global := filepath.Join(root, ".codex-global-state.json")
 	if data, err := os.ReadFile(global); err == nil {
+		out.projects.loadDesktop(data)
 		var state struct {
 			Electron struct {
 				Titles map[string]string `json:"thread-descriptions-v1"`
@@ -71,6 +75,7 @@ func (p *Provider) loadGUITitles(ctx context.Context) (guiTitles, error) {
 	if err := p.loadNativeNames(ctx, &out); err != nil {
 		return out, fmt.Errorf("codex: read native thread names: %w", err)
 	}
+	out.projectRevision = out.projects.revision()
 	return out, nil
 }
 
@@ -88,6 +93,9 @@ func (p *Provider) loadNativeNames(ctx context.Context, titles *guiTitles) error
 		return err
 	}
 	defer func() { _ = db.Close() }()
+	if err := titles.projects.loadNative(ctx, db); err != nil {
+		return err
+	}
 	var hasName int
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('threads') WHERE name = 'name'`).Scan(&hasName); err != nil {
 		return err
@@ -127,12 +135,13 @@ func (g *guiTitles) noteFile(path string) {
 
 func (g guiTitles) fingerprint(st os.FileInfo, path string) (int64, int64) {
 	mtime := st.ModTime().UnixNano()
+	projectRevision := g.projectRevision
 	if revision, ok := g.nativeRevisions[filepath.Clean(path)]; ok {
 		// SourceSize is an opaque index fingerprint, not a displayed byte count.
-		return mtime, int64((uint64(st.Size()) ^ revision) & ((1 << 63) - 1))
+		return mtime, int64((uint64(st.Size()) ^ revision ^ projectRevision) & ((1 << 63) - 1))
 	}
 	if g.mtime > mtime {
 		mtime = g.mtime
 	}
-	return mtime, st.Size() + g.size
+	return mtime, int64((uint64(st.Size()+g.size) ^ projectRevision) & ((1 << 63) - 1))
 }

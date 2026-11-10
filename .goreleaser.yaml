@@ -144,20 +144,19 @@ release:
 
     ## Compatibility
 
-    v0.25.0 adds Doubao as an opt-in provider for shared desktop Work
-    and CLI conversations.
+    v0.26.0 makes Codex session lists easier to read without changing
+    Codex's native records or directories.
 
-    - Discovery, transcript reads, export, migration out, native rename,
-      and `doubao --resume` work from a signed-in Doubao desktop client on
-      macOS. CLI-only authentication and native Windows/Linux Doubao
-      authentication are not supported yet.
-    - Automatic Doubao titles are opt-in. Configure a title agent, then run
-      `another title-policy doubao --enable --background`. The listener
-      reacts to native completed-turn events, not a periodic scan, and writes
-      titles back through Doubao's native API.
-    - Only conversations created after enabling the policy are named;
-      existing titles are left alone. `another title-policy doubao --disable`
-      removes the background listener.
+    - Guardian action reviews stay hidden by default, even when they have
+      a native name. Pass `--include-subagents` to `list` or `search` to include them;
+      ordinary conversations with similar titles remain visible.
+    - ChatGPT-backed project directories show names from native local project
+      metadata. Missing or ambiguous mappings keep the path; names are never
+      inferred from conversation titles. Names are searchable, while scope,
+      resume, and path-based filters still use the real directory.
+    - JSON summaries add optional `project_label` metadata. `project_path`
+      stays unchanged. The next index refresh re-summarizes Codex once;
+      no manual rebuild, session rewrite, or configuration change is needed.
     - Other agents and the existing title integrations are unchanged.
     - Building another from source requires Go 1.25 or newer.
 

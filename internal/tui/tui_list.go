@@ -65,7 +65,7 @@ func (i sessionItem) displayTitle() string {
 }
 
 func (i sessionItem) FilterValue() string {
-	return i.summary.ID + " " + i.summary.Title + " " + i.summary.ProjectPath + " " + i.summary.Provider
+	return i.summary.ID + " " + i.summary.Title + " " + i.summary.ProjectPath + " " + i.summary.ProjectLabel + " " + i.summary.Provider
 }
 
 // sessionDelegate renders one session per line so the title, the only thing
@@ -206,8 +206,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	}
 	row += title + c.gap
 	if c.projW > 0 {
-		text, shown := projectCellShown(it.summary.ProjectPath, d.projectBase, d.bands, d.groupRoots)
-		row += renderProjectChipCell(it.summary.ProjectPath, text, shown, c.projW, it.missingDir, d.global, d.pathDepth) + c.gap
+		row += d.renderSessionProjectCell(it, c.projW) + c.gap
 	}
 	row += mutedStyle.Render(padLeft(msgs, c.msgW)) + c.rightInset
 	fmt.Fprint(w, ansi.Truncate(row, width, ""))
@@ -412,6 +411,18 @@ func renderProjectCellState(path, base string, width int, missing bool) string {
 	// A cell with no base stands alone, which is the shape the global column
 	// had before ui.path_base existed; it is shortened the way that column is.
 	return renderProjectChipCell(path, text, shown, width, missing, base == "", pathTailDepth)
+}
+
+// Labels only replace spelling: grouping, colors, and directory operations keep
+// the original path. Treat a native project name as text, not path segments.
+func (d sessionDelegate) renderSessionProjectCell(it sessionItem, width int) string {
+	text, shown := projectCellShown(it.summary.ProjectPath, d.projectBase, d.bands, d.groupRoots)
+	global := d.global
+	if label := strings.TrimSpace(util.SanitizeDisplay(it.summary.ProjectLabel)); shown && !d.bands && label != "" {
+		text = ansi.Truncate(label, max(0, width-projectChipPad), "…")
+		global = false
+	}
+	return renderProjectChipCell(it.summary.ProjectPath, text, shown, width, it.missingDir, global, d.pathDepth)
 }
 
 // projectCellShown is what a row's project column says, and whether it says

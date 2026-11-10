@@ -60,9 +60,11 @@ type Conversation struct {
 }
 
 type Summary struct {
-	ID           string    `json:"id"`
-	Provider     string    `json:"provider"`
-	ProjectPath  string    `json:"project_path,omitempty"`
+	ID          string `json:"id"`
+	Provider    string `json:"provider"`
+	ProjectPath string `json:"project_path,omitempty"`
+	// ProjectLabel is optional native display metadata, never a filesystem path.
+	ProjectLabel string    `json:"project_label,omitempty"`
 	Title        string    `json:"title,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

@@ -359,6 +359,8 @@ another paths unlink <旧目录>
 
 `list` 和 `search` 加上 `--json` 后会输出机器可读记录。子 agent 会话默认隐藏；加上 `--include-subagents` 可显示。
 
+Codex Guardian 审核会话按来源元数据识别，即使有原生名称也默认隐藏。ChatGPT 项目目录存在明确的本地原生映射时，浏览器显示项目名；找不到或映射有歧义时仍显示路径。项目名可搜索，JSON 摘要增加可选的 `project_label`；`project_path`、按路径筛选及原生会话记录均保持不变。
+
 上下文模式：
 
 - `auto`：清理后的所有轮次能放下时全部保留，否则选择近期工作上下文；

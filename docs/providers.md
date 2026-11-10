@@ -30,6 +30,10 @@ The offer lasts only as long as the list. `another` keeps no trash directory of 
 
 **Subagent threads.** The forks Codex Desktop spawns from a parent thread record their answers only as `event_msg`, never as the mirrored `response_item`, and their only user-role record is injected plugin transport. Those sessions open and migrate like any other. Having no prompt of their own, they are named after the subagent identity Codex recorded, such as `api_definitions · Wegener the 9th`.
 
+**Guardian reviews.** Source metadata `{"subagent":{"other":"guardian"}}` identifies internal action reviews. A native name does not make these user conversations: the browser, default lists, searches, and counts exclude them. `--include-subagents` includes them without changing their titles or native records. A normal conversation titled `Guardian review` is not hidden.
+
+**ChatGPT project names.** For working directories under `.chatgpt-projects/g-p-*`, the browser uses names associated with roots in Codex's native `projects` / `project_roots` tables, falling back to the desktop's `local-projects` catalog. Child directories retain their relative suffix. Missing or ambiguous names leave the path visible; names are never inferred from conversation titles. Names are searchable and available as optional `project_label` metadata in JSON summaries. Group identity, path filters, directory actions, and resume still use the real `project_path`. Metadata-only changes are picked up by the next index refresh.
+
 **Message counts.** Codex writes each turn to a rollout up to twice, and the message count in the list used to count both halves. That number now matches what the session actually opens with, so a Codex session's count can drop after this upgrade. The index re-summarizes Codex once on the first run after the update; nothing has to be rebuilt by hand.
 
 ## Qwen Code

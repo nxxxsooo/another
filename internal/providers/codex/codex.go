@@ -172,6 +172,7 @@ type codexMeta struct {
 	nickname  string
 	agentPath string
 	seen      bool
+	guardian  bool
 }
 
 func newCodexMeta() codexMeta {
@@ -207,6 +208,7 @@ func codexApplyMeta(row map[string]any, meta *codexMeta) {
 	if source, ok := p["source"].(map[string]any); ok {
 		if subagent, ok := source["subagent"].(map[string]any); ok {
 			meta.kind = model.SessionKindSubagent
+			meta.guardian = stringField(subagent, "other") == "guardian"
 			if spawn, ok := subagent["thread_spawn"].(map[string]any); ok {
 				meta.parentID = stringField(spawn, "parent_thread_id")
 				if meta.nickname == "" {
@@ -388,8 +390,10 @@ func (p *Provider) summarizeFileWithGUI(path string, gui guiTitles) (model.Summa
 	}
 	if guiTitle := strings.TrimSpace(gui.names[id]); guiTitle != "" {
 		title = guiTitle
-		kind = model.SessionKindRoot
-		parentID = ""
+		if !meta.guardian {
+			kind = model.SessionKindRoot
+			parentID = ""
+		}
 	}
 	if title == "" {
 		if project != "" {
@@ -402,7 +406,8 @@ func (p *Provider) summarizeFileWithGUI(path string, gui guiTitles) (model.Summa
 	mtime, size := gui.fingerprint(st, path)
 	return model.Summary{
 		ID: id, Provider: ProviderID, ProjectPath: project, Title: title,
-		CreatedAt: first, UpdatedAt: last, MessageCount: msgCount,
+		ProjectLabel: gui.projects.label(project),
+		CreatedAt:    first, UpdatedAt: last, MessageCount: msgCount,
 		StoragePath: path, Kind: kind, ParentID: parentID,
 		SourceMtime: mtime, SourceSize: size,
 		Migration: migration,
@@ -467,8 +472,10 @@ func (p *Provider) Load(ctx context.Context, ref provider.SessionRef) (*model.Co
 	}
 	if guiTitle := strings.TrimSpace(gui.names[conv.ID]); guiTitle != "" {
 		conv.Title = guiTitle
-		kind = model.SessionKindRoot
-		parentID = ""
+		if !meta.guardian {
+			kind = model.SessionKindRoot
+			parentID = ""
+		}
 	}
 	if kind == model.SessionKindSubagent && parentID != "" && conv.ID == "" {
 		conv.ID = ref.ID

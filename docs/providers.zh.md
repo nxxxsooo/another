@@ -30,6 +30,10 @@ Antigravity 的归档就是这样一格：它的存储里根本没有归档这�
 
 **子 agent 会话**。Codex Desktop 派生出的子 agent 会话（fork 线程）只把回答写成 `event_msg`，没有 `response_item` 那一份，用户角色的记录也只剩注入的插件清单。这类会话能正常打开和迁移；它们没有属于自己的提问，标题就取 Codex 记的子 agent 身份，例如 `api_definitions · Wegener the 9th`。
 
+**Guardian 审核**。来源元数据 `{"subagent":{"other":"guardian"}}` 标识内部动作审核。即使有原生名称，也不会被当成用户对话：浏览器及默认列表、搜索、计数均排除这类会话。`--include-subagents` 可显示它们，原生记录及标题保持不变。普通对话即使名为 `Guardian review`，也不会被隐藏。
+
+**ChatGPT 项目名**。工作目录位于 `.chatgpt-projects/g-p-*` 下时，浏览器优先读取 Codex 原生 `projects`／`project_roots` 表中与目录关联的名称，缺少映射时回退到桌面端 `local-projects` 目录。子目录保留相对路径后缀。名称缺失或映射有歧义时仍显示路径，不从对话标题猜测项目名。项目名可搜索，JSON 摘要提供可选的 `project_label`；分组身份、路径筛选、目录操作及恢复仍使用真实 `project_path`。仅元数据发生的变化会在下次索引刷新时更新。
+
 **消息数**。Codex 每轮对话在 rollout 里最多写两遍，列表里的消息数以前把这两份分开数。现在这个数字和会话真正打开时的条数一致，所以升级后 Codex 会话的消息数可能变小。索引会在升级后第一次运行时把 Codex 重新汇总一遍，不需要手动操作。
 
 ## Qwen Code

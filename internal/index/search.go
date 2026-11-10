@@ -106,7 +106,7 @@ ON CONFLICT(provider, session_id) DO UPDATE SET
 // Failed unchanged sources are not retried unless retryErrors is true.
 func (s *Store) IndexPendingContent(ctx context.Context, reg *registry.Registry, limit int, retryErrors bool) (indexed, failed int, err error) {
 	query := `SELECT s.id, s.provider, s.project_path, s.title, s.created_at, s.updated_at,
-       s.message_count, s.storage_path, s.source_mtime, s.kind, s.parent_id, s.source_size
+       s.message_count, s.storage_path, s.source_mtime, s.kind, s.parent_id, s.source_size, s.project_label
 FROM sessions s LEFT JOIN content_index c
   ON c.provider=s.provider AND c.session_id=s.id
 WHERE c.session_id IS NULL OR c.session_updated<>s.updated_at OR c.message_count<>s.message_count`
@@ -197,14 +197,14 @@ func (s *Store) Search(opts SearchOpts) ([]SearchHit, error) {
 		Since:        opts.Since, IncludeSubagents: opts.IncludeSubagents,
 	})
 	like := "%" + util.EscapeLike(rawQuery) + "%"
-	args = append(args, like, like, like)
+	args = append(args, like, like, like, like)
 	match := ftsQuery(rawQuery)
 	sqlQuery := `WITH eligible AS (
   SELECT *` + where + `
 ), matches AS (
   SELECT provider, id, 1 AS metadata, 0 AS content, title AS snippet
   FROM eligible
-  WHERE id LIKE ? ESCAPE '\' OR title LIKE ? ESCAPE '\' OR project_path LIKE ? ESCAPE '\'`
+   WHERE id LIKE ? ESCAPE '\' OR title LIKE ? ESCAPE '\' OR project_path LIKE ? ESCAPE '\' OR project_label LIKE ? ESCAPE '\'`
 	if match != "" {
 		sqlQuery += `
 	  UNION ALL
@@ -225,7 +225,7 @@ func (s *Store) Search(opts SearchOpts) ([]SearchHit, error) {
   FROM matches GROUP BY provider, id
 )
 SELECT s.id, s.provider, s.project_path, s.title, s.created_at, s.updated_at,
-       s.message_count, s.storage_path, s.source_mtime, s.kind, s.parent_id, s.source_size,
+       s.message_count, s.storage_path, s.source_mtime, s.kind, s.parent_id, s.source_size, s.project_label,
        c.metadata, c.content, c.content_snippet
 FROM combined c JOIN eligible s ON s.provider=c.provider AND s.id=c.id
 ORDER BY s.updated_at DESC, s.provider, s.id
@@ -244,7 +244,7 @@ LIMIT ? OFFSET ?`
 		if err := rows.Scan(
 			&hit.Session.ID, &hit.Session.Provider, &hit.Session.ProjectPath, &hit.Session.Title,
 			&created, &updated, &hit.Session.MessageCount, &hit.Session.StoragePath, &mtime,
-			&hit.Session.Kind, &hit.Session.ParentID, &hit.Session.SourceSize,
+			&hit.Session.Kind, &hit.Session.ParentID, &hit.Session.SourceSize, &hit.Session.ProjectLabel,
 			&metadata, &content, &hit.Snippet,
 		); err != nil {
 			return nil, err

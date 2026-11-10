@@ -399,6 +399,8 @@ After a project is renamed or relocated, its earlier sessions still point at the
 
 `--json` makes `list` and `search` emit machine-readable records. Child agent sessions are hidden by default; `--include-subagents` includes them.
 
+Codex Guardian reviews stay hidden by source metadata even when they have a native name. ChatGPT-backed project directories show their native project name in the browser when an unambiguous local mapping exists; otherwise they keep the path. Names are searchable, and JSON summaries include an optional `project_label`; `project_path`, path-based filters, and native session records remain unchanged.
+
 Context modes:
 
 - `auto` keeps all cleaned turns when they fit and otherwise selects recent working context;

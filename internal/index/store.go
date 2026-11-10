@@ -205,6 +205,8 @@ CREATE INDEX IF NOT EXISTS idx_migration_dedup_provider ON migration_dedup(provi
 		`ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'root'`,
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT`,
 		`ALTER TABLE sessions ADD COLUMN source_size INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN project_label TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_sources ADD COLUMN project_label TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE content_index ADD COLUMN session_updated INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE content_index ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE content_index ADD COLUMN storage_path TEXT NOT NULL DEFAULT ''`,
@@ -216,9 +218,9 @@ CREATE INDEX IF NOT EXISTS idx_migration_dedup_provider ON migration_dedup(provi
 	if _, err := s.db.Exec(`
 INSERT OR IGNORE INTO session_sources
   (provider, id, storage_path, project_path, title, created_at, updated_at, message_count,
-   source_mtime, source_size, kind, parent_id)
+   source_mtime, source_size, kind, parent_id, project_label)
 SELECT provider, id, storage_path, project_path, title, created_at, updated_at, message_count,
-       source_mtime, source_size, kind, parent_id
+       source_mtime, source_size, kind, parent_id, project_label
 FROM sessions`); err != nil {
 		return err
 	}
@@ -419,8 +421,8 @@ func upsertSource(tx *sql.Tx, summary model.Summary) error {
 	_, err := tx.Exec(`
 INSERT INTO session_sources
   (provider, id, storage_path, project_path, title, created_at, updated_at, message_count,
-   source_mtime, source_size, source_priority, kind, parent_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   source_mtime, source_size, source_priority, kind, parent_id, project_label)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(provider, storage_path) DO UPDATE SET
   id=excluded.id,
   project_path=excluded.project_path,
@@ -432,10 +434,11 @@ ON CONFLICT(provider, storage_path) DO UPDATE SET
   source_size=excluded.source_size,
   source_priority=excluded.source_priority,
   kind=excluded.kind,
-  parent_id=excluded.parent_id`,
+  parent_id=excluded.parent_id,
+  project_label=excluded.project_label`,
 		summary.Provider, summary.ID, summary.StoragePath, summary.ProjectPath, summary.Title,
 		summary.CreatedAt.Unix(), summary.UpdatedAt.Unix(), summary.MessageCount,
-		summary.SourceMtime, summary.SourceSize, summary.SourcePriority, summary.Kind, summary.ParentID)
+		summary.SourceMtime, summary.SourceSize, summary.SourcePriority, summary.Kind, summary.ParentID, summary.ProjectLabel)
 	if err != nil {
 		return err
 	}
@@ -454,9 +457,9 @@ func rebuildProviderSessions(tx *sql.Tx, providerID string) error {
 	if _, err := tx.Exec(`
 INSERT INTO sessions
   (id, provider, project_path, title, created_at, updated_at, message_count, storage_path,
-   source_mtime, kind, parent_id, source_size)
+   source_mtime, kind, parent_id, source_size, project_label)
 SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path,
-       source_mtime, kind, parent_id, source_size
+       source_mtime, kind, parent_id, source_size, project_label
 FROM (
 	  SELECT ss.*,
 	    ROW_NUMBER() OVER (
@@ -584,9 +587,9 @@ func (s *Store) listWhere(opts ListOpts) (string, []any) {
 		args = append(args, "%"+util.EscapeLike(opts.ProjectFilter)+"%")
 	}
 	if opts.Query != "" {
-		q += ` AND (id LIKE ? ESCAPE '\' OR title LIKE ? ESCAPE '\' OR project_path LIKE ? ESCAPE '\')`
+		q += ` AND (id LIKE ? ESCAPE '\' OR title LIKE ? ESCAPE '\' OR project_path LIKE ? ESCAPE '\' OR project_label LIKE ? ESCAPE '\')`
 		like := "%" + util.EscapeLike(opts.Query) + "%"
-		args = append(args, like, like, like)
+		args = append(args, like, like, like, like)
 	}
 	return q, args
 }
@@ -600,7 +603,7 @@ func (s *Store) Count(opts ListOpts) (int, error) {
 
 func (s *Store) List(opts ListOpts) ([]model.Summary, error) {
 	where, args := s.listWhere(opts)
-	q := `SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size` + where
+	q := `SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size, project_label` + where
 	q += ` ORDER BY updated_at DESC`
 	if opts.Limit > 0 {
 		q += fmt.Sprintf(` LIMIT %d`, opts.Limit)
@@ -617,7 +620,7 @@ func (s *Store) List(opts ListOpts) ([]model.Summary, error) {
 	for rows.Next() {
 		var sm model.Summary
 		var created, updated, mtime int64
-		if err := rows.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime, &sm.Kind, &sm.ParentID, &sm.SourceSize); err != nil {
+		if err := rows.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime, &sm.Kind, &sm.ParentID, &sm.SourceSize, &sm.ProjectLabel); err != nil {
 			return nil, err
 		}
 		sm.CreatedAt = time.Unix(created, 0)
@@ -638,7 +641,7 @@ func (s *Store) Get(providerID, id string) (*model.Summary, error) {
 	if suffixOnly {
 		return s.matchIDs(providerID, `id LIKE ? ESCAPE '\'`, "%"+util.EscapeLike(id), id, true)
 	}
-	if sm, err := s.scanSummary(`SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size
+	if sm, err := s.scanSummary(`SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size, project_label
 FROM sessions WHERE provider = ? AND id = ? ORDER BY updated_at DESC LIMIT 1`, providerID, id); err == nil {
 		return sm, nil
 	} else if err != provider.ErrNotFound {
@@ -680,11 +683,11 @@ func (s *Store) matchIDs(providerID, predicate, value, queryID string, withProvi
 	var err error
 	if withProvider {
 		rows, err = s.db.Query(`
-SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size
+SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size, project_label
 FROM sessions WHERE provider = ? AND `+predicate+` ORDER BY updated_at DESC`, providerID, value)
 	} else {
 		rows, err = s.db.Query(`
-SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size
+SELECT id, provider, project_path, title, created_at, updated_at, message_count, storage_path, source_mtime, kind, parent_id, source_size, project_label
 FROM sessions WHERE `+predicate+` ORDER BY updated_at DESC`, value)
 	}
 	if err != nil {
@@ -727,7 +730,7 @@ func (s *Store) scanSummary(query string, args ...any) (*model.Summary, error) {
 func (s *Store) scanSummaryRow(rows *sql.Rows) (*model.Summary, error) {
 	var sm model.Summary
 	var created, updated, mtime int64
-	if err := rows.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime, &sm.Kind, &sm.ParentID, &sm.SourceSize); err != nil {
+	if err := rows.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime, &sm.Kind, &sm.ParentID, &sm.SourceSize, &sm.ProjectLabel); err != nil {
 		return nil, err
 	}
 	sm.CreatedAt = time.Unix(created, 0)
@@ -739,7 +742,7 @@ func (s *Store) scanSummaryRow(rows *sql.Rows) (*model.Summary, error) {
 func (s *Store) scanSummaryFromRow(row *sql.Row) (*model.Summary, error) {
 	var sm model.Summary
 	var created, updated, mtime int64
-	if err := row.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime, &sm.Kind, &sm.ParentID, &sm.SourceSize); err != nil {
+	if err := row.Scan(&sm.ID, &sm.Provider, &sm.ProjectPath, &sm.Title, &created, &updated, &sm.MessageCount, &sm.StoragePath, &mtime, &sm.Kind, &sm.ParentID, &sm.SourceSize, &sm.ProjectLabel); err != nil {
 		return nil, err
 	}
 	sm.CreatedAt = time.Unix(created, 0)
@@ -987,11 +990,11 @@ func (s *Store) LastUpdateStale(maxAge time.Duration) bool {
 }
 
 // codexWireSchemaKey records that the index has been rebuilt since another
-// learned to read Codex threads that only carry event_msg records, and to
-// count Codex turns the way Load returns them. A rollout file does not change
+// learned to read Codex event_msg turns, preserve Guardian classification even
+// when named, and resolve native ChatGPT project labels. A rollout does not change
 // when another's reading of it changes, so an incremental scan would never
 // revisit one: every stored Codex row has to be summarized again exactly once.
-const codexWireSchemaKey = "codex_wire_schema_v2"
+const codexWireSchemaKey = "codex_wire_schema_v3"
 
 // codexProviderID avoids importing the provider package here; the index only
 // needs the registry's name for it.
