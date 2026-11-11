@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/nxxxsooo/another/internal/herdr"
 	"github.com/nxxxsooo/another/internal/util"
 )
 
@@ -235,6 +236,12 @@ func (m modelState) foldedBands(items []list.Item) []list.Item {
 // the ungrouped order, applies the current mode, and takes the cursor off a
 // header. Setting items directly would leave the cursor on a band.
 func (m *modelState) setSessionItems(items []list.Item) {
+	for i, item := range items {
+		if row, ok := item.(sessionItem); ok {
+			row.herdrLive = herdr.Supported(row.summary.Provider) && len(m.herdrLive[row.summary.ID]) > 0
+			items[i] = row
+		}
+	}
 	m.ungrouped = items
 	m.sessions.SetItems(m.groupedItems())
 	m.skipGroupHeader(true)

@@ -178,6 +178,7 @@ You can also run `another update`; another chooses Homebrew, the install script,
 
 ```text
 Enter     resume the selected session in its native agent
+H         open the selected local OpenCode session in Herdr; keep another running
 →         migrate the selected session to another agent
 ←         choose a source agent
 ↑ / ↓     move through sessions or picker items
@@ -200,6 +201,8 @@ q         quit
 ```
 
 From `v0.20.0`, rename and delete sit on `r` and `d`, and refresh moved to `s`. The earlier `Ctrl+R`, `Ctrl+D`, and `Ctrl+T` still work.
+
+With `hc` and a running Herdr window, `●` marks an exact native OpenCode session ID reported by a live local terminal (checked at startup and on `s`). Uppercase `H` rechecks and focuses that terminal; you may still need to switch its internal OpenCode tab. If no live match exists, it opens the saved native session in a new tab in the active local space, or the first local space when the active space is remote. Missing tools, unavailable probes, and ambiguous matches report an error rather than launching a duplicate. Remote terminals and other agents are excluded; `Enter` is unchanged. No settings or hooks are installed.
 
 The interface language and the title language are separate settings, and their `auto` means different things: the interface follows the terminal's locale (`LC_ALL` → `LC_MESSAGES` → `LANG`, where a `zh` tag selects Chinese and everything else selects English), while a title follows the session it names. The CLI's `--help`, flag descriptions, and error messages stay English. The bridge sentence written into Pi when a migrated conversation ends on an assistant turn follows the interface language, and both wordings are recognized and stripped when the session is read back.
 

@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nxxxsooo/another/internal/config"
+	"github.com/nxxxsooo/another/internal/herdr"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/migrate"
 	"github.com/nxxxsooo/another/internal/model"
@@ -67,6 +68,10 @@ const (
 )
 
 type modelState struct {
+	herdrClient  herdr.Client
+	herdrLive    map[string][]string
+	herdrOpening bool
+
 	reg    *registry.Registry
 	idx    *index.Store
 	engine *migrate.Engine
@@ -468,7 +473,7 @@ func (m *modelState) updateSourceCounts(counts map[string]int) {
 }
 
 func (m modelState) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.HideCursor, tea.SetWindowTitle(windowTitle), m.spinner.Tick, probeSizeCmd(0), screenCheckCmd(), loadSessionsPageCmd(m, m.pageGen)}
+	cmds := []tea.Cmd{tea.HideCursor, tea.SetWindowTitle(windowTitle), m.spinner.Tick, probeSizeCmd(0), screenCheckCmd(), loadSessionsPageCmd(m, m.pageGen), m.herdrProbeCmd()}
 	if cmd := m.focusPreviewCmd(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}

@@ -290,6 +290,8 @@ type uiText struct {
 	helpKeyRefresh   string
 	helpKeyRedraw    string
 	helpKeyOpen      string
+	helpKeyHerdr     string
+	herdrBusy        string
 	helpKeyMigrate   string
 	helpKeyPreview   string
 	helpKeyMark      string
@@ -624,6 +626,8 @@ var englishText = uiText{
 	helpKeyRefresh:   "refresh",
 	helpKeyRedraw:    "redraw screen",
 	helpKeyOpen:      "open it where it lives",
+	helpKeyHerdr:     "open in Herdr · local OpenCode only",
+	herdrBusy:        "Opening in Herdr; wait before changing or resuming sessions",
 	helpKeyMigrate:   "carry it to another agent",
 	helpKeyPreview:   "preview the conversation",
 	helpKeyMark:      "mark this one",
@@ -942,6 +946,8 @@ var chineseText = uiText{
 	helpKeyRefresh:       "刷新",
 	helpKeyRedraw:        "重绘画面",
 	helpKeyOpen:          "在原 agent 里打开",
+	helpKeyHerdr:         "在 Herdr 打开 · 仅本机 OpenCode",
+	herdrBusy:            "正在 Herdr 打开；请等待后再修改或恢复会话",
 	helpKeyMigrate:       "迁移到另一个 agent",
 	helpKeyPreview:       "预览对话",
 	helpKeyMark:          "标记这一条",

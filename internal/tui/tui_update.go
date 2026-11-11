@@ -23,6 +23,22 @@ func (m modelState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	switch msg := msg.(type) {
+	case herdrSnapshotMsg:
+		m.herdrLive = msg.live
+		selected, _ := m.sessions.SelectedItem().(sessionItem)
+		m.setSessionItems(m.ungrouped)
+		m.selectSession(selected.summary.ID)
+		return m, nil
+	case herdrOpenedMsg:
+		m.herdrOpening = false
+		if msg.err != nil {
+			m.status = ""
+			m.err = msg.err.Error()
+		} else {
+			m.err = ""
+			m.status = msg.status
+		}
+		return m, m.herdrProbeCmd()
 	case tea.WindowSizeMsg:
 		return m.onWindowSize(msg)
 	case sizeProbeMsg:
@@ -453,6 +469,10 @@ func (m modelState) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// From the first key on, the person is driving: the list follows their
 	// scope and search again, not the link they arrived by.
 	m.focus = nil
+	if m.herdrOpening && m.herdrConflictingKey(msg) {
+		m.status = txt.herdrBusy
+		return m, nil
+	}
 	if m.searching {
 		return m.updateSearching(msg)
 	}
@@ -906,6 +926,8 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(tea.HideCursor, tea.ClearScreen)
 	case "h":
 		return m.openHistory()
+	case "H":
+		return m.openInHerdr()
 	case "esc":
 		m.err = ""
 		if m.lastResume != "" {
@@ -1180,7 +1202,7 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// easy key and the rare re-fetch keeps the mnemonic one.
 		m.indexing = true
 		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, refreshIndexCmd(m.ctx, m.reg, m.idx, m.sourceID(), m.cwd, true))
+		return m, tea.Batch(m.spinner.Tick, refreshIndexCmd(m.ctx, m.reg, m.idx, m.sourceID(), m.cwd, true), m.herdrProbeCmd())
 	}
 	var cmd tea.Cmd
 	m.sessions, cmd = m.sessions.Update(msg)

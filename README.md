@@ -150,6 +150,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://mjshao.fun/a
 
 ```text
 Enter     用原生 agent 恢复选中的会话
+H         在 Herdr 打开选中的本机 OpenCode 会话，保留 another 界面
 →         把选中的会话迁移到另一个 agent
 ←         选择来源 agent
 ↑ / ↓     在会话或选择器条目间移动
@@ -172,6 +173,8 @@ q         退出
 ```
 
 从 `v0.20.0` 起，重命名和删除改到 `r` 和 `d`，刷新改到 `s`。原来的 `Ctrl+R`、`Ctrl+D` 和 `Ctrl+T` 仍然可用。
+
+安装 `hc` 且 Herdr 窗口已运行时，`●` 表示本机存活终端报告了完全相同的 OpenCode 原生会话 ID（启动时及按 `s` 时检查）。大写 `H` 会重新核对并聚焦该终端；仍可能需要在 OpenCode 内切换标签。没有存活匹配时，用原生恢复命令新开 Herdr 标签，明确放入当前本机空间；当前空间是远程时使用第一个本机空间。工具缺失、探测失败或匹配不唯一时会报错，不会退而重复启动。远程终端及其他 agent 不在此功能范围；`Enter` 行为不变，不安装设置或钩子。
 
 界面语言与标题语言是两个独立设置，`auto` 的含义也不同：界面的 `auto` 读终端 locale（`LC_ALL` → `LC_MESSAGES` → `LANG`），`zh` 开头走中文，其余一律英文；标题的 `auto` 看会话内容。CLI 的 `--help`、参数说明和错误信息始终是英文。迁移到 Pi 时补写的那句衔接语（原会话以 assistant 结尾时才写）跟随界面语言，两种写法都能在读回时识别并剥离。
 

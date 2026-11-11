@@ -25,6 +25,7 @@ type sessionItem struct {
 	// once per page rather than per frame: the row renderer runs on every
 	// keystroke, and a filesystem check does not belong there.
 	missingDir bool
+	herdrLive  bool
 }
 
 // sessionItems turns summaries into rows, resolving each distinct directory
@@ -193,6 +194,9 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	shownTitle := it.displayTitle()
 	if d.narrow && d.dateBands {
 		shownTitle = titleDatePrefix.ReplaceAllString(shownTitle, "")
+	}
+	if it.herdrLive {
+		shownTitle = "● " + shownTitle
 	}
 	title := padRight(ansi.Truncate(shownTitle, c.titleW, "…"), c.titleW)
 	if index == m.Index() {

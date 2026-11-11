@@ -350,6 +350,7 @@ const (
 func (m modelState) keyHelpColumns() (left, right []keyGroup) {
 	session := []keyRow{
 		{"enter", txt.helpKeyOpen},
+		{"H", txt.helpKeyHerdr},
 		{"→", txt.helpKeyMigrate},
 		{"space", txt.helpKeyPreview},
 		{"u", txt.helpKeyUndo},

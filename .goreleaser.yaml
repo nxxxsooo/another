@@ -144,15 +144,18 @@ release:
 
     ## Compatibility
 
-    v0.26.2 fixes spurious warnings from optional automatic title hooks.
+    v0.27.0 adds an optional Herdr action for local OpenCode sessions.
 
-    - If the title model has no suggestion (for example, after an opening of
-      just `test`), stale-aware automatic naming keeps the native title without
-      failing the hook. A later idle turn can try again with more context.
-    - Actual model/command failures and Doubao's required first-title failures
-      still surface as errors. Manual titles remain protected.
-    - Existing hooks use the fix after upgrading the binary; no integration
-      reinstall, index rebuild, or configuration migration is needed.
+    - Press uppercase `H` to focus a terminal reporting the exact native session
+      ID, or open the saved session in a new local Herdr tab. another stays open;
+      `Enter` still resumes in the current terminal.
+    - Herdr integration requires `hc`, a running local core, and a running Herdr
+      window. No settings, hooks, index rebuild, or configuration migration are
+      required. Other agents and remote terminals are outside this first slice.
+    - Incomplete terminal metadata prevents new-tab launches rather than treating
+      unknown sessions as absent. Known exact matches remain usable. A shared
+      terminal may still require switching its internal OpenCode tab manually.
+    - Existing automatic-title behavior and manual-title protection are unchanged.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
