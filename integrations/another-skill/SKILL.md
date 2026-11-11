@@ -61,3 +61,19 @@ otherwise tell the user to upgrade with `another update`.
 - Say which session you used (title, agent, date) when you rely on it.
 - Check claims about code against the current files before acting on them;
   the session describes what was true then.
+
+## 4. Continue it where it ran
+
+The excerpt header names the directory the session ran in (`Project:`). When
+the user wants to carry that work on, not just consult it, and that directory
+differs from the current one, work from there. Project instructions and any
+per-repository memory follow the working directory, so continuing from the
+wrong one quietly uses the wrong ones.
+
+- In OpenCode, move this session there with its session move tool, then read
+  the nearest `AGENTS.md` there: rules only load at session start.
+- Elsewhere, tell the user to restart the agent in that directory and give the
+  `cd '<Project>'` to run first.
+
+Ask before moving when the user has not said whether they are continuing the
+work or only looking something up.
