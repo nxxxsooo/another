@@ -144,18 +144,20 @@ release:
 
     ## Compatibility
 
-    v0.27.0 adds an optional Herdr action for local OpenCode sessions.
+    v0.27.1 stops OpenCode title suggestions from leaving a new cached location
+    and resident MCP processes behind after each run.
 
-    - Press uppercase `H` to focus a terminal reporting the exact native session
-      ID, or open the saved session in a new local Herdr tab. another stays open;
-      `Enter` still resumes in the current terminal.
-    - Herdr integration requires `hc`, a running local core, and a running Herdr
-      window. No settings, hooks, index rebuild, or configuration migration are
-      required. Other agents and remote terminals are outside this first slice.
-    - Incomplete terminal metadata prevents new-tab launches rather than treating
-      unknown sessions as absent. Known exact matches remain usable. A shared
-      terminal may still require switching its internal OpenCode tab manually.
-    - Existing automatic-title behavior and manual-title protection are unchanged.
+    - OpenCode title generation now disposes only its temporary location through
+      the same CLI after success, failure, or cancellation. Other loaded projects
+      and the shared background service are not restarted.
+    - This requires OpenCode V2's directory-scoped `DELETE /api/debug/location`
+      API, verified with OpenCode 2.2.7. Cleanup has its own 10-second timeout;
+      unavailable or failed cleanup is reported as a suggestion failure.
+    - Native title-agent session records remain on disk and are excluded from
+      another's index. Previously leaked locations are not cleaned up retroactively.
+    - Other title agents, manual-title protection, and the optional Herdr action
+      are unchanged. No hook reinstall, settings migration, or index rebuild is
+      required.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
