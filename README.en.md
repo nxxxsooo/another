@@ -350,6 +350,8 @@ OpenCode also retries provisional titles after a failed title request, with a pe
 
 The OpenCode title plugin requires **OpenCode 2.2.5 or newer**. The first title is OpenCode's own title request: the plugin only swaps in the dated policy prompt from the `title` hook, so the request runs on the `title` agent's model and variant and usually lands final. Repairs, corrections, and refreshes call `session.generate` on the session itself; the `generate` hook strips that request to the title prompt alone (about 1.5 KB), with no agent instructions, conversation history, or tool definitions. It runs on the session's model through every session authentication and gateway-routing hook, and creates no extra session. If your title model rejects the low reasoning variant OpenCode picks for it, pin a variant in `agents.title.model`. After upgrading, run `another integrations install opencode` to refresh the plugin.
 
+OpenCode title calls still use separate `another-titler-*` temporary directories. After each attempt, the same CLI calls V2's `DELETE /api/debug/location` to release only that directory's cached services and MCP connections, including on failure or cancellation, with a separate 10-second cleanup timeout. Removing the directory alone does not release the shared service's instance, so disposal happens before directory removal. Failed disposal (including an older OpenCode without this API) fails the suggestion rather than silently claiming cleanup succeeded. This does not delete native session records, restart the shared service, or dispose other projects.
+
 ## CLI
 
 ```bash

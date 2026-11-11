@@ -6,6 +6,7 @@ package titler
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -315,6 +316,7 @@ func ResolveLanguage(preference Language, messages []model.Message) Language {
 }
 
 func projectName(path string) string {
+	path = filepath.ToSlash(path)
 	path = strings.TrimRight(strings.TrimSpace(path), "/")
 	if path == "" {
 		return ""

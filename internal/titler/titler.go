@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -218,7 +219,7 @@ func (e *SuggestError) Error() string {
 // Suggest runs the configured agent once and returns a contract-valid title,
 // or "" when the model declined or drifted. An empty result is not an error:
 // the caller shows nothing and the manual rename path is untouched.
-func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
+func Suggest(ctx context.Context, cfg Config, req Request) (title string, suggestErr error) {
 	// Missing creation times arrive in two shapes: a zero time from callers
 	// that never had one, and Unix 0 from the index, which scans back as 1970
 	// rather than a zero time. Either way the date cannot be proven, so this
@@ -244,6 +245,22 @@ func Suggest(ctx context.Context, cfg Config, req Request) (string, error) {
 		return "", err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	if id := NormalizeID(cfg.Provider); id == "opencode" || id == "opencode2" {
+		// OpenCode's shared service caches services (including MCP processes)
+		// by directory. Removing the directory does not release that cache.
+		// Resolve symlinks so run and disposal address the same native location.
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			return "", err
+		}
+		dir = resolved
+		defer func() {
+			if err := disposeOpenCodeLocation(bin, dir); err != nil {
+				title = ""
+				suggestErr = errors.Join(suggestErr, err)
+			}
+		}()
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
