@@ -299,6 +299,8 @@ OpenCode V2 可以在首次自动命名时直接执行同一规则，而不额�
 
 这些适配器写下的标题会跟着会话变（动态标题），不会停在第一轮。another 自己写的标题满足下面任一条件就重新判断一次：会话在新的一天又有了活动（比如隔天继续），或者同一天里比上次命名多了 3 轮用户发言。重新判断时模型主要看最近几轮；话题没变就保留原来的「类型｜主题」，变了就换。标题开头的 `MMDD` 跟着最近一次活动走，所以今天续上的老会话会显示今天的日期；创建日期仍在列表的列里。没到条件的轮次不调用模型。手动起的标题一律保留：another 记下自己最后写过的标题，当前标题和它不一样就说明是别人改的，以后不再动；把标题清空即交还给自动命名。Pi、Antigravity、Qwen Code、Claude Code 走 `another rename --auto --if-stale`，记录存在 another 配置目录的 `title-marks/` 下；OpenCode 插件用插件自己的存储执行同一规则。Claude Code 的钩子只在会话结束时触发，所以它的标题在每次退出时更新。旧版本装的钩子仍带 `--skip-conforming`，这个参数继续可用，含义等同 `--if-stale --replace-native`；重新运行 setup 或 `another integrations install` 即可换成新钩子。
 
+`v0.26.2` 修复了自动标题钩子的误报警：开场只有 `test` 等内容、标题模型暂不提供建议时，`--if-stale` 保留原生标题并正常结束，后续空闲回合仍可重试。真实模型／命令失败和 Doubao 首次必需标题生成失败仍会报错。升级二进制即可生效，无需重装钩子。
+
 OpenCode 标题请求失败后会重试临时标题，重试次数会持久保存，每个会话只由所属目录的插件实例处理。仅含截图的开场可在一轮结束时结合附件信息与助手解释重新命名。诊断日志写入 `~/.local/state/another/opencode-title-policy.log`（或对应的 `XDG_STATE_HOME` 路径），详见[适配器说明](integrations/opencode2-title-policy/)。
 
 OpenCode 标题插件要求 OpenCode **2.2.5 或更新版本**。首个标题就是 OpenCode 自己的标题请求：插件只在 `title` hook 里把提示词换成带日期的规范，请求照常走 `title` agent 的模型和 variant，答案通常一次到位。补救、修正和刷新改用会话自身的 `session.generate`，`generate` hook 把请求裁剪到只剩标题提示词（约 1.5 KB），不带 agent 指令、对话历史和工具定义，走会话模型和全部认证、网关路由 hook，不创建额外 session。标题模型若拒绝 OpenCode 自动选的低推理 variant，请在 `agents.title.model` 里写明 variant。升级后运行 `another integrations install opencode` 更新插件。

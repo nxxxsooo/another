@@ -144,16 +144,15 @@ release:
 
     ## Compatibility
 
-    v0.26.1 updates the recall skill so continued work uses its original project.
+    v0.26.2 fixes spurious warnings from optional automatic title hooks.
 
-    - When continuing recalled work from another directory, the skill moves the
-      current OpenCode session to the excerpt's original `Project:` directory
-      and reads that directory's `AGENTS.md` before continuing.
-    - Other agents tell you to `cd` to that directory and restart. If it is unclear
-      whether you are continuing the work or only consulting it, the skill asks first.
-    - Run `another integrations install --kind recall opencode` after upgrading
-      to refresh the installed skill. Title integrations and native source records
-      are unchanged; no index rebuild or configuration migration is needed.
+    - If the title model has no suggestion (for example, after an opening of
+      just `test`), stale-aware automatic naming keeps the native title without
+      failing the hook. A later idle turn can try again with more context.
+    - Actual model/command failures and Doubao's required first-title failures
+      still surface as errors. Manual titles remain protected.
+    - Existing hooks use the fix after upgrading the binary; no integration
+      reinstall, index rebuild, or configuration migration is needed.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see

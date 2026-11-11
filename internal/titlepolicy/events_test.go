@@ -133,7 +133,7 @@ func TestEventEligibility(t *testing.T) {
 	}
 }
 func TestEventFailureCancellationAndManualRace(t *testing.T) {
-	for _, which := range []string{"model", "write", "cancel", "manual race", "missing model"} {
+	for _, which := range []string{"model", "no suggestion", "write", "cancel", "manual race", "missing model"} {
 		t.Run(which, func(t *testing.T) {
 			p, reg, s := eventFixture(t)
 			if which == "missing model" {
@@ -147,6 +147,8 @@ func TestEventFailureCancellationAndManualRace(t *testing.T) {
 				switch which {
 				case "model":
 					return "", errors.New("SECRET model failure")
+				case "no suggestion":
+					return "", nil
 				case "cancel":
 					cancel()
 				case "manual race":

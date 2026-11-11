@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/providers/pi"
+	"github.com/nxxxsooo/another/internal/titlemark"
 	"github.com/nxxxsooo/another/internal/titler"
 )
 
@@ -233,6 +235,63 @@ func TestRenameIfStaleNamesAnUnnamedPiSession(t *testing.T) {
 	wantContains(t, hook(), `keeps "my own name" (set by hand)`)
 	if calls != 1 {
 		t.Fatalf("title calls = %d, want 1", calls)
+	}
+}
+
+// KEEP is a valid optional answer, not a failed Stop hook. A declined first
+// title must leave no ownership mark so a later, meaningful turn can name it.
+func TestRenameIfStaleDefersAnOptionalFirstTitle(t *testing.T) {
+	for _, id := range []string{"qwen", "pi", "opencode", "claude-code", "codex", "agy"} {
+		t.Run(id, func(t *testing.T) {
+			p := newFake(t, id)
+			at := time.Date(2026, 11, 11, 1, 0, 0, 0, time.UTC)
+			p.seed(t, model.Conversation{ID: "s", Title: "test", ProjectPath: t.TempDir(), CreatedAt: at, UpdatedAt: at,
+				Messages: []model.Message{{Role: model.RoleUser, Content: "test"}, {Role: model.RoleAssistant, Content: "received"}}})
+			app := newTestApp(t, p)
+			if err := config.SaveSettings(config.Settings{TitleModel: &config.TitleModel{Provider: "opencode", Language: "en"}}); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			old := suggestRetrying
+			suggestRetrying = func(_ context.Context, _ titler.Config, req titler.Request) (string, error) {
+				calls++
+				if req.RequireTitle || req.Refresh {
+					t.Fatalf("optional initial request = %+v", req)
+				}
+				if calls == 1 {
+					return titler.Clean("KEEP", titler.LangEnglish), nil
+				}
+				if calls == 2 {
+					return "", errors.New("title command failed")
+				}
+				return "1111｜Fix｜Webhook Retries", nil
+			}
+			t.Cleanup(func() { suggestRetrying = old })
+			hook := func() string {
+				t.Helper()
+				return mustRun(t, app, "rename", "s", "--from", id, "--auto", "--if-stale", "--replace-native", "--allow-current", "--refresh")
+			}
+			wantContains(t, hook(), "Unchanged:", "no title suggestion")
+			conv, err := p.read("s")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if conv.Title != "test" || len(p.renamed) != 0 || titlemark.Open().Load(id, "s") != nil {
+				t.Fatal("declined suggestion changed the native title or its ownership")
+			}
+			_, err = run(t, app, "rename", "s", "--from", id, "--auto", "--if-stale", "--replace-native", "--allow-current", "--refresh")
+			wantErr(t, err, "title command failed")
+			if len(p.renamed) != 0 || titlemark.Open().Load(id, "s") != nil {
+				t.Fatal("failed command changed the native title or its ownership")
+			}
+			conv.Messages = append(conv.Messages, model.Message{Role: model.RoleUser, Content: "fix webhook retries"})
+			conv.UpdatedAt = at.Add(time.Minute)
+			p.save(t, conv)
+			wantContains(t, hook(), "Renamed s to 1111｜Fix｜Webhook Retries")
+			if calls != 3 || titlemark.Open().Load(id, "s") == nil {
+				t.Fatal("later turn did not retry and record the successful title")
+			}
+		})
 	}
 }
 

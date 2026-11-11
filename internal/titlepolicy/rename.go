@@ -92,14 +92,21 @@ func Rename(ctx context.Context, p provider.Provider, renamer provider.SessionRe
 	if suggest == nil {
 		suggest = titler.SuggestRetrying
 	}
-	suggestion, err := suggest(ctx, o.Config, titler.Request{Title: current, ProjectPath: sm.ProjectPath, CreatedAt: sm.CreatedAt, Date: activity, Messages: msgs, Refresh: refreshing, RequireTitle: p.ID() == "doubao" && !refreshing})
+	requireTitle := p.ID() == "doubao" && !refreshing
+	suggestion, err := suggest(ctx, o.Config, titler.Request{Title: current, ProjectPath: sm.ProjectPath, CreatedAt: sm.CreatedAt, Date: activity, Messages: msgs, Refresh: refreshing, RequireTitle: requireTitle})
 	if err != nil {
 		return err
 	}
 	title := titler.Redate(suggestion, activity)
 	switch {
 	case title == "" && !refreshing:
-		return fmt.Errorf("%s returned no title matching the policy", o.Config.Provider)
+		if requireTitle {
+			return fmt.Errorf("%s returned no title matching the policy", o.Config.Provider)
+		}
+		// Optional naming permits KEEP. Leave the native title and ownership
+		// untouched, so the next idle turn can try again with more context.
+		log("Unchanged: %s keeps %q (no title suggestion)\n", sm.ID, current)
+		return nil
 	case refreshing && (title == "" || titler.Topic(title) == titler.Topic(current)):
 		title = titler.Redate(current, activity)
 	}
