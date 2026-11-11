@@ -144,20 +144,16 @@ release:
 
     ## Compatibility
 
-    v0.26.0 makes Codex session lists easier to read without changing
-    Codex's native records or directories.
+    v0.26.1 updates the recall skill so continued work uses its original project.
 
-    - Guardian action reviews stay hidden by default, even when they have
-      a native name. Pass `--include-subagents` to `list` or `search` to include them;
-      ordinary conversations with similar titles remain visible.
-    - ChatGPT-backed project directories show names from native local project
-      metadata. Missing or ambiguous mappings keep the path; names are never
-      inferred from conversation titles. Names are searchable, while scope,
-      resume, and path-based filters still use the real directory.
-    - JSON summaries add optional `project_label` metadata. `project_path`
-      stays unchanged. The next index refresh re-summarizes Codex once;
-      no manual rebuild, session rewrite, or configuration change is needed.
-    - Other agents and the existing title integrations are unchanged.
+    - When continuing recalled work from another directory, the skill moves the
+      current OpenCode session to the excerpt's original `Project:` directory
+      and reads that directory's `AGENTS.md` before continuing.
+    - Other agents tell you to `cd` to that directory and restart. If it is unclear
+      whether you are continuing the work or only consulting it, the skill asks first.
+    - Run `another integrations install --kind recall opencode` after upgrading
+      to refresh the installed skill. Title integrations and native source records
+      are unchanged; no index rebuild or configuration migration is needed.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see

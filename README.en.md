@@ -244,6 +244,11 @@ through it:
   so another also installs an `another` skill: `@another the webhook retry
   session` has the agent find that session and read the same excerpt.
 
+When you continue recalled work from a different directory, the recall skill
+moves the current OpenCode session to the excerpt's original `Project:` directory
+and reads its `AGENTS.md` before continuing. Other agents ask you to `cd` there
+and restart. If continuing the work versus consulting it is unclear, it asks first.
+
 The server is scoped to the project it starts in — the repository and its
 worktrees, or the directory and what is below it — and a session from any
 other project reads as not found. It is read-only and offers no tools.

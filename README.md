@@ -206,6 +206,8 @@ TUI 打开时就在你所在的目录：Git 仓库读作仓库本体加上所有
 - **Claude Code** 和 **Qwen Code** 直接在 `@` 选择器里列出当前项目最近的会话。选中后，agent 收到一段有长度上限的摘录：标题、agent、日期，以及对话的开头和结尾几轮（最多 24,000 字符）。
 - **OpenCode V2** 的 `@` 选择器只列 skill，不列 MCP 资源（[anomalyco/opencode#61071](https://github.com/anomalyco/opencode/issues/61071)），所以 another 同时安装一个 `another` skill：`@another 那个 webhook 重试的会话` 会让 agent 找到并读取同样的摘录。
 
+如果你在不同目录继续被引用的工作，recall skill 会把当前 OpenCode 会话移到摘录中原始的 `Project:` 目录，并先读取该目录的 `AGENTS.md`。其他 agent 会请你先 `cd` 到那里再重新启动。如果不确定你是要继续工作还是仅作参考，会先询问。
+
 服务器只看启动时所在的项目——仓库及其 worktree，或该目录及其下级——其他项目的会话一律当作不存在。它只读，不提供工具。Claude Code 通过它自己的 `claude mcp add --scope user` 注册；OpenCode 和 Qwen Code 的配置文件里只加一项，注释、顺序和格式都不动，`another integrations remove --kind recall` 会原样撤掉。你引用的内容会发给该 agent 使用的模型。
 
 命令行也能拿到同一段摘录：
