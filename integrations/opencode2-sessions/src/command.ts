@@ -4,10 +4,11 @@ import { appendFileSync } from "node:fs"
 import type { Context, DialogSelectAction } from "@opencode/plugin/tui/context"
 import { executable } from "./runtime.ts"
 import { parseStatus, watchRPC, type WatchStatus } from "./watch.ts"
+import { scopeDirectory, sessionOption } from "./format.ts"
 
 export type Session = { id: string; provider: string; title: string; project_path: string; updated_at: string }
 type Run = (args: string[], cwd: string) => Promise<string>
-export type CommentPrompt = (options: { title: string; placeholder: string }, signal: AbortSignal) => Promise<string | undefined>
+export type CommentPrompt = (options: { sourceTitle: string; destinationTitle: string; provider: string; directory: string; placeholder: string }, signal: AbortSignal) => Promise<string | undefined>
 // Ctrl+P is reserved for the global palette and picker navigation. Alt+P is
 // absent from OpenCode's default bindings and the inspected local overrides.
 export const providerFilterKey = "alt+p"
@@ -89,9 +90,13 @@ export function createSessionsCommand(context: Context, dependencies: { run?: Ru
         const sessions = available.filter(s => !provider || s.provider === provider)
         let action: "scope" | "watch" | "provider" | undefined, highlighted: string | undefined
         const rows = sessions.slice(page * 100, (page + 1) * 100)
-        const options = rows.map(s => ({ title: `${s.provider === "opencode" && context.data.session.status(s.id) === "running" ? "● " : ""}${supervisor && live?.groups[supervisor]?.includes(s.id) && s.provider === "opencode" ? "盯 " : ""}${s.title || s.id}`, value: `${s.provider}:${s.id}`, footer: s.project_path, description: s.provider }))
-        if (page > 0) options.push({ title: "Previous conversations…", value: "previous", footer: "", description: "" })
-        if (sessions.length > (page + 1) * 100) options.push({ title: "More conversations…", value: "more", footer: "", description: "" })
+        const directories = rows.map(s => scopeDirectory(s.project_path, cwd, all))
+        const directoryColumn = directories.some(Boolean)
+        const options = rows.map((s, i) => sessionOption(s, directories[i], directoryColumn,
+          s.provider === "opencode" && context.data.session.status(s.id) === "running",
+          !!(supervisor && live?.groups[supervisor]?.includes(s.id) && s.provider === "opencode"), context.renderer?.width ?? 200))
+        if (page > 0) options.push({ title: "Previous conversations…", value: "previous", footer: "" })
+        if (sessions.length > (page + 1) * 100) options.push({ title: "More conversations…", value: "more", footer: "" })
         const actions: DialogSelectAction<string>[] = [{ bind: "ctrl+a", title: all ? "This project" : "All projects", selection: "none", onTrigger: () => { profile("action.scope", 0); action = "scope"; context.ui.dialog.clear() } }]
         actions.push({ bind: providerFilterKey, title: `Provider: ${provider ?? "All"}`, selection: "none", onTrigger: () => { profile("action.provider", 0); action = "provider"; context.ui.dialog.clear() } })
         if (live) actions.push({ bind: "ctrl+w", title: "Watch / unwatch", onTrigger: value => { action = "watch"; highlighted = value; context.ui.dialog.clear() } })
@@ -123,7 +128,7 @@ export function createSessionsCommand(context: Context, dependencies: { run?: Ru
         const args = ["context", source.id, "--provider", source.provider, "--cached", ...(all ? ["--all"] : [])]
         const text = await step("cli.context", () => run(args, cwd))
         profile("comment.visible", performance.now() - started)
-        const comment = await dependencies.comment({ title: `Reference "${source.title || source.id}" → "${current?.title || "New session"}"`, placeholder: "Optional comment · Enter sends · Shift+Enter newline · Esc cancels" }, controller.signal)
+        const comment = await dependencies.comment({ sourceTitle: source.title || source.id, destinationTitle: current?.title || "New session", provider: source.provider, directory: source.project_path, placeholder: "How should the assistant use this conversation? (optional)" }, controller.signal)
         if (disposed || comment === undefined) return
         const spoken = supervisor ? await step("message.list", () => context.client.message.list({ sessionID: supervisor, type: "user", limit: 1, order: "desc" })) : undefined
         const fresh = !spoken?.data.length

@@ -53,7 +53,9 @@ test("reference captures route before I/O and attaches optional comment then con
   assert.match(f.prompts[0].text, /Use this evidence\n\n# Bounded/)
   assert.equal(f.prompts[0].delivery, "steer")
   assert.equal(f.confirms.length, 0)
-  assert.equal(f.comments[0].title, 'Reference "Member" → "Supervisor"')
+  assert.equal(f.comments[0].sourceTitle, "Member")
+  assert.equal(f.comments[0].destinationTitle, "Supervisor")
+  assert.equal(f.comments[0].placeholder, "How should the assistant use this conversation? (optional)")
   assert.deepEqual(f.calls.find(a => a[0] === "context"), ["context", "ses_member", "--provider", "opencode", "--cached"])
   command.dispose()
 })
@@ -62,7 +64,7 @@ test("fresh home session attaches without starting a turn", async () => {
   const f = fixture(); f.route({ type: "home" }); f.fresh(); f.select(() => "opencode:ses_member")
   await createSessionsCommand(f.context, f.dependencies).open()
   assert.equal(f.prompts[0].sessionID, "ses_created"); assert.equal(f.prompts[0].resume, false)
-  assert.equal(f.comments[0].title, 'Reference "Member" → "New session"')
+  assert.equal(f.comments[0].destinationTitle, "New session")
 })
 
 test("scope toggle passes --all to both list and context", async () => {
@@ -93,7 +95,7 @@ test("busy marker comes from OpenCode, idle sessions can be watched through RPC,
 
 test("RPC failure is visible, but referencing remains usable", async () => {
   const f = fixture(); f.unavailable()
-  f.select(menu => { assert.match(menu.options[0].title, /● Member/); assert.ok(!menu.actions.some((a: any) => a.bind === "ctrl+w")); return "opencode:ses_member" })
+  f.select(menu => { assert.match(menu.options[0].title, /●\s+Member/); assert.ok(!menu.actions.some((a: any) => a.bind === "ctrl+w")); return "opencode:ses_member" })
   await createSessionsCommand(f.context, f.dependencies).open()
   assert.equal(f.prompts.length, 1); assert.match(f.notices[0].message, /RPC unavailable/)
 })
@@ -147,7 +149,11 @@ test("provider filter cycles all then each present provider, retains tags, and e
   f.select(menu => {
     assert.ok(menu.title.startsWith("Reference / watch · This project"))
     assert.ok(!menu.options.some((row: any) => row.value === "opencode:ses_super"))
-    seen.push(menu.options.map((row: any) => row.description))
+    seen.push(menu.options.map((row: any) => {
+      assert.equal(row.description, undefined)
+      assert.ok(row.footer.startsWith("["))
+      return row.value.split(":")[0]
+    }))
     if (f.menus.length < 5) menu.actions.find((a: any) => a.bind === providerFilterKey).onTrigger()
     return undefined
   })

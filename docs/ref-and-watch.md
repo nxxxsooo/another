@@ -15,7 +15,11 @@ with the approved unified reference/watch menu. It does not authorize a release.
   scope flag; later words remain part of the query. Leading `--tui` is rejected.
 - The current OpenCode session is excluded before filtering and pagination.
   A different provider's session with the same ID is still eligible.
-- Rows retain provider tags and project paths; the picker is xlarge and shows
+- Rows use fixed busy/watch marker slots and a separate muted provider column
+  (`OpenCode`, `Claude`, `agy`, etc.), never an inline description glued to the
+  title. Project paths are empty for the current directory or relative within
+  project scope; all-project paths show a three-segment, 28-cell directory tail.
+  CJK cell widths are respected. The picker is xlarge and shows
   `Reference / watch` plus scope and, when selected, provider. Results are newest
   first, with 100-row pages for long lists.
 
@@ -46,8 +50,16 @@ the first 3 and last 6 eligible dialogue turns, at most 2,000 runes per turn and
 24,000 total. Notification-only harness user messages do not occupy recall slots;
 full exports remain unchanged.
 
-The single optional multiline prompt is titled
-`Reference "<source>" → "<destination or New session>"`. Enter sends, Shift+Enter
+The single optional multiline prompt has a strong heading
+`Reference into <destination or New session>` and a muted second line
+`From <source> · <provider> · <directory tail>`, both truncated by terminal cells.
+It uses the native large, non-centered dialog with 1-row top/bottom and 2-cell
+left/right padding. The inset field has a real numeric five-row minimum, grows
+with document content to twelve rows (bounded by terminal height), and uses
+raised/high and focused raised/max theme tokens distinct from the dialog panel.
+The placeholder is short and optional; the separated hint row has clickable
+primary-colour `enter send` and muted `esc cancel`, plus a newline hint.
+Enter sends, Shift+Enter
 inserts a newline, and Escape cancels. An empty comment is valid. There is no
 second reference confirmation dialog. Native `dialog.prompt` is one-line, so
 the integration supplies its own SDK textarea dialog for this step.

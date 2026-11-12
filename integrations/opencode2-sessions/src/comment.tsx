@@ -1,8 +1,9 @@
-import type { TextareaRenderable } from "@opentui/core"
+import { TextAttributes, type TextareaRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
-import { onMount } from "solid-js"
+import { createMemo, createSignal, onMount } from "solid-js"
 import type { Context } from "@opencode/plugin/tui/context"
 import type { CommentPrompt } from "./command.ts"
+import { commentHeader, commentLayout, commentLineCount } from "./format.ts"
 
 // Native dialog.prompt is a one-line textarea. This dialog intentionally owns
 // multiline input and the single send/cancel boundary; it never calls the API.
@@ -22,7 +23,10 @@ export function commentPrompt(context: Context): CommentPrompt {
       context.ui.dialog.show(() => {
         let input!: TextareaRenderable
         const dimensions = useTerminalDimensions()
-        const height = () => Math.max(1, Math.min(18, dimensions().height - 14))
+        const [lines, setLines] = createSignal(1)
+        const layout = createMemo(() => commentLayout(dimensions().width, dimensions().height, lines()))
+        const header = createMemo(() => commentHeader(options.sourceTitle, options.destinationTitle, options.provider, options.directory, layout().width))
+        const resizeField = () => setLines(commentLineCount(input?.plainText ?? "", layout().width - 2))
         const theme = context.theme
         onMount(() => input.focus())
         context.keymap.layer(() => ({ mode: "global", target: () => input, priority: 1, commands: [
@@ -30,21 +34,31 @@ export function commentPrompt(context: Context): CommentPrompt {
           { bind: "escape", run: () => finish(undefined, true) },
           { bind: "ctrl+c", run: () => finish(undefined, true) },
         ] }))
-        return <box paddingLeft={2} paddingRight={2} paddingBottom={1} gap={1}>
-          <text fg={theme.text.base}>{options.title}</text>
-          <box backgroundColor={theme.background.raised.high} paddingLeft={1} paddingRight={1}>
+        return <box paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+          <box>
+            <text fg={theme.text.base} attributes={TextAttributes.BOLD} wrapMode="none">{header().title}</text>
+            <text fg={theme.text.muted} wrapMode="none">{header().source}</text>
+          </box>
+          {/* Native dialogs use the panel/raised.base surface; the field uses
+              element/high, with max on focus, in both dark and light themes. */}
+          <box backgroundColor={theme.background.raised.high} padding={1}>
             <textarea ref={node => { input = node }} placeholder={options.placeholder}
-              height="auto" minHeight={Math.min(3, height())} maxHeight={height()} flexShrink={1} wrapMode="word"
+              height={layout().fieldRows} minHeight={layout().fieldRows} maxHeight={layout().maxRows} flexShrink={0} wrapMode="word"
+              onContentChange={resizeField} onCursorChange={resizeField}
               textColor={theme.text.base} backgroundColor={theme.background.raised.high}
-              focusedBackgroundColor={theme.background.raised.high} placeholderColor={theme.text.muted}
+              focusedBackgroundColor={theme.background.raised.max} placeholderColor={theme.text.muted}
               cursorColor={theme.text.base}
               keyBindings={[{ name: "return", action: "submit" }, { name: "return", shift: true, action: "newline" }]}
               onSubmit={() => finish(input.plainText, true)} />
           </box>
-          <text fg={theme.text.muted}>enter send · shift+enter newline · esc cancel</text>
+          <box flexDirection="row" flexWrap="wrap" gap={2}>
+            <text fg={theme.text.action.primary.selected} onMouseUp={() => finish(input.plainText, true)}>enter send</text>
+            <text fg={theme.text.muted}>shift+enter newline</text>
+            <text fg={theme.text.muted} onMouseUp={() => finish(undefined, true)}>esc cancel</text>
+          </box>
         </box>
       }, () => finish())
-      context.ui.dialog.set({ size: "xlarge" })
+      context.ui.dialog.set({ size: "large", centered: false })
       signal.addEventListener("abort", abort, { once: true })
     })
   }

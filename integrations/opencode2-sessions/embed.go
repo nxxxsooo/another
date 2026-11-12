@@ -23,6 +23,9 @@ var commandTS []byte
 //go:embed src/comment.tsx
 var commentTSX []byte
 
+//go:embed src/format.ts
+var formatTS []byte
+
 //go:embed src/server.ts
 var serverTS []byte
 
@@ -33,7 +36,7 @@ var watchTS []byte
 var packageJSON []byte
 
 func Files() map[string][]byte {
-	return map[string][]byte{"package.json": packageJSON, "index.ts": indexTS, "tui.ts": tuiTS, "command.ts": commandTS, "comment.tsx": commentTSX, "server.ts": serverTS, "watch.ts": watchTS}
+	return map[string][]byte{"package.json": packageJSON, "index.ts": indexTS, "tui.ts": tuiTS, "command.ts": commandTS, "comment.tsx": commentTSX, "format.ts": formatTS, "server.ts": serverTS, "watch.ts": watchTS}
 }
 func Names() []string {
 	names := []string{}
