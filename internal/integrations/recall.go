@@ -331,6 +331,7 @@ func combineStates(a, b State) State {
 func OpenCodeRecallStatus(configDir string) Status {
 	status := openCodeMCPStatus(configDir)
 	status.State = combineStates(status.State, skillStatus(OpenCodeSkillDir(configDir)).State)
+	status.State = combineStates(status.State, OpenCodeSessionsStatus(configDir).State)
 	return status
 }
 
@@ -400,6 +401,9 @@ func InstallOpenCodeRecall(status Status, version, _ string, force bool) (Status
 			return status, err
 		}
 	}
+	if _, err := InstallOpenCodeSessions(OpenCodeSessionsStatus(status.ConfigDir), version, "", force); err != nil {
+		return status, err
+	}
 	return OpenCodeRecallStatus(status.ConfigDir), nil
 }
 
@@ -422,7 +426,10 @@ func RemoveOpenCodeRecall(status Status, force bool) error {
 			return err
 		}
 	}
-	return removeBundle(skillStatus(OpenCodeSkillDir(status.ConfigDir)), skillBundle, force)
+	if err := removeBundle(skillStatus(OpenCodeSkillDir(status.ConfigDir)), skillBundle, force); err != nil {
+		return err
+	}
+	return RemoveOpenCodeSessions(OpenCodeSessionsStatus(status.ConfigDir), force)
 }
 
 // patchJSONC applies edit to the root object of a JSONC document and writes it

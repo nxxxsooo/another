@@ -247,6 +247,30 @@ through it:
   so another also installs an `another` skill: `@another the webhook retry
   session` has the agent find that session and read the same excerpt.
 
+OpenCode's recall integration also installs another's **`/ref` menu**. Press
+`Enter` to open one optional multiline comment/send dialog: Enter sends,
+Shift+Enter inserts a newline, Escape cancels. `Alt+P` cycles providers;
+`Ctrl+A` switches between this project and all projects. `/ref <keywords>`
+searches message text as well as titles; `/ref --all [keywords]` starts widened.
+The current session is hidden. References in a new
+conversation wait for your first message; existing conversations continue.
+With OpenCode's native slash completion, bare `/ref` first accepts the command;
+press Enter again to open it, or type `/ref ` with a trailing space before Enter.
+Install or refresh this menu after upgrading with
+`another integrations install opencode --kind recall`.
+`●` marks sessions currently busy according to OpenCode itself; `Ctrl+W`
+watches or unwatches an OpenCode session, whether idle or busy. `盯` marks
+members supervised by the current conversation. Any OpenCode session on the
+connected shared server can be watched; other agents can only be referenced.
+Cross-project watching asks permission first. The server plugin stores groups
+in its plugin storage for that server instance, surviving TUI/plugin reloads,
+and delivers queued watch cards on busy-to-idle, permission/question waits,
+and errors. Cards are reports, not user instructions, and point to
+`another context <id> --provider opencode --all` to read the member's content.
+Deleted supervisors and members are pruned. Watching needs no Herdr or open
+terminal; standalone OpenCode servers have separate watch groups and events.
+See [the reference/watch design](docs/ref-and-watch.md) for keys and delivery details.
+
 When you continue recalled work from a different directory, the recall skill
 moves the current OpenCode session to the excerpt's original `Project:` directory
 and reads its `AGENTS.md` before continuing. Other agents ask you to `cd` there
@@ -254,7 +278,8 @@ and restart. If continuing the work versus consulting it is unclear, it asks fir
 
 The server is scoped to the project it starts in — the repository and its
 worktrees, or the directory and what is below it — and a session from any
-other project reads as not found. It is read-only and offers no tools.
+other project reads as not found. It is read-only and offers no tools;
+watching does not expand MCP scope.
 Claude Code registers it through its own `claude mcp add --scope user`;
 OpenCode and Qwen Code get one entry in their configuration file, written
 without disturbing comments, order, or formatting, and removed exactly by

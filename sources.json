@@ -46,6 +46,43 @@
       "quote": "worked",
       "local_files": ["docs/releases/v0.20.3.md"],
       "note": "Acceptance followed native title repair, readback verification, and installation of the tested development build. Under the project release contract, acceptance authorizes delivery of this fix. No message ID was exposed by the harness."
+    },
+    {
+      "id": "ref-command-plan-reconciliation-20261112",
+      "title": "Approved /ref plan reconciliation with session watching",
+      "kind": "local-plan-and-chat-confirmation",
+      "owner": "Project maintainer",
+      "formed_at": "2026-11-12",
+      "received_at": "2026-11-12",
+      "status": "partial",
+      "original_path": "main checkout:docs/ref-command-plan.md (uncommitted, read-only)",
+      "baseline_revision": "sha256:e48f1986cd66b2b41f78a982b41726ac941791db56320d5a652c03583c2f49e2",
+      "quote": "Reconcile your branch with it.",
+      "local_files": ["docs/ref-and-watch.md"],
+      "note": "The full main-checkout plan was read without editing or deleting it. The current conversation explicitly approved provider filtering, keyword/--all arguments, one multiline comment/send step, and a shared source URI, while retaining opencode2-sessions and the server-owned watch UX. It also confirms the plugin is loaded and visible in the slash menu. Source message/session IDs for the separate approval were not exposed; do not infer publication authority. The original plan is not copied into this worktree."
+    },
+    {
+      "id": "ref-performance-verification-20261112",
+      "title": "Reference picker performance root causes and before/after verification",
+      "kind": "runtime-verification",
+      "owner": "Project maintainer",
+      "formed_at": "2026-11-12",
+      "received_at": "2026-11-12",
+      "status": "complete",
+      "local_files": ["docs/ref-and-watch.md"],
+      "note": "Measured installed another-dev 1be8a7a before and fee27cd after using the same real shared-server SDK harness and disposable hc TUI. The configured Doubao provider was enabled; failed discovery caused repeat scans. CLI list/search/context, RPC, provider/scope toggles, comment loading and staged prompt admission were timed separately. Owned benchmark receivers were deleted; no model prompt was sent through hc send. Bare slash completion versus dispatch was verified explicitly. Opt-in phase logs omit query/prompt text; raw harness output stayed temporary and was not added to the public repository. Native Windows runtime was not measured."
+    },
+    {
+      "id": "ref-dialog-visual-polish-20261112",
+      "title": "Reference picker and comment-dialog geometry refinement",
+      "kind": "chat-confirmation-and-runtime-verification",
+      "owner": "Project maintainer",
+      "formed_at": "2026-11-12",
+      "received_at": "2026-11-12",
+      "status": "partial",
+      "quote": "the /ref picker and the comment box need better padding, width, height and colours",
+      "local_files": ["docs/ref-and-watch.md"],
+      "note": "Explicitly requested provider/marker columns, CJK-aware short directory labels, a two-line comment header, a five-to-twelve-row field and theme-only colours, preserving behaviour. Geometry checked with owned hc OpenCode terminals at 200x120 and 100x40; all dialogs cancelled without sending. Source message ID was not exposed. Before/after text renders are in the implementation conversation, not published as user-session screenshots."
     }
   ]
 }

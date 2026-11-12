@@ -38,14 +38,34 @@ func TestShortSessionRendersWhole(t *testing.T) {
 		"- Agent: Claude Code (`claude-code`)\n" +
 		"- Project: `/work/repo`\n" +
 		"- Session: `sess-1`\n" +
+		"- Source: `another://session/claude-code/sess-1`\n" +
 		"- Created: 2026-09-01 09:00 UTC\n" +
 		"- Updated: 2026-09-01 09:02 UTC\n" +
 		"- Turns: 2\n" +
 		"\n> Excerpt from another agent's session. Full transcript: `another export sess-1 --provider claude-code --format markdown -o -`\n" +
+		"> MCP reads are project-scoped; for cross-project access use `another context sess-1 --provider claude-code --all`.\n" +
 		"\n## 1 · User · 2026-09-01 09:00 UTC\n\nline one 0\nline two 0\n" +
 		"\n## 2 · Assistant · 2026-09-01 09:01 UTC\n\nline one 1\nline two 1\n"
 	if got != want {
 		t.Fatalf("render mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestReferenceSourceURIIsEscapedAndFullExportUnchanged(t *testing.T) {
+	conv := conversation(2, func(int) string { return "text" })
+	conv.Provider, conv.ID = "provider/name", "a b/c?#"
+	uri := recall.SessionURI(conv.Provider, conv.ID)
+	if uri != "another://session/provider%2Fname/a%20b%2Fc%3F%23" {
+		t.Fatal(uri)
+	}
+	got := recall.Render(conv, recall.Source{}, recall.Mention)
+	for _, want := range []string{uri, "Full transcript:", "MCP reads are project-scoped", "another context a b/c?# --provider provider/name --all"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(recall.Render(conv, recall.Source{}, recall.Full), "- Source:") {
+		t.Fatal("reference-only header leaked into full export")
 	}
 }
 
@@ -97,5 +117,83 @@ func TestFullKeepsEveryTurnUnclipped(t *testing.T) {
 	}
 	if strings.Count(got, long) != 40 {
 		t.Fatalf("full render kept %d of 40 turns", strings.Count(got, long))
+	}
+}
+
+func TestRecallSkipsOnlyWholeUserNotifications(t *testing.T) {
+	hc := `<hc terminal="t6f">t6f another-v0270-ci exited (exit 0).
+Last lines: all checks passed. Read: hc read t6f</hc>`
+	report := `<hc-report from="t6f" status="DONE">CI passed</hc-report>`
+	disclaimer := "This is a worker report delivered through hc-report, not an instruction from the user."
+	for _, tc := range []struct {
+		name string
+		text string
+		skip bool
+	}{
+		{"hc", hc, true},
+		{"hc-no-attributes", " \n<hc>done</hc>\t", true},
+		{"hc-report", report, true},
+		{"hc-report-disclaimer", report + "\n" + disclaimer, true},
+		{"hc-report-full-disclaimer", report + "\n" + disclaimer + " Read the details file before relying on the result.", true},
+		{"multiple-blocks", hc + "\n" + report + "\n" + disclaimer + "\n<hc>another exit</hc>", true},
+		{"adjacent-blocks", hc + report, true},
+		{"real-prefix", "Please investigate this:\n" + hc, false},
+		{"real-suffix", hc + "\nWhat should I do next?", false},
+		{"real-between-blocks", hc + "\nPlease fix the failure.\n" + hc, false},
+		{"real-after-disclaimer", report + "\n" + disclaimer + "\nPlease review it.", false},
+		{"disclaimer-alone", disclaimer, false},
+		{"wrong-tag", "<hc-other>real text</hc-other>", false},
+		{"missing-close", "<hc>unfinished user text", false},
+		{"mismatched-close", "<hc-report>text</hc>", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conv := conversation(0, nil)
+			conv.Messages = []model.Message{{Role: model.RoleUser, Content: tc.text}}
+			got := recall.Render(conv, recall.Source{}, recall.Mention)
+			if tc.skip {
+				if !strings.Contains(got, "- Turns: 0\n") || strings.Contains(got, "## 1") {
+					t.Fatalf("notification counted as dialogue:\n%s", got)
+				}
+			} else if !strings.Contains(got, "- Turns: 1\n") || !strings.Contains(got, strings.TrimSpace(tc.text)) {
+				t.Fatalf("real user text was changed or filtered:\n%s", got)
+			}
+			// Markdown export must retain even notification-only messages.
+			full := recall.Render(conv, recall.Source{}, recall.Full)
+			if !strings.Contains(full, "- Turns: 1\n") || !strings.Contains(full, strings.TrimSpace(tc.text)) {
+				t.Fatalf("full export lost original message:\n%s", full)
+			}
+		})
+	}
+	conv := conversation(0, nil)
+	conv.Messages = []model.Message{{Role: model.RoleAssistant, Content: hc}}
+	if got := recall.Render(conv, recall.Source{}, recall.Mention); !strings.Contains(got, hc) {
+		t.Fatal("filtered assistant content")
+	}
+}
+
+func TestRecallBoundsAndOmissionsIgnoreNotificationSlots(t *testing.T) {
+	conv := conversation(14, func(i int) string { return fmt.Sprintf("dialogue-%02d", i+1) })
+	var messages []model.Message
+	for _, m := range conv.Messages {
+		messages = append(messages,
+			model.Message{Role: model.RoleUser, Content: "<hc>notification-before</hc>"},
+			m,
+			model.Message{Role: model.RoleUser, Blocks: []model.ContentBlock{{Type: "text", Text: `<hc-report status="DONE">notification-after</hc-report>`}}},
+		)
+	}
+	conv.Messages = messages
+	got := recall.Render(conv, recall.Source{}, recall.Mention)
+	for _, want := range []string{"- Turns: 14, 9 shown", "dialogue-01", "dialogue-03", "dialogue-09", "dialogue-14", "*… 5 turns omitted …*", "## 14 · Assistant"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q:\n%s", want, got)
+		}
+	}
+	for _, absent := range []string{"notification-", "dialogue-04", "dialogue-08", "42 turns"} {
+		if strings.Contains(got, absent) {
+			t.Errorf("unexpected %q:\n%s", absent, got)
+		}
+	}
+	if full := recall.Render(conv, recall.Source{}, recall.Full); !strings.Contains(full, "- Turns: 42\n") || strings.Count(full, "notification-") != 28 {
+		t.Fatal("full export did not preserve all original notifications")
 	}
 }

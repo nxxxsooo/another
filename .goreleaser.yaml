@@ -144,20 +144,33 @@ release:
 
     ## Compatibility
 
-    v0.27.1 stops OpenCode title suggestions from leaving a new cached location
-    and resident MCP processes behind after each run.
+    v0.28.0 adds OpenCode 2's `/ref` reference/watch menu, fast cached reads,
+    and clearer bounded session context. Install or refresh the OpenCode recall
+    integration after upgrading:
 
-    - OpenCode title generation now disposes only its temporary location through
-      the same CLI after success, failure, or cancellation. Other loaded projects
-      and the shared background service are not restarted.
-    - This requires OpenCode V2's directory-scoped `DELETE /api/debug/location`
-      API, verified with OpenCode 2.2.7. Cleanup has its own 10-second timeout;
-      unavailable or failed cleanup is reported as a suggestion failure.
-    - Native title-agent session records remain on disk and are excluded from
-      another's index. Previously leaked locations are not cleaned up retroactively.
-    - Other title agents, manual-title protection, and the optional Herdr action
-      are unchanged. No hook reinstall, settings migration, or index rebuild is
-      required.
+    ```bash
+    another integrations install opencode --kind recall
+    ```
+
+    - `/ref` and watching require the installed OpenCode 2 integration, verified
+      with OpenCode 2.2.7. Enter selects a reference; the multiline comment box
+      sends on Enter and cancels on Escape. Ctrl+A changes scope, Alt+P cycles
+      providers, and Ctrl+W watches/unwatches. Keywords use cached full-text
+      search; `--all` starts across projects. Bare `/ref` first accepts native
+      slash completion, so press Enter again (or add a trailing space).
+    - Watching covers OpenCode sessions on the connected shared server, idle
+      or busy. Standalone servers have separate groups/events. Reports arrive
+      as queued synthetic cards; watching does not expand MCP project scope
+      and no longer depends on Herdr. The existing Herdr H action is unchanged.
+    - Cached list/search/context avoid foreground discovery and content indexing.
+      Cached search only covers content already indexed. Enabled remote-store
+      discovery failures (including Doubao) back off for one minute across CLI
+      invocations; explicit --refresh or rebuild can retry immediately. Doubao
+      remains opt-in and macOS-only, requiring the user's native login.
+    - Notification-only hc/hc-report user turns no longer count toward bounded
+      recall slots or counts. Full export, migration and show are unchanged.
+      Context headers include another://session links and a context --all path
+      for cross-project reads; the MCP server remains strictly project-scoped.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see

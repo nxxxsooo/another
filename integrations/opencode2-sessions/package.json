@@ -1,0 +1,17 @@
+{
+  "name": "@another/opencode2-sessions",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --experimental-strip-types src/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.2.5",
+    "@opentui/core": "0.8.0",
+    "@opentui/solid": "0.8.0",
+    "solid-js": "1.9.17",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  }
+}
