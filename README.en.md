@@ -248,8 +248,11 @@ through it:
   session` has the agent find that session and read the same excerpt.
 
 OpenCode's recall integration also installs another's **`/ref` menu**. Press
-`Enter` to attach a session excerpt with an optional comment and confirmation;
-`Ctrl+A` switches between this project and all projects. References in a new
+`Enter` to open one optional multiline comment/send dialog: Enter sends,
+Shift+Enter inserts a newline, Escape cancels. `Alt+P` cycles providers;
+`Ctrl+A` switches between this project and all projects. `/ref <keywords>`
+searches message text as well as titles; `/ref --all [keywords]` starts widened.
+The current session is hidden. References in a new
 conversation wait for your first message; existing conversations continue.
 `●` marks sessions currently busy according to OpenCode itself; `Ctrl+W`
 watches or unwatches an OpenCode session, whether idle or busy. `盯` marks
@@ -262,6 +265,7 @@ and errors. Cards are reports, not user instructions, and point to
 `another context <id> --provider opencode --all` to read the member's content.
 Deleted supervisors and members are pruned. Watching needs no Herdr or open
 terminal; standalone OpenCode servers have separate watch groups and events.
+See [the reference/watch design](docs/ref-and-watch.md) for keys and delivery details.
 
 When you continue recalled work from a different directory, the recall skill
 moves the current OpenCode session to the excerpt's original `Project:` directory

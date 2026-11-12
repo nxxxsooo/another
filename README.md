@@ -209,7 +209,7 @@ TUI 打开时就在你所在的目录：Git 仓库读作仓库本体加上所有
 - **Claude Code** 和 **Qwen Code** 直接在 `@` 选择器里列出当前项目最近的会话。选中后，agent 收到一段有长度上限的摘录：标题、agent、日期，以及对话的开头和结尾几轮（最多 24,000 字符）。
 - **OpenCode V2** 的 `@` 选择器只列 skill，不列 MCP 资源（[anomalyco/opencode#61071](https://github.com/anomalyco/opencode/issues/61071)），所以 another 同时安装一个 `another` skill：`@another 那个 webhook 重试的会话` 会让 agent 找到并读取同样的摘录。
 
-OpenCode 的引用集成还会安装 another 的 **`/ref` 菜单**：`Enter` 选中会话，填写可选备注并确认后附上摘录；`Ctrl+A` 切换当前项目与全部项目。新对话中的引用等待你的第一条消息，已有对话则继续执行。`●` 由 OpenCode 自己的状态标记正在执行的会话；`Ctrl+W` 盯住或取消盯住 OpenCode 会话，空闲或忙碌都可以，`盯` 表示由当前对话监督的成员。同一共享服务器上的任意 OpenCode 会话均可被盯，其他 agent 的会话只可引用；跨项目操作先确认。服务器插件把组保存在该服务器实例的插件存储中，TUI／插件重载后仍保留；成员从忙碌转为空闲、等待权限／问题回答或出错时，监督会话收到排队的汇报卡片，不作为用户指令，并通过 `another context <id> --provider opencode --all` 读取成员内容。已删除的监督者和成员自动清理。盯会话不依赖 Herdr 或打开的终端；standalone OpenCode 服务器的组和事件相互独立。
+OpenCode 的引用集成还会安装 another 的 **`/ref` 菜单**：`Enter` 选中会话，进入一个可选多行备注／发送框；Enter 发送，Shift+Enter 换行，Esc 取消，不再另弹确认。`Alt+P` 轮换 provider，`Ctrl+A` 切换当前项目与全部项目；`/ref <keywords>` 全文搜索，`/ref --all [keywords]` 从全部项目开始。当前会话不列入选择器。新对话中的引用等待你的第一条消息，已有对话则继续执行。`●` 由 OpenCode 自己的状态标记正在执行的会话；`Ctrl+W` 盯住或取消盯住 OpenCode 会话，空闲或忙碌都可以，`盯` 表示由当前对话监督的成员。同一共享服务器上的任意 OpenCode 会话均可被盯，其他 agent 的会话只可引用；跨项目盯会话先确认。服务器插件把组保存在该服务器实例的插件存储中，TUI／插件重载后仍保留；成员从忙碌转为空闲、等待权限／问题回答或出错时，监督会话收到排队的汇报卡片，不作为用户指令，并通过 `another context <id> --provider opencode --all` 读取成员内容。已删除的监督者和成员自动清理。盯会话不依赖 Herdr 或打开的终端；standalone OpenCode 服务器的组和事件相互独立。完整按键与交付语义见[引用与盯会话设计](docs/ref-and-watch.md)。
 
 如果你在不同目录继续被引用的工作，recall skill 会把当前 OpenCode 会话移到摘录中原始的 `Project:` 目录，并先读取该目录的 `AGENTS.md`。其他 agent 会请你先 `cd` 到那里再重新启动。如果不确定你是要继续工作还是仅作参考，会先询问。
 
