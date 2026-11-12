@@ -43,7 +43,9 @@ type turn struct {
 
 // Render writes conv as Markdown within b.
 func Render(conv *model.Conversation, src Source, b Bounds) string {
-	turns := cleanTurns(conv.Messages, b.PerMessage)
+	// Full is also the Markdown export path: notification filtering belongs
+	// only to bounded recall/context, never to the exported transcript.
+	turns := cleanTurns(conv.Messages, b.PerMessage, b != Full)
 	kept := selectTurns(len(turns), b)
 	body := renderBody(turns, kept)
 	header := renderHeader(conv, src, len(turns), len(kept), b)
@@ -55,13 +57,19 @@ func Render(conv *model.Conversation, src Source, b Bounds) string {
 	return header + body
 }
 
-func cleanTurns(msgs []model.Message, perMessage int) []turn {
+func cleanTurns(msgs []model.Message, perMessage int, recallView bool) []turn {
 	var out []turn
 	for _, m := range msgs {
 		if m.Role != model.RoleUser && m.Role != model.RoleAssistant {
 			continue
 		}
 		text := m.PlainText()
+		// Count eligible dialogue turns, not harness notifications, just as
+		// tool/blank messages do not count. This keeps N turns, M shown and
+		// omission markers honest about the dialogue selected for recall.
+		if recallView && m.Role == model.RoleUser && notificationOnly(text) {
+			continue
+		}
 		if m.Role == model.RoleUser {
 			text = util.DisplayUserText(text)
 		}
