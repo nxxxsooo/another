@@ -58,4 +58,7 @@ func TestProviderSpecificReadDoesNotDiscoverOtherProviders(t *testing.T) {
 	if a.scans != 1 || b.scans != 0 {
 		t.Fatalf("provider filter not respected: %d %d", a.scans, b.scans)
 	}
+	if done, err := app.Index.GetMeta("titler_content_prune_v1"); err != nil || done != "" {
+		t.Fatalf("provider-only scan incorrectly settled global cleanup: %q %v", done, err)
+	}
 }

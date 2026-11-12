@@ -1103,7 +1103,9 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 	}
 	// A full rebuild re-examines every file, so the sweep only has to record
 	// that it is no longer owed.
-	_, _ = PruneIndexedTitlerLeftovers(ctx, reg.All(), store)
+	if providerFilter == "" {
+		_, _ = PruneIndexedTitlerLeftovers(ctx, reg.All(), store)
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_ = store.SetMeta("last_rebuild", now)
 	_ = store.SetMeta("last_update", now)
@@ -1120,7 +1122,7 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 	// a stale title and message count that no incremental scan will revisit,
 	// because their files are unchanged. Settle that debt once, then continue
 	// with the normal pass.
-	if _, err := reg.Get(codexProviderID); err == nil && codexRebuildOwed(store) {
+	if _, err := reg.Get(codexProviderID); err == nil && (providerFilter == "" || providerFilter == codexProviderID) && codexRebuildOwed(store) {
 		if _, err := Rebuild(ctx, reg, store, codexProviderID); err != nil {
 			return 0, err
 		}
@@ -1195,8 +1197,12 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 	}
 	// Leftovers an older build indexed are behind unchanged files, which this
 	// scan skipped before it could look at them.
-	if n, err := PruneIndexedTitlerLeftovers(ctx, reg.All(), store); err == nil {
-		total -= n
+	// A provider-filtered read must neither load unrelated providers nor mark
+	// a partial registry's sweep as globally complete.
+	if providerFilter == "" {
+		if n, err := PruneIndexedTitlerLeftovers(ctx, reg.All(), store); err == nil {
+			total -= n
+		}
 	}
 	_ = store.SetMeta("last_update", time.Now().UTC().Format(time.RFC3339))
 	// A scan that pruned more than it saw is still a scan that indexed
