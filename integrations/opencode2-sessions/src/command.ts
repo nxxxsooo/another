@@ -5,7 +5,7 @@ import type { Context, DialogSelectAction } from "@opencode/plugin/tui/context"
 import { executable } from "./runtime.ts"
 
 export type Session = { id: string; provider: string; title: string; project_path: string; updated_at: string }
-export type Status = { live: Record<string, { state: string; terminal: string; title: string }>; groups: Record<string, string[]> }
+export type Status = { live: Record<string, { state: string; terminal: string; title: string }>; groups: Record<string, string[]>; warnings: string[] }
 export type Report = { member: string; title: string; state: "idle" | "done" | "blocked" | "error"; at: string }
 type Run = (args: string[], cwd: string) => Promise<string>
 type Follow = (supervisor: string, cwd: string, report: (value: Report) => Promise<void>, failed: (error: Error) => void, ended: () => void) => () => void
@@ -15,6 +15,7 @@ const runCommand: Run = async (args, cwd) => (await exec(executable, args, { cwd
 export function parseStatus(text: string): Status {
   const value = JSON.parse(text)
   if (!value || typeof value.live !== "object" || !value.live || typeof value.groups !== "object" || !value.groups) throw new Error("Invalid another watch status")
+  if (!Array.isArray(value.warnings) || value.warnings.some((warning: unknown) => typeof warning !== "string")) throw new Error("Invalid watch warnings")
   for (const live of Object.values(value.live) as any[]) {
     if (!live || !["working", "idle", "done", "blocked", "error"].includes(live.state) || typeof live.terminal !== "string" || typeof live.title !== "string") throw new Error("Invalid live session")
   }
@@ -80,7 +81,7 @@ export function createSessionsCommand(context: Context, dependencies: { run?: Ru
     if (!terminal) return
     const cwd = (context.location ?? context.data.location.default()).directory
     if (!cwd) return
-    const current = await status(cwd)
+    const current = parseStatus(await run(["watch", "status", "--json"], cwd))
     if (disposed || !current) return
     for (const supervisor of Object.keys(current.groups)) {
       if (current.live[supervisor]?.terminal === terminal) ensureFollower(supervisor, cwd)
@@ -155,4 +156,15 @@ export function createSessionsCommand(context: Context, dependencies: { run?: Ru
     finally { active = false }
   }
   return { open, resume, dispose() { disposed = true; for (const stop of followers.values()) stop(); followers.clear(); if (active) context.ui.dialog.clear() } }
+}
+
+// Setup must not wait for subprocess discovery; /ref remains immediately usable.
+export function setupSessions(context: Context, create = createSessionsCommand) {
+  const sessions = create(context)
+  void sessions.resume().catch(error => context.ui.toast.show({ title: "another /ref", message: error instanceof Error ? error.message : String(error), variant: "error" }))
+  const unmount = context.ui.slot({ append: "app", render() {
+    context.keymap.layer(() => ({ mode: "global", commands: [{ id: "another.sessions.ref", title: "Reference or watch a session", group: "another", palette: true, slash: { name: "ref" }, run: sessions.open }] }))
+    return null
+  } })
+  return () => { sessions.dispose(); unmount() }
 }

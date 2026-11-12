@@ -50,11 +50,16 @@ func TestMCPWatchGroupGrantsAreLiveAndOpenCodeOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	granted := true
+	malformed := false
 	server, err := (&mcpserver.Server{Registry: app.Registry, Index: app.Index, Scope: util.DiscoverProjectScope(ctx, here), Version: "test", WatchStatus: func(context.Context) (herdr.WatchStatus, error) {
 		if !granted {
-			return herdr.WatchStatus{}, errors.New("discovery incomplete")
+			return herdr.WatchStatus{}, errors.New("core unavailable")
 		}
-		return herdr.WatchStatus{Groups: map[string][]string{"ses_super": {"ses_member"}}, Live: map[string]herdr.LiveSession{"ses_member": {Title: "Live title", State: "working", Terminal: "t2"}}}, nil
+		groups := map[string][]string{"ses_super": {"ses_member"}}
+		if malformed {
+			groups = map[string][]string{}
+		}
+		return herdr.WatchStatus{Groups: groups, Live: map[string]herdr.LiveSession{"ses_member": {Title: "Live title", State: "working", Terminal: "t2"}}, Warnings: []string{"terminal t_missing native metadata incomplete"}}, nil
 	}}).Build()
 	if err != nil {
 		t.Fatal(err)
@@ -92,11 +97,16 @@ func TestMCPWatchGroupGrantsAreLiveAndOpenCodeOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"Live title", "working", elsewhere, "opencode", "ses_member"} {
+	for _, text := range []string{"Live title", "working", elsewhere, "opencode", "ses_member", "terminal t_missing native metadata incomplete"} {
 		if !strings.Contains(string(encoded), strings.Trim(string(mustJSON(t, text)), `"`)) {
 			t.Fatalf("tool omitted %q: %s", text, encoded)
 		}
 	}
+	malformed = true
+	if _, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: mcpserver.SessionURI("opencode", "ses_member")}); err == nil {
+		t.Fatal("skipped malformed group still granted out-of-scope access")
+	}
+	malformed = false
 	granted = false
 	if _, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: mcpserver.SessionURI("opencode", "ses_member")}); err == nil {
 		t.Fatal("stale grant survived incomplete discovery")

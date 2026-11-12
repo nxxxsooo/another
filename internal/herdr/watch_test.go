@@ -66,9 +66,6 @@ func TestWatchRefusesInvalidDiscoveryWithoutWrites(t *testing.T) {
 		{"ambiguous", "ses_super", "ses_member", func(f *fake) {
 			f.responses["hc get t1 --json"] = strings.ReplaceAll(f.responses["hc get t1 --json"], `"ses_super":`, `"ses_member":{"app":"opencode","state":"idle"},"ses_super":`)
 		}},
-		{"bad-label", "ses_super", "ses_member", func(f *fake) {
-			f.responses["hc get t1 --json"] = strings.ReplaceAll(f.responses["hc get t1 --json"], `"another.watch.ses_super":"ses_member"`, `"another.watch.ses_super":"ses_super"`)
-		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			for _, add := range []bool{true, false} {
@@ -95,8 +92,9 @@ func TestWatchRefusesInvalidDiscoveryWithoutWrites(t *testing.T) {
 }
 
 type eventSteps struct {
-	steps []func()
-	index int
+	steps     []func()
+	index     int
+	terminals []string
 }
 
 func (r *eventSteps) Read(p []byte) (int, error) {
@@ -105,6 +103,9 @@ func (r *eventSteps) Read(p []byte) (int, error) {
 	}
 	r.steps[r.index]()
 	line := `{"method":"event","params":{"terminal":"t2","type":"record"}}` + "\n"
+	if len(r.terminals) > r.index {
+		line = `{"method":"event","params":{"terminal":"` + r.terminals[r.index] + `","type":"label"}}` + "\n"
+	}
 	if r.index == 0 {
 		line = `{"terminals":[]}` + "\n"
 	}

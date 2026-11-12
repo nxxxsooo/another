@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { Context } from "@opencode/plugin/tui/context"
-import { createSessionsCommand, parseStatus, watchCard, type Report } from "./command.ts"
+import { createSessionsCommand, parseStatus, setupSessions, watchCard, type Report } from "./command.ts"
 
 function fixture() {
   const rows = [{ id: "ses_member", provider: "opencode", title: "Member", project_path: "project", updated_at: "2026-11-12T00:00:00Z" }]
@@ -30,7 +30,7 @@ function fixture() {
     if (args[0] === "list") return JSON.stringify(rows)
     if (args[0] === "context") return "# Bounded session reference"
     if (unavailable) throw new Error("hc unavailable")
-    if (args[1] === "status") return JSON.stringify({ live, groups })
+    if (args[1] === "status") return JSON.stringify({ live, groups, warnings: ["terminal t_missing has no records"] })
     if (args[1] === "add") groups[args[2]] = [args[3]]
     if (args[1] === "rm") delete groups[args[2]]
     return '{"ok":true}'
@@ -156,4 +156,20 @@ test("status parser fails closed and card contract is queue-only", () => {
   assert.throws(() => parseStatus('{"live":null,"groups":{}}'))
   assert.throws(() => parseStatus('{"live":{},"groups":{"ses_x":"bad"}}'))
   assert.equal(watchCard("ses_super", end).delivery, "queue")
+  assert.deepEqual(parseStatus('{"live":{},"groups":{},"warnings":["incomplete terminal"]}').warnings, ["incomplete terminal"])
+  assert.throws(() => parseStatus('{"live":{},"groups":{},"warnings":[1]}'))
+})
+
+test("setup registers immediately without waiting for resume and toasts failures", async () => {
+  const notices: any[] = []
+  let reject!: (error: Error) => void, registered = false, disposed = false
+  const pending = new Promise<void>((_resolve, fail) => { reject = fail })
+  const context = { ui: { slot() { registered = true; return () => {} }, toast: { show(value: any) { notices.push(value) } } } } as unknown as Context
+  const cleanup = setupSessions(context, () => ({ resume: () => pending, open: async () => {}, dispose() { disposed = true } }))
+  assert.equal(typeof cleanup, "function")
+  assert.equal(registered, true)
+  reject(new Error("status subprocess failed"))
+  await Promise.resolve()
+  assert.equal(notices[0].message, "status subprocess failed")
+  cleanup(); assert.equal(disposed, true)
 })

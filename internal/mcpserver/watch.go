@@ -40,12 +40,14 @@ type watchMember struct {
 }
 
 type watchOutput struct {
-	Groups map[string][]watchMember `json:"groups"`
+	Groups   map[string][]watchMember `json:"groups"`
+	Warnings []string                 `json:"warnings"`
 }
 
 func (s *Server) watchTool(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, watchOutput, error) {
 	status, err := s.watches(ctx)
 	output := watchOutput{Groups: map[string][]watchMember{}}
+	output.Warnings = status.Warnings
 	if err != nil {
 		return nil, output, err
 	}
