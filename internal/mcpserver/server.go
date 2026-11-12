@@ -42,12 +42,7 @@ type Server struct {
 	Version  string
 }
 
-// SessionURI is the resource URI for one session.
-func SessionURI(providerID, id string) string {
-	return fmt.Sprintf("%s://session/%s/%s", scheme, url.PathEscape(providerID), url.PathEscape(id))
-}
-
-// ParseSessionURI is the inverse of SessionURI.
+// ParseSessionURI is the inverse of recall.SessionURI.
 func ParseSessionURI(raw string) (providerID, id string, ok bool) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != scheme || u.Host != "session" {
@@ -124,7 +119,7 @@ func (s *Server) resource(sm model.Summary) *mcp.Resource {
 		desc += ", in " + where
 	}
 	return &mcp.Resource{
-		URI:         SessionURI(sm.Provider, sm.ID),
+		URI:         recall.SessionURI(sm.Provider, sm.ID),
 		Name:        title + " · " + agent,
 		Title:       title,
 		Description: desc,

@@ -38,14 +38,34 @@ func TestShortSessionRendersWhole(t *testing.T) {
 		"- Agent: Claude Code (`claude-code`)\n" +
 		"- Project: `/work/repo`\n" +
 		"- Session: `sess-1`\n" +
+		"- Source: `another://session/claude-code/sess-1`\n" +
 		"- Created: 2026-09-01 09:00 UTC\n" +
 		"- Updated: 2026-09-01 09:02 UTC\n" +
 		"- Turns: 2\n" +
 		"\n> Excerpt from another agent's session. Full transcript: `another export sess-1 --provider claude-code --format markdown -o -`\n" +
+		"> MCP reads are project-scoped; for cross-project access use `another context sess-1 --provider claude-code --all`.\n" +
 		"\n## 1 · User · 2026-09-01 09:00 UTC\n\nline one 0\nline two 0\n" +
 		"\n## 2 · Assistant · 2026-09-01 09:01 UTC\n\nline one 1\nline two 1\n"
 	if got != want {
 		t.Fatalf("render mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestReferenceSourceURIIsEscapedAndFullExportUnchanged(t *testing.T) {
+	conv := conversation(2, func(int) string { return "text" })
+	conv.Provider, conv.ID = "provider/name", "a b/c?#"
+	uri := recall.SessionURI(conv.Provider, conv.ID)
+	if uri != "another://session/provider%2Fname/a%20b%2Fc%3F%23" {
+		t.Fatal(uri)
+	}
+	got := recall.Render(conv, recall.Source{}, recall.Mention)
+	for _, want := range []string{uri, "Full transcript:", "MCP reads are project-scoped", "another context a b/c?# --provider provider/name --all"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(recall.Render(conv, recall.Source{}, recall.Full), "- Source:") {
+		t.Fatal("reference-only header leaked into full export")
 	}
 }
 

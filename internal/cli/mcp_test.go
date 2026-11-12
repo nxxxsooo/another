@@ -11,12 +11,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/mcpserver"
+	"github.com/nxxxsooo/another/internal/recall"
 	"github.com/nxxxsooo/another/internal/util"
 )
 
 func TestSessionURIRoundTrips(t *testing.T) {
 	for _, tc := range [][2]string{{"claude-code", "6517700b-2368"}, {"pi", "a b/c?d"}, {"opencode", "ses_01J#x"}} {
-		p, id, ok := mcpserver.ParseSessionURI(mcpserver.SessionURI(tc[0], tc[1]))
+		p, id, ok := mcpserver.ParseSessionURI(recall.SessionURI(tc[0], tc[1]))
 		if !ok || p != tc[0] || id != tc[1] {
 			t.Errorf("round trip %v = %q %q %v", tc, p, id, ok)
 		}
@@ -78,7 +79,7 @@ func TestMCPServerListsAndReadsOnlyThisProject(t *testing.T) {
 		// Seeded with equal timestamps; the index breaks the tie the same
 		// way every time, and the list must follow the index, not the URI.
 		items, _ := app.Index.List(index.ListOpts{ProjectRoots: util.DiscoverProjectScope(ctx, project).Roots()})
-		if list.Resources[0].URI != mcpserver.SessionURI(items[0].Provider, items[0].ID) {
+		if list.Resources[0].URI != recall.SessionURI(items[0].Provider, items[0].ID) {
 			t.Fatalf("list order %v does not follow the index", list.Resources)
 		}
 	}
@@ -104,7 +105,7 @@ func TestMCPServerListsAndReadsOnlyThisProject(t *testing.T) {
 		t.Fatalf("templates = %+v, %v", templates, err)
 	}
 
-	res, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: mcpserver.SessionURI("beta", "below")})
+	res, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: recall.SessionURI("beta", "below")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestMCPServerListsAndReadsOnlyThisProject(t *testing.T) {
 		t.Fatalf("read = %+v", res.Contents)
 	}
 
-	for _, uri := range []string{mcpserver.SessionURI("alpha", "sibling"), mcpserver.SessionURI("alpha", "missing"), "another://session/alpha"} {
+	for _, uri := range []string{recall.SessionURI("alpha", "sibling"), recall.SessionURI("alpha", "missing"), "another://session/alpha"} {
 		if _, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri}); err == nil {
 			t.Errorf("read %s should fail as not found", uri)
 		}

@@ -142,6 +142,9 @@ func renderHeader(conv *model.Conversation, src Source, total, shown int, b Boun
 		fmt.Fprintf(&sb, "- Project: `%s`\n", conv.ProjectPath)
 	}
 	fmt.Fprintf(&sb, "- Session: `%s`\n", conv.ID)
+	if b != Full {
+		fmt.Fprintf(&sb, "- Source: `%s`\n", SessionURI(conv.Provider, conv.ID))
+	}
 	if !conv.CreatedAt.IsZero() {
 		fmt.Fprintf(&sb, "- Created: %s\n", stamp(conv.CreatedAt))
 	}
@@ -155,6 +158,7 @@ func renderHeader(conv *model.Conversation, src Source, total, shown int, b Boun
 	}
 	if b != Full {
 		fmt.Fprintf(&sb, "\n> Excerpt from another agent's session. Full transcript: `another export %s --provider %s --format markdown -o -`\n", conv.ID, conv.Provider)
+		fmt.Fprintf(&sb, "> MCP reads are project-scoped; for cross-project access use `another context %s --provider %s --all`.\n", conv.ID, conv.Provider)
 	}
 	return sb.String()
 }
