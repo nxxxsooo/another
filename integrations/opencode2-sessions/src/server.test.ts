@@ -120,13 +120,17 @@ test("location RPC registrations share one service and event subscriber; standal
     } },
   }) as unknown as Plugin.Context
   const first = await setupWatchServer(make()), second = await setupWatchServer(make())
+  let replacement: (() => Promise<void>) | undefined
   try {
     assert.equal(subscriptions, 1)
     await handlers[0].add({ supervisor: "ses_super", member: "ses_member" })
     assert.deepEqual((await handlers[1].status({})).groups, { ses_super: ["ses_member"] })
+    replacement = await setupWatchServer(make(), "new-installed-revision")
+    assert.equal(subscriptions, 2) // The first stream is aborted, not left running alongside the replacement.
+    assert.deepEqual((await handlers[2].status({})).groups, { ses_super: ["ses_member"] })
     await handlers[1].rm({ supervisor: "ses_super", member: "ses_member" })
     assert.deepEqual((await handlers[0].status({})).groups, {})
     const privateServer = new WatchService(f.context, "different-server-groups")
     assert.deepEqual((await privateServer.status()).groups, {})
-  } finally { await first(); await second() }
+  } finally { await first(); await second(); await replacement?.() }
 })

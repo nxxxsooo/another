@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import type { OpenCodeEvent } from "@opencode/client"
 import { setTimeout } from "node:timers/promises"
 import { watchCard, watchRPC, type Groups, type WatchStatus } from "./watch.ts"
+import { serverRevision } from "./runtime.ts"
 
 type Context = Plugin.Context
 type Host = Pick<Context, "session" | "storage">
@@ -19,10 +20,11 @@ export class WatchService {
   private host: Host
   private key: string
 
-  constructor(host: Host, key: string) {
+  constructor(host: Host, key: string, previous: Promise<unknown> = Promise.resolve()) {
     this.host = host; this.key = key
-    this.ready = this.load()
+    this.ready = previous.then(() => this.load())
   }
+  drain() { return this.queue.then(() => this.ready) }
   private async load() {
     const value = await this.host.storage.get(this.key)
     if (value !== undefined) {
@@ -112,7 +114,7 @@ export class WatchService {
 }
 
 const eventTypes = ["session.status", "session.idle", "session.execution.started", "session.execution.failed", "permission.asked", "form.created", "session.deleted"] as const
-type Runtime = { contexts: Set<Context>; service: WatchService; owner?: Context; stop?: AbortController }
+type Runtime = { contexts: Set<Context>; service: WatchService; revision: string; retired?: boolean; owner?: Context; stop?: AbortController }
 const runtimeKey = Symbol.for("another.sessions.server-runtime")
 const globals = globalThis as typeof globalThis & { [runtimeKey]?: Runtime }
 
@@ -120,17 +122,23 @@ const globals = globalThis as typeof globalThis & { [runtimeKey]?: Runtime }
 // and one ALL-location event subscription, so opening a second TUI cannot
 // double reports. The process namespace isolates standalone servers even if
 // they use the same history database; storage survives plugin/TUI reloads.
-export async function setupWatchServer(ctx: Context) {
+export async function setupWatchServer(ctx: Context, revision = serverRevision) {
   let runtime = globals[runtimeKey]
+  let previous: Promise<unknown> | undefined
+  if (runtime && runtime.revision !== revision) {
+    runtime.retired = true; runtime.stop?.abort(); previous = runtime.service.drain()
+    runtime = undefined
+  }
   if (!runtime) {
     const contexts = new Set<Context>([ctx])
     const current = () => contexts.values().next().value as Context
     const host = { get session() { return current().session }, get storage() { return current().storage } }
-    runtime = { contexts, service: new WatchService(host, `watch.groups/server-${process.pid}`) }
+    runtime = { contexts, service: new WatchService(host, `watch.groups/server-${process.pid}`, previous), revision }
     globals[runtimeKey] = runtime
   } else runtime.contexts.add(ctx)
   const shared = runtime
   const start = () => {
+    if (shared.retired) return
     const owner = shared.contexts.values().next().value
     if (!owner) return
     shared.owner = owner
@@ -153,10 +161,11 @@ export async function setupWatchServer(ctx: Context) {
   let registration
   try {
     await shared.service.ready
+    const service = () => globals[runtimeKey]?.service ?? shared.service
     registration = await ctx.rpc.register(watchRPC, {
-      status: async () => shared.service.status(),
-      add: async input => { const { supervisor, member } = input as { supervisor: string; member: string }; return shared.service.change(supervisor, member, true) },
-      rm: async input => { const { supervisor, member } = input as { supervisor: string; member: string }; return shared.service.change(supervisor, member, false) },
+      status: async () => service().status(),
+      add: async input => { const { supervisor, member } = input as { supervisor: string; member: string }; return service().change(supervisor, member, true) },
+      rm: async input => { const { supervisor, member } = input as { supervisor: string; member: string }; return service().change(supervisor, member, false) },
     })
   } catch (error) { release(); throw error }
   function release() {

@@ -24,7 +24,8 @@ func sessionsFiles() map[string][]byte {
 		executable = path
 	}
 	encoded, _ := json.Marshal(executable)
-	files["runtime.ts"] = []byte("// Installed by another.\nexport const executable = " + string(encoded) + "\n")
+	revision, _ := json.Marshal(plugin.Hash([]byte(string(files["server.ts"]) + string(files["watch.ts"]))))
+	files["runtime.ts"] = []byte("// Installed by another.\nexport const executable = " + string(encoded) + "\nexport const serverRevision = " + string(revision) + "\n")
 	return files
 }
 
