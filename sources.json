@@ -83,6 +83,19 @@
       "quote": "the /ref picker and the comment box need better padding, width, height and colours",
       "local_files": ["docs/ref-and-watch.md"],
       "note": "Explicitly requested provider/marker columns, CJK-aware short directory labels, a two-line comment header, a five-to-twelve-row field and theme-only colours, preserving behaviour. Geometry checked with owned hc OpenCode terminals at 200x120 and 100x40; all dialogs cancelled without sending. Source message ID was not exposed. Before/after text renders are in the implementation conversation, not published as user-session screenshots."
+    },
+    {
+      "id": "ref-menu-release-accepted-20261112",
+      "title": "Development build accepted for v0.28.0 end-to-end delivery",
+      "kind": "chat-message",
+      "owner": "Project maintainer",
+      "formed_at": "2026-11-12",
+      "received_at": "2026-11-12",
+      "status": "partial",
+      "quote": "Mingjian accepted the dev build (`ok 没问题了`). Ship feat/ref-menu end to end",
+      "url": "https://github.com/nxxxsooo/another/pull/58",
+      "local_files": ["docs/releases/v0.28.0.md"],
+      "note": "The delegated instruction explicitly authorized push, PR, merge, tag, release, Homebrew, local installation, website updates and clean merged-worktree removal, with target v0.28.0 and no force push/tag move/check bypass. Approval message IDs were not exposed. Published and consumer-facing evidence is recorded in the release receipt. The daily plugin uses released another while the existing another-dev MCP command was deliberately preserved byte-for-byte."
     }
   ]
 }

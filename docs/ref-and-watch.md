@@ -1,8 +1,9 @@
 # OpenCode `/ref`: references and session watching
 
-Status: implemented on `feat/ref-menu`, delivered through the development install.
+Status: shipped in v0.28.0; see [the release verification receipt](releases/v0.28.0.md).
 This is the current design, reconciling the maintainer's 2026-11-12 reference plan
-with the approved unified reference/watch menu. It does not authorize a release.
+with the approved unified reference/watch menu. Publication and installation
+evidence belong to the release receipt rather than this design contract.
 
 ## Command and picker
 
@@ -259,7 +260,7 @@ does not substitute for native Windows runtime/CI verification.
 | Port Annotate flow/regressions without its reader or annotation | Adopted as native SDK picker/textarea and isolated tests, not imports from Annotate |
 | Multi-select and other agents' `/ref` deferred | Retained as non-goals; staged pre-first-message references remain supported |
 | Isolated-session and install/Windows acceptance; plugin checks in CI | Automated cases covered and plugin checks configured in both CI jobs; remote/native Windows execution remains unverified until an authorized push |
-| Release surfaces and coordination with Annotate 0.16.0 | Deferred to an authorized release; this branch delivers dev testing only |
+| Release surfaces and coordination with Annotate 0.16.0 | v0.28.0 delivery is recorded in the release receipt after maintainer acceptance; the reference/watch plugin has no Annotate runtime dependency |
 | Open TUI autoload risk | Resolved by live inventory and maintainer slash-menu verification; no installer fallback |
 
 The reviewed main-checkout plan was left untouched. Its read-only baseline SHA-256
