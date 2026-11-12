@@ -254,6 +254,10 @@ Shift+Enter inserts a newline, Escape cancels. `Alt+P` cycles providers;
 searches message text as well as titles; `/ref --all [keywords]` starts widened.
 The current session is hidden. References in a new
 conversation wait for your first message; existing conversations continue.
+With OpenCode's native slash completion, bare `/ref` first accepts the command;
+press Enter again to open it, or type `/ref ` with a trailing space before Enter.
+Install or refresh this menu after upgrading with
+`another integrations install opencode --kind recall`.
 `●` marks sessions currently busy according to OpenCode itself; `Ctrl+W`
 watches or unwatches an OpenCode session, whether idle or busy. `盯` marks
 members supervised by the current conversation. Any OpenCode session on the

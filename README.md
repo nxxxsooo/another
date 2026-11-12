@@ -204,6 +204,8 @@ TUI 打开时就在你所在的目录：Git 仓库读作仓库本体加上所有
 
 ## @ 引用
 
+OpenCode 原生斜杠补全中，裸 `/ref` 的第一次 Enter 接受命令补全，再按一次 Enter 才打开菜单；也可以输入带末尾空格的 `/ref ` 后按 Enter。升级后运行 `another integrations install opencode --kind recall` 安装或刷新引用／盯会话插件。
+
 在 setup 第二页打开 `<agent> 会话 @ 引用`，或运行 `another integrations install claude-code opencode qwen --kind recall`。another 会把自己的 MCP 服务器（`another mcp`）注册到该 agent，agent 通过它读取当前项目的会话——来自 another 索引的所有 agent：
 
 - **Claude Code** 和 **Qwen Code** 直接在 `@` 选择器里列出当前项目最近的会话。选中后，agent 收到一段有长度上限的摘录：标题、agent、日期，以及对话的开头和结尾几轮（最多 24,000 字符）。
