@@ -4,7 +4,7 @@ export type Report = { member: string; title: string; state: "idle" | "blocked" 
 
 const empty = { type: "object", additionalProperties: false } as const
 const change = {
-  type: "object", properties: { supervisor: { type: "string", pattern: "^ses_" }, member: { type: "string", pattern: "^ses_" } },
+  type: "object", properties: { supervisor: { type: "string" }, member: { type: "string" } },
   required: ["supervisor", "member"], additionalProperties: false,
 } as const
 const status = {

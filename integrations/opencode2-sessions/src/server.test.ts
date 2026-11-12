@@ -4,11 +4,18 @@ import type { Plugin } from "@opencode/plugin"
 import type { OpenCodeEvent } from "@opencode/client"
 import serverPlugin, { setupWatchServer, WatchService } from "./server.ts"
 import indexPlugin from "./index.ts"
+import { watchRPC } from "./watch.ts"
 
 test("both conventional server entrypoints expose one default definition", () => {
   assert.equal(serverPlugin, indexPlugin)
   assert.equal(serverPlugin.id, "another.sessions")
   assert.equal(serverPlugin.setup, setupWatchServer)
+})
+
+test("RPC uses supported primitive input schemas; native ID validation is at the handler boundary", () => {
+  // OpenCode 2.2's RPC JSON-schema validator disables pattern evaluation.
+  assert.deepEqual(watchRPC.methods.add.input.properties.supervisor, { type: "string" })
+  assert.deepEqual(watchRPC.methods.add.input.properties.member, { type: "string" })
 })
 
 function fixture() {
@@ -67,6 +74,18 @@ test("permission and question waits report blocked, errors report once without a
   await f.service.event(event("session.execution.failed", "ses_member"))
   await f.service.event(event("session.idle", "ses_member"))
   assert.deepEqual(f.cards.map(card => card.description.split(" · ").at(-1)), ["blocked", "blocked", "error"])
+})
+
+test("native terminal execution events report idle without legacy status events and deduplicate subsequent idle", async () => {
+  const f = fixture(); await f.service.change("ses_super", "ses_member", true); f.cards.length = 0
+  await f.service.event(event("session.execution.started", "ses_member"))
+  await f.service.event(event("session.execution.succeeded", "ses_member"))
+  await f.service.event(event("session.idle", "ses_member"))
+  await f.service.event(event("session.execution.started", "ses_member"))
+  await f.service.event(event("session.execution.interrupted", "ses_member"))
+  await f.service.event(event("session.status", "ses_member", "idle"))
+  assert.equal(f.cards.length, 2)
+  assert.ok(f.cards.every(card => card.description.endsWith(" · idle")))
 })
 
 test("groups survive a storage round trip, busy baselines survive reload, intro only for first member", async () => {

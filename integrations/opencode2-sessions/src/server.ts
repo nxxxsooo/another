@@ -97,7 +97,9 @@ export class WatchService {
       let state: "busy" | "idle" | "blocked" | "error" | undefined
       if (event.type === "session.status") state = event.data.status.type === "idle" ? "idle" : "busy"
       else if (event.type === "session.execution.started") state = "busy"
-      else if (event.type === "session.idle") state = "idle"
+      // Native terminal execution events also cover servers that do not emit
+      // the legacy session.idle/status pair (the title plugin uses these too).
+      else if (event.type === "session.idle" || event.type === "session.execution.succeeded" || event.type === "session.execution.interrupted") state = "idle"
       else if (event.type === "permission.asked" || event.type === "form.created") state = "blocked"
       else if (event.type === "session.execution.failed") state = "error"
       if (!state) return
@@ -113,7 +115,7 @@ export class WatchService {
   }
 }
 
-const eventTypes = ["session.status", "session.idle", "session.execution.started", "session.execution.failed", "permission.asked", "form.created", "session.deleted"] as const
+const eventTypes = ["session.status", "session.idle", "session.execution.started", "session.execution.succeeded", "session.execution.interrupted", "session.execution.failed", "permission.asked", "form.created", "session.deleted"] as const
 type Runtime = { contexts: Set<Context>; service: WatchService; revision: string; retired?: boolean; owner?: Context; stop?: AbortController }
 const runtimeKey = Symbol.for("another.sessions.server-runtime")
 const globals = globalThis as typeof globalThis & { [runtimeKey]?: Runtime }
