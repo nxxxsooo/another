@@ -11,6 +11,7 @@ function fixture() {
   const menus: any[] = [], prompts: any[] = [], notices: any[] = [], calls: string[][] = [], rpcCalls: any[] = [], confirms: any[] = [], comments: any[] = [], created: any[] = []
   let route: any = { type: "session", sessionID: "ses_super" }, unavailable = false, fresh = false
   let response: string | undefined = "Use this evidence"
+  let statusCalls = 0
   let select: (menu: any) => any = () => undefined
   const status = () => ({ groups })
   const context = {
@@ -19,7 +20,7 @@ function fixture() {
       get: async () => ({ id: "ses_super", title: "Supervisor", location: { directory: "project" } }),
       create: async (input: any) => { created.push(input); return { id: "ses_created" } }, prompt: async (input: any) => { prompts.push(input) },
     }, message: { list: async () => ({ data: fresh ? [] : [{}] }) }, rpc: () => ({
-      status: async () => { if (unavailable) throw new Error("RPC unavailable"); return status() },
+      status: async () => { statusCalls++; if (unavailable) throw new Error("RPC unavailable"); return status() },
       add: async (input: any, options: any) => { rpcCalls.push({ method: "add", input, options }); groups[input.supervisor] = [input.member]; return status() },
       rm: async (input: any, options: any) => { rpcCalls.push({ method: "rm", input, options }); delete groups[input.supervisor]; return status() },
     }) },
@@ -39,6 +40,7 @@ function fixture() {
   return { context, dependencies, rows, busy, groups, menus, prompts, notices, calls, confirms, rpcCalls, comments, created,
     select(fn: typeof select) { select = fn }, route(value: any) { route = value }, unavailable() { unavailable = true }, fresh() { fresh = true },
     comment(value: string | undefined) { response = value },
+    statusCalls: () => statusCalls,
   }
 }
 
@@ -52,7 +54,7 @@ test("reference captures route before I/O and attaches optional comment then con
   assert.equal(f.prompts[0].delivery, "steer")
   assert.equal(f.confirms.length, 0)
   assert.equal(f.comments[0].title, 'Reference "Member" → "Supervisor"')
-  assert.deepEqual(f.calls.find(a => a[0] === "context"), ["context", "ses_member", "--provider", "opencode"])
+  assert.deepEqual(f.calls.find(a => a[0] === "context"), ["context", "ses_member", "--provider", "opencode", "--cached"])
   command.dispose()
 })
 
@@ -160,7 +162,7 @@ test("keyword arguments use wrapped full-text search results and Ctrl+A re-runs 
   f.select(menu => { if (f.menus.length === 1) { menu.actions.find((a: any) => a.bind === "ctrl+a").onTrigger(); return }; return "opencode:ses_member" })
   await createSessionsCommand(f.context, f.dependencies).open("--all webhook retry")
   const searches = f.calls.filter(args => args[0] === "search")
-  assert.deepEqual(searches, [["search", "--json", "--all", "--", "webhook retry"], ["search", "--json", "--", "webhook retry"]])
+  assert.deepEqual(searches, [["search", "--json", "--cached", "--no-wait", "--all", "--", "webhook retry"], ["search", "--json", "--cached", "--no-wait", "--", "webhook retry"]])
   assert.equal(f.calls.filter(args => args[0] === "list").length, 0)
   assert.ok(f.menus[0].title.includes("All projects")); assert.ok(f.menus[1].title.includes("This project"))
   assert.equal(f.prompts.length, 1)
@@ -168,7 +170,7 @@ test("keyword arguments use wrapped full-text search results and Ctrl+A re-runs 
 
 test("--all without keywords uses widened list; --tui is rejected without I/O", async () => {
   const f = fixture(); await createSessionsCommand(f.context, f.dependencies).open("--all")
-  assert.deepEqual(f.calls, [["list", "--json", "--all"]])
+  assert.deepEqual(f.calls, [["list", "--json", "--cached", "--all"], ["list", "--json", "--cached"]])
   const bad = fixture(); await createSessionsCommand(bad.context, bad.dependencies).open("--all --tui")
   assert.match(bad.notices[0].message, /does not support --tui/); assert.equal(bad.calls.length, 0)
   assert.deepEqual(parseReferenceInput("  keyword --all literal  "), { query: "keyword --all literal", all: false })
@@ -196,4 +198,22 @@ test("empty full-text results are valid and keep the scope/filter actions", asyn
   f.select(menu => { assert.equal(menu.options.length, 0); assert.ok(menu.actions.some((a: any) => a.bind === providerFilterKey)); return undefined })
   await createSessionsCommand(f.context, f.dependencies).open("no matches")
   assert.equal(f.notices.length, 0)
+})
+
+test("provider and cached scope toggles never respawn or repeat native status; repeated searches reuse in-flight/results", async () => {
+  const f = fixture()
+  f.select(menu => {
+    const actions = [providerFilterKey, "ctrl+a", "ctrl+a", providerFilterKey]
+    const bind = actions[f.menus.length - 1]
+    if (bind) menu.actions.find((action: any) => action.bind === bind).onTrigger()
+    return undefined
+  })
+  const command = createSessionsCommand(f.context, f.dependencies)
+  await command.open("webhook")
+  await command.open("webhook")
+  const calls = f.calls.filter(args => args[0] === "search")
+  assert.equal(calls.length, 2)
+  assert.equal(f.statusCalls(), 2) // One snapshot per open, not per dialog re-render.
+  assert.ok(calls.every(args => args.includes("--cached") && args.includes("--no-wait")))
+  command.dispose()
 })

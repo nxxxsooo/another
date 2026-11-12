@@ -19,6 +19,8 @@ export class WatchService {
   readonly ready: Promise<void>
   private host: Host
   private key: string
+  private maintenance?: Promise<void>
+  private checkedAt = 0
 
   constructor(host: Host, key: string, previous: Promise<unknown> = Promise.resolve()) {
     this.host = host; this.key = key
@@ -64,7 +66,18 @@ export class WatchService {
   private async snapshot(): Promise<WatchStatus> {
     return { groups: clone(this.groups) }
   }
-  status() { return this.exclusive(async () => { await this.prune(); return this.snapshot() }) }
+  // Read-only snapshots must not queue behind a slow synthetic delivery or
+  // native session read. Missed deletions are repaired asynchronously, while
+  // deletion events and startup/change reconciliation keep the normal path current.
+  async status() {
+    await this.ready
+    if (!this.maintenance && Date.now() - this.checkedAt > 60_000) {
+      this.checkedAt = Date.now()
+      this.maintenance = this.reconcile().catch(error => console.error("another watch reconciliation failed", error)).finally(() => { this.maintenance = undefined })
+    }
+    return this.snapshot()
+  }
+  reconcile() { return this.exclusive(() => this.prune()) }
   change(supervisor: string, member: string, add: boolean) {
     return this.exclusive(async () => {
       if (!validID(supervisor) || !validID(member) || supervisor === member) throw new Error("Choose two different OpenCode sessions.")
@@ -82,9 +95,11 @@ export class WatchService {
     })
   }
   event(event: OpenCodeEvent) {
+    const id = event.type === "form.created" ? event.data.form.sessionID : "data" in event && event.data && "sessionID" in event.data ? event.data.sessionID : undefined
+    if (typeof id !== "string") return Promise.resolve()
+    const member = Object.values(this.groups).some(members => members.includes(id))
+    if (!member && !(event.type === "session.deleted" && (this.groups[id] || this.states.has(id)))) return Promise.resolve()
     return this.exclusive(async () => {
-      const id = event.type === "form.created" ? event.data.form.sessionID : "data" in event && event.data && "sessionID" in event.data ? event.data.sessionID : undefined
-      if (typeof id !== "string") return
       if (event.type === "session.deleted") {
         delete this.groups[id]; this.states.delete(id)
         for (const [supervisor, members] of Object.entries(this.groups)) {
@@ -106,11 +121,14 @@ export class WatchService {
       const before = this.states.get(id) ?? "idle"
       this.states.set(id, state)
       if (state === "busy" || state === before || (state === "idle" && before !== "busy")) return
-      await this.prune()
       const member = await this.host.session.get({ sessionID: nativeID(id) })
+      let pruned = false
       for (const [supervisor, members] of Object.entries(this.groups)) {
-        if (members.includes(id)) await this.host.session.synthetic({ ...watchCard(supervisor, { member: id, title: member.title ?? id, state, at: new Date("created" in event ? event.created : Date.now()).toISOString() }), sessionID: nativeID(supervisor) })
+        if (!members.includes(id)) continue
+        if (!await this.exists(supervisor)) { delete this.groups[supervisor]; pruned = true; continue }
+        await this.host.session.synthetic({ ...watchCard(supervisor, { member: id, title: member.title ?? id, state, at: new Date("created" in event ? event.created : Date.now()).toISOString() }), sessionID: nativeID(supervisor) })
       }
+      if (pruned) await this.save()
     })
   }
 }

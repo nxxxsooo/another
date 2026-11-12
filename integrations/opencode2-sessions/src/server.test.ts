@@ -112,12 +112,14 @@ test("deleted supervisors prune groups and deleted members are dropped, includin
   await f.service.event(event("session.deleted", "ses_member"))
   assert.deepEqual((await f.service.status()).groups, { ses_super: ["ses_other"] })
   f.sessions.delete("ses_super")
+  await f.service.reconcile()
   assert.deepEqual((await f.service.status()).groups, {})
   const restored = new WatchService(f.context, "groups-test")
   assert.deepEqual((await restored.status()).groups, {})
   f.sessions.set("ses_super", { id: "ses_super", time: {} })
   await restored.change("ses_super", "ses_other", true)
   f.sessions.delete("ses_other")
+  await restored.reconcile()
   assert.deepEqual((await restored.status()).groups, {})
 })
 
@@ -126,9 +128,27 @@ test("invalid/self/missing sessions rejected, transient read failures do not sil
   for (const member of ["ses_super", "ses_missing", "not-an-opencode-id"]) await assert.rejects(f.service.change("ses_super", member, true))
   await f.service.change("ses_super", "ses_member", true)
   f.failures.add("ses_super")
-  await assert.rejects(f.service.status(), /temporary/)
+  await assert.rejects(f.service.reconcile(), /temporary/)
   f.failures.clear()
   assert.deepEqual((await f.service.status()).groups, { ses_super: ["ses_member"] })
+})
+
+test("status and unrelated events do not wait for slow watched-event I/O", async () => {
+  const f = fixture(); await f.service.change("ses_super", "ses_member", true)
+  let unblock!: () => void, entered!: () => void
+  const blocked = new Promise<void>(resolve => { unblock = resolve })
+  const started = new Promise<void>(resolve => { entered = resolve })
+  ;(f.context.session as any).synthetic = async () => { entered(); await blocked }
+  const delivery = f.service.event(event("session.execution.failed", "ses_member"))
+  await started
+  let statusDone = false, unrelatedDone = false
+  const status = f.service.status().then(value => { statusDone = true; assert.deepEqual(value.groups, { ses_super: ["ses_member"] }) })
+  const unrelated = f.service.event(event("session.deleted", "ses_unrelated")).then(() => { unrelatedDone = true })
+  try {
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(statusDone, true)
+    assert.equal(unrelatedDone, true)
+  } finally { unblock(); await delivery; await status; await unrelated }
 })
 
 test("location RPC registrations share one service and event subscriber; standalone namespaces stay separate", async () => {
