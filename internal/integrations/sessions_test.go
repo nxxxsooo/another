@@ -17,6 +17,22 @@ func TestOpenCodeSessionsInstallStates(t *testing.T) {
 	if err != nil || status.State != StateCurrent {
 		t.Fatalf("status=%+v err=%v", status, err)
 	}
+	// Use OpenCode's conventional server.ts/index.ts + tui.ts directory
+	// entries, without package self-resolution through npm.
+	packageData, err := os.ReadFile(filepath.Join(status.Dir, "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pkg struct {
+		Type string `json:"type"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(packageData, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Type != "module" || pkg.Name != "" {
+		t.Fatalf("invalid local plugin package: %s", packageData)
+	}
 	runtime, err := os.ReadFile(filepath.Join(status.Dir, "runtime.ts"))
 	if err != nil || len(runtime) == 0 {
 		t.Fatalf("runtime=%q err=%v", runtime, err)

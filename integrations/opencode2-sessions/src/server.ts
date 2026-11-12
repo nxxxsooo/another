@@ -1,4 +1,4 @@
-import type { Plugin } from "@opencode/plugin"
+import { Plugin } from "@opencode/plugin"
 import type { OpenCodeEvent } from "@opencode/client"
 import { setTimeout } from "node:timers/promises"
 import { watchCard, watchRPC, type Groups, type WatchStatus } from "./watch.ts"
@@ -175,3 +175,6 @@ export async function setupWatchServer(ctx: Context, revision = serverRevision) 
   }
   return async () => { await registration.dispose(); release() }
 }
+
+// OpenCode's conventional directory loader prefers server.ts to index.ts.
+export default Plugin.define({ id: "another.sessions", setup: setupWatchServer })

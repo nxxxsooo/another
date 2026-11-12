@@ -2,7 +2,14 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { Plugin } from "@opencode/plugin"
 import type { OpenCodeEvent } from "@opencode/client"
-import { setupWatchServer, WatchService } from "./server.ts"
+import serverPlugin, { setupWatchServer, WatchService } from "./server.ts"
+import indexPlugin from "./index.ts"
+
+test("both conventional server entrypoints expose one default definition", () => {
+  assert.equal(serverPlugin, indexPlugin)
+  assert.equal(serverPlugin.id, "another.sessions")
+  assert.equal(serverPlugin.setup, setupWatchServer)
+})
 
 function fixture() {
   const stored = new Map<string, any>()
