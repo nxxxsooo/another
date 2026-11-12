@@ -53,15 +53,13 @@ func (c Client) run(ctx context.Context, name string, args ...string) ([]byte, e
 	return out, nil
 }
 
-type invalidResponseError struct{ error }
-
 func (c Client) read(ctx context.Context, name string, dst any, args ...string) error {
 	out, err := c.run(ctx, name, args...)
 	if err != nil {
 		return err
 	}
 	if err := json.Unmarshal(out, dst); err != nil {
-		return invalidResponseError{fmt.Errorf("herdr: invalid %s response: %w", name, err)}
+		return fmt.Errorf("herdr: invalid %s response: %w", name, err)
 	}
 	return nil
 }
@@ -139,7 +137,7 @@ func (c Client) Snapshot(ctx context.Context) (map[string][]string, error) {
 			continue
 		}
 		if detail.Address != t.Address || detail.State == "" {
-			incomplete(t.Address, invalidResponseError{fmt.Errorf("invalid terminal detail")})
+			incomplete(t.Address, fmt.Errorf("invalid terminal detail"))
 			continue
 		}
 		// Finished terminals and shells can retain historical records.
@@ -160,11 +158,7 @@ func (c Client) Snapshot(ctx context.Context) (map[string][]string, error) {
 		var status struct {
 			App string `json:"app"`
 		}
-		if err := json.Unmarshal(detail.Status, &status); err != nil {
-			incomplete(t.Address, invalidResponseError{fmt.Errorf("invalid terminal status: %w", err)})
-			continue
-		}
-		if status.App == "" {
+		if err := json.Unmarshal(detail.Status, &status); err != nil || status.App == "" {
 			incomplete(t.Address, fmt.Errorf("invalid terminal status"))
 			continue
 		}

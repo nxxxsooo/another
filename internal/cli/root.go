@@ -130,7 +130,6 @@ func (a *App) Root() *cobra.Command {
 	root.AddCommand(a.showCmd())
 	root.AddCommand(a.contextCmd())
 	root.AddCommand(a.mcpCmd())
-	root.AddCommand(a.watchCmd())
 	root.AddCommand(a.migrateCmd())
 	root.AddCommand(a.indexCmd())
 	root.AddCommand(a.pathsCmd())

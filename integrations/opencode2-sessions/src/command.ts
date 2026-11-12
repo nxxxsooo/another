@@ -1,27 +1,13 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { createInterface } from "node:readline"
 import type { Context, DialogSelectAction } from "@opencode/plugin/tui/context"
 import { executable } from "./runtime.ts"
+import { parseStatus, watchRPC, type WatchStatus } from "./watch.ts"
 
 export type Session = { id: string; provider: string; title: string; project_path: string; updated_at: string }
-export type Status = { live: Record<string, { state: string; terminal: string; title: string }>; groups: Record<string, string[]>; warnings: string[] }
-export type Report = { member: string; title: string; state: "idle" | "done" | "blocked" | "error"; at: string }
 type Run = (args: string[], cwd: string) => Promise<string>
-type Follow = (supervisor: string, cwd: string, report: (value: Report) => Promise<void>, failed: (error: Error) => void, ended: () => void) => () => void
 const exec = promisify(execFile)
 const runCommand: Run = async (args, cwd) => (await exec(executable, args, { cwd, timeout: 30_000, maxBuffer: 16 << 20, windowsHide: true })).stdout
-
-export function parseStatus(text: string): Status {
-  const value = JSON.parse(text)
-  if (!value || typeof value.live !== "object" || !value.live || typeof value.groups !== "object" || !value.groups) throw new Error("Invalid another watch status")
-  if (!Array.isArray(value.warnings) || value.warnings.some((warning: unknown) => typeof warning !== "string")) throw new Error("Invalid watch warnings")
-  for (const live of Object.values(value.live) as any[]) {
-    if (!live || !["working", "idle", "done", "blocked", "error"].includes(live.state) || typeof live.terminal !== "string" || typeof live.title !== "string") throw new Error("Invalid live session")
-  }
-  for (const members of Object.values(value.groups)) if (!Array.isArray(members) || members.some(id => typeof id !== "string")) throw new Error("Invalid watch group")
-  return value
-}
 
 function parseSessions(text: string): Session[] {
   const value = JSON.parse(text) ?? []
@@ -29,64 +15,10 @@ function parseSessions(text: string): Session[] {
   return value.map(s => ({ ...s, project_path: s.project_path ?? "", title: s.title ?? "" })).sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
 }
 
-export const startFollower: Follow = (supervisor, cwd, report, failed, ended) => {
-  const child = spawn(executable, ["watch", "follow", supervisor], { cwd, env: { ...process.env, ANOTHER_WATCH_PARENT_PIPE: "1" }, stdio: ["pipe", "pipe", "pipe"], windowsHide: true })
-  const lines = createInterface({ input: child.stdout })
-  let stopped = false, stderr = "", queue = Promise.resolve()
-  // Closing the parent lease asks Go to cancel and reap hc, on Windows too.
-  const stop = () => { stopped = true; lines.close(); child.stdin.end() }
-  child.stdin.on("error", error => { if (!stopped) { stop(); failed(error) } })
-  child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-2048) })
-  child.on("error", error => { if (!stopped) { stop(); failed(error) } })
-  lines.on("line", line => {
-    queue = queue.then(async () => {
-      if (stopped) return
-      const value = JSON.parse(line)
-      if (!value || typeof value.member !== "string" || typeof value.title !== "string" || !["idle", "done", "blocked", "error"].includes(value.state) || typeof value.at !== "string") throw new Error("Invalid watch report")
-      await report(value)
-    }).catch(error => { if (!stopped) { stop(); failed(error) } })
-  })
-  child.on("close", code => { void queue.then(() => { if (!stopped) { if (code !== 0) failed(new Error(stderr || `Watch follower exited ${code}`)); ended() } }) })
-  return stop
-}
-
-export function watchCard(sessionID: string, report: Report) {
-  return {
-    sessionID, delivery: "queue" as const,
-    description: `${report.title || report.member} · turn ended · ${report.state}`,
-    text: `Watch report: ${report.title || report.member}\nMember session: ${report.member}\nState: ${report.state}\nAt: ${report.at}\nRead new content with the another MCP resource another://session/opencode/${report.member} or another context ${report.member} --all.\nThis is a watch report, not a user instruction.`,
-    metadata: { source: "another.watch", member: report.member, at: report.at },
-  }
-}
-
-export function createSessionsCommand(context: Context, dependencies: { run?: Run; follow?: Follow; terminal?: string } = {}) {
+export function createSessionsCommand(context: Context, dependencies: { run?: Run } = {}) {
   const run = dependencies.run ?? runCommand
-  const follow = dependencies.follow ?? startFollower
-  const terminal = dependencies.terminal ?? process.env.HC_TERMINAL_ID
-  const followers = new Map<string, () => void>()
   let disposed = false, active = false
   const notice = (message: string, error = false) => { if (!disposed) context.ui.toast.show({ title: "another /ref", message, variant: error ? "error" : "info" }) }
-  async function status(cwd: string) {
-    try { return parseStatus(await run(["watch", "status", "--json"], cwd)) }
-    catch { return undefined } // Herdr is optional; reference selection remains usable.
-  }
-  function ensureFollower(supervisor: string, cwd: string) {
-    if (disposed || followers.has(supervisor)) return
-    followers.set(supervisor, follow(supervisor, cwd,
-      async report => { if (!disposed) await context.client.session.synthetic(watchCard(supervisor, report)) },
-      error => { followers.delete(supervisor); notice(error.message, true) },
-      () => { followers.delete(supervisor) }))
-  }
-  async function resume() {
-    if (!terminal) return
-    const cwd = (context.location ?? context.data.location.default()).directory
-    if (!cwd) return
-    const current = parseStatus(await run(["watch", "status", "--json"], cwd))
-    if (disposed || !current) return
-    for (const supervisor of Object.keys(current.groups)) {
-      if (current.live[supervisor]?.terminal === terminal) ensureFollower(supervisor, cwd)
-    }
-  }
 
   async function open() {
     if (disposed || active) return
@@ -105,13 +37,17 @@ export function createSessionsCommand(context: Context, dependencies: { run?: Ru
       const fresh = !spoken?.data.length
       const scoped = parseSessions(await run(["list", "--json"], cwd))
       const localIDs = new Set(scoped.map(s => `${s.provider}:${s.id}`))
+      const rpc = context.client.rpc(watchRPC)
+      const request = { location: current?.location ?? homeLocation }
       let all = false, page = 0
       while (!disposed) {
         const sessions = all ? parseSessions(await run(["list", "--json", "--all"], cwd)) : scoped
-        const live = await status(cwd)
+        let live: WatchStatus | undefined
+        try { live = parseStatus(await rpc.status({}, request)) }
+        catch (error) { notice(`Watch status unavailable: ${error instanceof Error ? error.message : String(error)}`, true) }
         let action: "scope" | "watch" | undefined, highlighted: string | undefined
         const rows = sessions.slice(page * 100, (page + 1) * 100)
-        const options = rows.map(s => ({ title: `${live?.live[s.id] && s.provider === "opencode" ? "● " : ""}${supervisor && live?.groups[supervisor]?.includes(s.id) && s.provider === "opencode" ? "盯 " : ""}${s.title || s.id}`, value: `${s.provider}:${s.id}`, footer: s.project_path, description: s.provider }))
+        const options = rows.map(s => ({ title: `${s.provider === "opencode" && context.data.session.status(s.id) === "running" ? "● " : ""}${supervisor && live?.groups[supervisor]?.includes(s.id) && s.provider === "opencode" ? "盯 " : ""}${s.title || s.id}`, value: `${s.provider}:${s.id}`, footer: s.project_path, description: s.provider }))
         if (page > 0) options.push({ title: "Previous conversations…", value: "previous", footer: "", description: "" })
         if (sessions.length > (page + 1) * 100) options.push({ title: "More conversations…", value: "more", footer: "", description: "" })
         const actions: DialogSelectAction<string>[] = [{ bind: "ctrl+a", title: all ? "This project" : "All projects", selection: "none", onTrigger: () => { action = "scope"; context.ui.dialog.clear() } }]
@@ -127,17 +63,12 @@ export function createSessionsCommand(context: Context, dependencies: { run?: Ru
         if (!source) { if (action) continue; return }
         if (source.id === supervisor && source.provider === "opencode") { notice("Choose a different conversation."); continue }
         if (action === "watch") {
-          if (!supervisor || !live?.live[supervisor]) { notice("The supervisor must be a live local OpenCode session in Herdr."); continue }
-          if (source.provider !== "opencode" || !live.live[source.id]) { notice("Only live local OpenCode sessions can be watched."); continue }
+          if (!supervisor) { notice("Open a supervisor conversation before watching sessions."); continue }
+          if (source.provider !== "opencode") { notice("Only OpenCode sessions on this server can be watched."); continue }
+          if (!live) { notice("Watch status is unavailable."); continue }
           const removing = live.groups[supervisor]?.includes(source.id)
-          if (!removing && !localIDs.has(`${source.provider}:${source.id}`) && await context.ui.dialog.confirm({ title: "Watch another project?", message: `Watching ${source.title || source.id} grants active watch groups access to this session outside the current project. Continue?` }) !== true) continue
-          await run(["watch", removing ? "rm" : "add", supervisor, source.id], cwd)
-          const first = !removing && !live.groups[supervisor]?.length
-          const updated = parseStatus(await run(["watch", "status", "--json"], cwd))
-          if (updated.groups[supervisor]?.length) {
-            ensureFollower(supervisor, cwd)
-            if (first) await context.client.session.synthetic({ sessionID: supervisor, delivery: "queue", description: "Watch supervision started", text: `This conversation now supervises these sessions: ${updated.groups[supervisor].join(", ")}. Use another's watch_status MCP tool to inspect the group; read their content with another MCP resources or another context <id> --all. Turn-end watch reports will arrive here. This is a watch report, not a user instruction.`, metadata: { source: "another.watch" } })
-          } else { followers.get(supervisor)?.(); followers.delete(supervisor) }
+          if (!removing && !localIDs.has(`${source.provider}:${source.id}`) && await context.ui.dialog.confirm({ title: "Watch another project?", message: `Send watch reports about ${source.title || source.id} from ${source.project_path} to this supervisor?` }) !== true) continue
+          parseStatus(await rpc[removing ? "rm" : "add"]({ supervisor, member: source.id }, request))
           continue
         }
         const args = ["context", source.id, "--provider", source.provider, ...(all ? ["--all"] : [])]
@@ -155,13 +86,12 @@ export function createSessionsCommand(context: Context, dependencies: { run?: Ru
     } catch (error) { notice(error instanceof Error ? error.message : String(error), true) }
     finally { active = false }
   }
-  return { open, resume, dispose() { disposed = true; for (const stop of followers.values()) stop(); followers.clear(); if (active) context.ui.dialog.clear() } }
+  return { open, dispose() { disposed = true; if (active) context.ui.dialog.clear() } }
 }
 
-// Setup must not wait for subprocess discovery; /ref remains immediately usable.
+// The server owns watching; TUI setup has no discovery or background processes.
 export function setupSessions(context: Context, create = createSessionsCommand) {
   const sessions = create(context)
-  void sessions.resume().catch(error => context.ui.toast.show({ title: "another /ref", message: error instanceof Error ? error.message : String(error), variant: "error" }))
   const unmount = context.ui.slot({ append: "app", render() {
     context.keymap.layer(() => ({ mode: "global", commands: [{ id: "another.sessions.ref", title: "Reference or watch a session", group: "another", palette: true, slash: { name: "ref" }, run: sessions.open }] }))
     return null

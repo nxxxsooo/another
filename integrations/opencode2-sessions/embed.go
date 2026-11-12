@@ -20,8 +20,14 @@ var tuiTS []byte
 //go:embed src/command.ts
 var commandTS []byte
 
+//go:embed src/server.ts
+var serverTS []byte
+
+//go:embed src/watch.ts
+var watchTS []byte
+
 func Files() map[string][]byte {
-	return map[string][]byte{"index.ts": indexTS, "tui.ts": tuiTS, "command.ts": commandTS}
+	return map[string][]byte{"index.ts": indexTS, "tui.ts": tuiTS, "command.ts": commandTS, "server.ts": serverTS, "watch.ts": watchTS}
 }
 func Names() []string {
 	names := []string{}
