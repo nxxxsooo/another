@@ -16,14 +16,14 @@ import (
 // agent reads through either matches what the MCP server hands out.
 func (a *App) contextCmd() *cobra.Command {
 	var from string
-	var all, refresh bool
+	var all, refresh, cached bool
 	cmd := &cobra.Command{
 		Use:   "context <session-id>",
 		Short: "Print a bounded Markdown view of a session for another agent to read",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if err := a.ensureIndex(ctx, from, refresh); err != nil {
+			if err := a.readIndex(ctx, from, refresh, cached); err != nil {
 				return err
 			}
 			sm, p, err := migrate.ResolveSession(ctx, a.Registry, a.Index, args[0], from)
@@ -44,5 +44,6 @@ func (a *App) contextCmd() *cobra.Command {
 	cmd.Flags().StringVar(&from, "provider", "", "source provider")
 	cmd.Flags().BoolVar(&all, "all", false, "allow a session from any project, not only the current one")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index first")
+	cmd.Flags().BoolVar(&cached, "cached", false, "resolve from the cached index without scanning provider stores")
 	return cmd
 }

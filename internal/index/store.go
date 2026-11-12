@@ -924,7 +924,15 @@ func AnyInstalledUnindexed(reg *registry.Registry, store *Store) bool {
 		return true
 	}
 	for _, p := range reg.Installed() {
+		if discoveryBackingOff(p, store) {
+			continue
+		}
 		if counts[p.ID()] == 0 {
+			// A successful empty scan is indexed too; absence of sessions is
+			// not evidence that discovery has never succeeded.
+			if meta, err := store.GetMeta(discoverCountMetaKey(p.ID())); err == nil && meta == "0" {
+				continue
+			}
 			return true
 		}
 	}
@@ -946,6 +954,9 @@ func uniqueSummaryIDs(summaries []model.Summary) int {
 // IndexMetadataMissing reports whether discover metadata has not been recorded yet.
 func IndexMetadataMissing(reg *registry.Registry, store *Store) bool {
 	for _, p := range reg.Installed() {
+		if discoveryBackingOff(p, store) {
+			continue
+		}
 		meta, _ := store.GetMeta(discoverCountMetaKey(p.ID()))
 		if meta == "" {
 			return true
@@ -961,6 +972,9 @@ func IndexBehindDiscover(reg *registry.Registry, store *Store) bool {
 		return true
 	}
 	for _, p := range reg.Installed() {
+		if discoveryBackingOff(p, store) {
+			continue
+		}
 		meta, _ := store.GetMeta(discoverCountMetaKey(p.ID()))
 		if meta == "" {
 			continue
@@ -1013,7 +1027,7 @@ func NeedsIncrementalIndex(reg *registry.Registry, store *Store, maxAge time.Dur
 	if AnyInstalledUnindexed(reg, store) {
 		return true
 	}
-	if codexRebuildOwed(store) {
+	if _, err := reg.Get(codexProviderID); err == nil && codexRebuildOwed(store) {
 		return true
 	}
 	if IndexMetadataMissing(reg, store) {
@@ -1066,9 +1080,11 @@ func Rebuild(ctx context.Context, reg *registry.Registry, store *Store, provider
 		}
 		summaries, err := p.Discover(ctx, provider.DiscoverOpts{})
 		if err != nil {
+			rememberDiscoveryFailure(ctx, p, store)
 			failed = append(failed, fmt.Errorf("%s: %w", p.ID(), err))
 			continue
 		}
+		_ = store.ResetDiscoveryBackoff(p.ID())
 		summaries = dropTitlerSessions(ctx, p, summaries)
 		seen := make(map[string]struct{}, len(summaries))
 		for _, sm := range summaries {
@@ -1104,7 +1120,7 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 	// a stale title and message count that no incremental scan will revisit,
 	// because their files are unchanged. Settle that debt once, then continue
 	// with the normal pass.
-	if codexRebuildOwed(store) {
+	if _, err := reg.Get(codexProviderID); err == nil && codexRebuildOwed(store) {
 		if _, err := Rebuild(ctx, reg, store, codexProviderID); err != nil {
 			return 0, err
 		}
@@ -1125,6 +1141,9 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 			continue
 		}
 		pid := p.ID()
+		if discoveryBackingOff(p, store) {
+			continue
+		}
 		seen := make(map[string]struct{})
 		skip := func(storagePath string, mtime int64) bool {
 			seen[storagePath] = struct{}{}
@@ -1145,9 +1164,11 @@ func UpdateIncremental(ctx context.Context, reg *registry.Registry, store *Store
 		}
 		summaries, err := p.Discover(ctx, discoverOpts)
 		if err != nil {
+			rememberDiscoveryFailure(ctx, p, store)
 			failed = append(failed, fmt.Errorf("%s: %w", pid, err))
 			continue
 		}
+		_ = store.ResetDiscoveryBackoff(pid)
 		// Dropping them from seen as well is what removes rows indexed
 		// before this filter existed: reconcile deletes any indexed path the
 		// scan did not claim.

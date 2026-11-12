@@ -151,21 +151,36 @@ func (a *App) Root() *cobra.Command {
 
 func (a *App) ensureIndex(ctx context.Context, providerFilter string, refresh bool) error {
 	const indexMaxAge = 5 * time.Minute
-	if !refresh {
-		if providerFilter == "" {
-			if !index.NeedsIncrementalIndex(a.Registry, a.Index, indexMaxAge) {
-				return nil
-			}
-		} else {
-			counts, _ := a.Index.CountByProvider()
-			pid := registry.NormalizeID(providerFilter)
-			if counts[pid] > 0 && !index.NeedsIncrementalIndex(a.Registry, a.Index, indexMaxAge) {
-				return nil
-			}
+	reg := a.Registry
+	if providerFilter != "" {
+		p, err := reg.Get(registry.NormalizeID(providerFilter))
+		if err != nil {
+			return err
+		}
+		reg = registry.NewWith(p)
+	}
+	if refresh {
+		if err := a.Index.ResetDiscoveryBackoff(registry.NormalizeID(providerFilter)); err != nil {
+			return err
 		}
 	}
-	_, err := index.UpdateIncremental(ctx, a.Registry, a.Index, registry.NormalizeID(providerFilter))
+	if !refresh {
+		if !index.NeedsIncrementalIndex(reg, a.Index, indexMaxAge) {
+			return nil
+		}
+	}
+	_, err := index.UpdateIncremental(ctx, reg, a.Index, registry.NormalizeID(providerFilter))
 	return reportScanFailure(err)
+}
+
+func (a *App) readIndex(ctx context.Context, providerID string, refresh, cached bool) error {
+	if cached && refresh {
+		return fmt.Errorf("--cached and --refresh cannot be combined")
+	}
+	if cached {
+		return nil
+	}
+	return a.ensureIndex(ctx, providerID, refresh)
 }
 
 // reportScanFailure lets a command run on what another could read. An agent
@@ -229,13 +244,13 @@ func requireInScope(ctx context.Context, sm *model.Summary, all bool) error {
 func (a *App) listCmd() *cobra.Command {
 	var providerID, project string
 	var limit int
-	var asJSON, refresh, all, includeSubagents bool
+	var asJSON, refresh, all, includeSubagents, cached bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List indexed sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if err := a.ensureIndex(ctx, providerID, refresh); err != nil {
+			if err := a.readIndex(ctx, providerID, refresh, cached); err != nil {
 				return err
 			}
 			roots, err := scopeRoots(ctx, project, all)
@@ -274,6 +289,7 @@ func (a *App) listCmd() *cobra.Command {
 	cmd.Flags().IntVar(&limit, "limit", 0, "max results (0 = unlimited)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before listing")
+	cmd.Flags().BoolVar(&cached, "cached", false, "read the cached index without scanning provider stores")
 	cmd.Flags().BoolVar(&includeSubagents, "include-subagents", false, "include child agent sessions")
 	return cmd
 }
@@ -782,17 +798,17 @@ func (a *App) tuiCmd() *cobra.Command {
 func (a *App) searchCmd() *cobra.Command {
 	var providerID, project string
 	var limit int
-	var all, includeSubagents, asJSON, noWait, refresh bool
+	var all, includeSubagents, asJSON, noWait, refresh, cached bool
 	cmd := &cobra.Command{
 		Use:   "search <keywords>",
 		Short: "Search session titles and message text",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if err := a.ensureIndex(ctx, providerID, refresh); err != nil {
+			if err := a.readIndex(ctx, providerID, refresh, cached); err != nil {
 				return err
 			}
-			if !noWait {
+			if !noWait && !cached {
 				if _, _, err := a.Index.IndexPendingContent(ctx, a.Registry, 0, false); err != nil {
 					return err
 				}
@@ -851,6 +867,7 @@ func (a *App) searchCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "return available results without waiting for content indexing")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh index before searching")
+	cmd.Flags().BoolVar(&cached, "cached", false, "read cached metadata and content without indexing")
 	return cmd
 }
 
