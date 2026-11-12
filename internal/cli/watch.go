@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/nxxxsooo/another/internal/herdr"
 	"github.com/spf13/cobra"
+	"io"
+	"os"
 )
 
 func (a *App) watchCmd() *cobra.Command {
@@ -34,7 +37,14 @@ func (a *App) watchCmd() *cobra.Command {
 	}
 	root.AddCommand(&cobra.Command{Use: "follow <supervisor>", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		encoder := json.NewEncoder(cmd.OutOrStdout())
-		return (herdr.Client{}).FollowCommand(cmd.Context(), args[0], func(event herdr.TurnEnd) error { return encoder.Encode(event) })
+		ctx, cancel := context.WithCancel(cmd.Context())
+		defer cancel()
+		// The TUI owns an open stdin pipe as a parent lease. EOF cancels hc
+		// even after a TUI crash, without Unix-only process groups or signals.
+		if os.Getenv("ANOTHER_WATCH_PARENT_PIPE") == "1" {
+			go func() { _, _ = io.Copy(io.Discard, cmd.InOrStdin()); cancel() }()
+		}
+		return (herdr.Client{}).FollowCommand(ctx, args[0], func(event herdr.TurnEnd) error { return encoder.Encode(event) })
 	}})
 	return root
 }

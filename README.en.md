@@ -247,6 +247,18 @@ through it:
   so another also installs an `another` skill: `@another the webhook retry
   session` has the agent find that session and read the same excerpt.
 
+OpenCode's recall integration also installs another's **`/ref` menu**. Press
+`Enter` to attach a session excerpt with an optional comment and confirmation;
+`Ctrl+A` switches between this project and all projects. References in a new
+conversation wait for your first message; existing conversations continue.
+With local Herdr (`hc`), `●` marks live OpenCode sessions and `Ctrl+W` watches
+or unwatches the highlighted session; `盯` marks members supervised by the
+current conversation. Both sessions must be live, with unambiguous native IDs.
+Cross-project watching asks permission first. Turn ends and blocked/error
+transitions arrive as queued watch cards, not user instructions. Groups live
+in labels on the supervisor's terminal and end when that terminal disappears;
+followers resume when its TUI reloads. Without Herdr, referencing still works.
+
 When you continue recalled work from a different directory, the recall skill
 moves the current OpenCode session to the excerpt's original `Project:` directory
 and reads its `AGENTS.md` before continuing. Other agents ask you to `cd` there
@@ -254,7 +266,9 @@ and restart. If continuing the work versus consulting it is unclear, it asks fir
 
 The server is scoped to the project it starts in — the repository and its
 worktrees, or the directory and what is below it — and a session from any
-other project reads as not found. It is read-only and offers no tools.
+other project reads as not found, except supervisors and members of active
+watch groups: joining a group grants that read access. The read-only
+`watch_status` tool reports groups and their members' live state and folders.
 Claude Code registers it through its own `claude mcp add --scope user`;
 OpenCode and Qwen Code get one entry in their configuration file, written
 without disturbing comments, order, or formatting, and removed exactly by
