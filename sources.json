@@ -60,6 +60,17 @@
       "quote": "Reconcile your branch with it.",
       "local_files": ["docs/ref-and-watch.md"],
       "note": "The full main-checkout plan was read without editing or deleting it. The current conversation explicitly approved provider filtering, keyword/--all arguments, one multiline comment/send step, and a shared source URI, while retaining opencode2-sessions and the server-owned watch UX. It also confirms the plugin is loaded and visible in the slash menu. Source message/session IDs for the separate approval were not exposed; do not infer publication authority. The original plan is not copied into this worktree."
+    },
+    {
+      "id": "ref-performance-verification-20261112",
+      "title": "Reference picker performance root causes and before/after verification",
+      "kind": "runtime-verification",
+      "owner": "Project maintainer",
+      "formed_at": "2026-11-12",
+      "received_at": "2026-11-12",
+      "status": "complete",
+      "local_files": ["docs/ref-and-watch.md"],
+      "note": "Measured installed another-dev 1be8a7a before and fee27cd after using the same real shared-server SDK harness and disposable hc TUI. The configured Doubao provider was enabled; failed discovery caused repeat scans. CLI list/search/context, RPC, provider/scope toggles, comment loading and staged prompt admission were timed separately. Owned benchmark receivers were deleted; no model prompt was sent through hc send. Bare slash completion versus dispatch was verified explicitly. Opt-in phase logs omit query/prompt text; raw harness output stayed temporary and was not added to the public repository. Native Windows runtime was not measured."
     }
   ]
 }

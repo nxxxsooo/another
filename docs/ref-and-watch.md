@@ -7,8 +7,8 @@ with the approved unified reference/watch menu. It does not authorize a release.
 ## Command and picker
 
 - `/ref` lists the current project's sessions across enabled providers using
-  `another list --json`. Subagents remain hidden by the CLI's default.
-- `/ref <keywords>` uses full-text `another search --json -- <keywords>`, including
+  `another list --json --cached`. Subagents remain hidden by the CLI's default.
+- `/ref <keywords>` uses full-text `another search --json --cached --no-wait -- <keywords>`, including
   matches in conversation text rather than only titles. The parser reads the
   search response's `results[].session` summaries; the CLI's search limit applies.
 - `/ref --all [keywords]` starts across all projects. Only leading `--all` is a
@@ -22,7 +22,7 @@ with the approved unified reference/watch menu. It does not authorize a release.
 | Key | Action |
 | --- | --- |
 | Enter on a row | Open the reference's multiline comment/send dialog |
-| Ctrl+A | Re-run the same query in this project / all projects; reset page |
+| Ctrl+A | Switch the same query between this project / all projects; reuse cached results, reset page |
 | Alt+P | Cycle All → each provider present in the results → All; reset page |
 | Ctrl+W | Watch/unwatch the highlighted OpenCode session |
 | Escape | Cancel the picker or comment dialog without sending |
@@ -39,7 +39,9 @@ members watched by the captured supervisor. An idle session can still be watched
 ## One reference send step
 
 Selecting a source calls the installing executable's `another context <id>
---provider <provider>`; all-project selection adds `--all`. The excerpt carries
+--provider <provider> --cached`; all-project selection adds `--all`. Only index
+resolution is cached: the selected conversation text is still read natively.
+The excerpt carries
 the first 3 and last 6 eligible dialogue turns, at most 2,000 runes per turn and
 24,000 total. Notification-only harness user messages do not occupy recall slots;
 full exports remain unchanged.
@@ -89,8 +91,11 @@ The service observes native `session.execution.started`,
 emitted. Busy → idle reports once, with later idle duplicates suppressed.
 `permission.asked` and `form.created` report entry into a blocked wait; execution
 failure reports error. Unwatched sessions produce no reports. Deleted supervisors
-are pruned, deleted members are dropped, and status also checks for missed
-deletions. Transient read failures are errors, not evidence of deletion.
+are pruned and deleted members are dropped. Status returns an in-memory snapshot,
+not a job queued behind event delivery. It schedules missed-deletion reconciliation
+in the background at most once a minute; startup and mutations also reconcile.
+Unrelated sessions' events do not enter the queue or write storage. Transient
+reconciliation read failures are errors, not evidence of deletion.
 
 The first member addition queues an introduction card. Subsequent reports are
 queued synthetic cards with a description such as `<title> · turn ended · idle`,
@@ -124,6 +129,70 @@ OpenCode events instead. The pre-existing Herdr **H** navigation action is uncha
 - No dependency on opencode-annotate and no inline annotation, Ctrl+T, or `--tui`.
 
 ## Acceptance and verified evidence
+
+### Interactive latency (2026-11-12)
+
+The picker never refreshes metadata or builds pending full-text content on its
+critical path. The dialog API cannot replace select rows in place, so it accepts
+the cached index. Ordinary CLI reads retain automatic refresh, `--refresh` forces
+it, and `another index` remains the explicit update path. Cached full-text search
+can only match content already indexed.
+
+Each TUI keeps up to 32 query/scope result promises for 30 seconds, including
+in-flight searches. Provider cycling and pagination filter those arrays locally;
+the opposite scope is prefetched after the picker opens. Ctrl+A reuses it rather
+than spawning another process. No CLI searches run on each picker keystroke.
+The first-user-message check is deferred to sending, where it is needed for
+`resume`, instead of delaying browsing. Watch state is read once per open and
+updated from mutation responses, not fetched again on every filter change.
+
+The reported Doubao problem was an **enabled** provider, not a setup-filter bypass.
+A failed remote discovery left zero rows/missing discovery metadata, making every
+read look like a first scan. A one-minute retry deadline now persists in the index
+across CLI processes, never reconciles away cached rows, and can be bypassed by
+explicit refresh/rebuild. Successful empty scans are also recognized as indexed.
+Provider-specific reads no longer consult or scan unrelated providers.
+
+Before/after used the same real-server SDK harness, same `another` project,
+same `webhook` keyword, and the installed `another-dev` executable. The fake
+dialog only chose actions; session metadata, watch RPC, CLI processes, and staged
+user-prompt admission were real. Owned receivers were deleted; `resume: false`
+prevented model execution. Instrumented steps measured:
+
+| Path | Before (`1be8a7a+dev`) | After (`fee27cd+dev`) |
+| --- | ---: | ---: |
+| Dispatch → picker | 3,648 ms | 45 ms |
+| Keyword → results | 29,959 ms | 40 ms |
+| Alt+P → next picker | 2,072 ms | 0.9 ms |
+| Ctrl+A → first other-scope picker | 2,076 ms | 34 ms |
+| Ctrl+A → already-cached scope | 2,039 ms | 0.03 ms |
+| Source choice → comment | 758 ms | 38 ms |
+| Comment send → API completion | 154 ms | 159 ms (already within target) |
+
+The actual hc-created scratch TUI also showed dispatch → visible picker improve
+from 6,597 ms to 40 ms, keyword/all-project results in 82 ms, and key-to-redraw
+provider/scope actions in 42–50 ms. These include terminal rendering unlike the
+SDK harness. Warm watch RPC was already around 1–4 ms; it was not the measured
+open bottleneck, but a slow watched-event regression now proves status cannot
+be blocked behind delivery.
+
+The separate apparent 30-second hang was reproduced without dispatch: with
+`arguments: true`, the first Enter on bare `/ref` accepts OpenCode's slash
+completion; the next Enter dispatches it. `/ref ` (trailing space) or keywords
+followed by Enter dispatch immediately. This is native completion behaviour,
+not a request waiting on the plugin. No unsupported input interception was added.
+
+A real default CLI retry verified remote backoff: first `list --json --limit 50`
+took 2,547 ms and reported Doubao; the next took 39 ms without another probe or
+warning. Cached all-project list took 23 ms and cached search 37 ms.
+
+For local diagnostics, set `ANOTHER_REF_TIMING_FILE` to a writable JSONL path in
+the TUI environment. It records phase names, durations, and timestamps, never
+query/prompt text; it is inactive unless explicitly enabled. Native prompt hooks
+remain intact: separate short-prompt probes saw Hindsight's synchronous prompt
+hook take about 3.16 seconds, while the actual reference payload above completed
+in 159 ms. Returning before admission or bypassing those hooks would hide latency,
+not fix it, and was deliberately avoided.
 
 Required development checks:
 
