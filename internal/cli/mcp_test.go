@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -9,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/nxxxsooo/another/internal/herdr"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/mcpserver"
 	"github.com/nxxxsooo/another/internal/util"
@@ -26,6 +29,87 @@ func TestSessionURIRoundTrips(t *testing.T) {
 			t.Errorf("%q should not parse", bad)
 		}
 	}
+}
+
+func TestMCPWatchGroupGrantsAreLiveAndOpenCodeOnly(t *testing.T) {
+	opencode, other := newFake(t, "opencode"), newFake(t, "other")
+	base := t.TempDir()
+	here, elsewhere := filepath.Join(base, "here"), filepath.Join(base, "elsewhere")
+	for _, dir := range []string{here, elsewhere} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"ses_super", "ses_member", "ses_unrelated"} {
+		opencode.seed(t, sampleConversation(id, elsewhere, id+" title"))
+	}
+	other.seed(t, sampleConversation("ses_member", elsewhere, "Different provider"))
+	app := newTestApp(t, opencode, other)
+	ctx := context.Background()
+	if err := app.ensureIndex(ctx, "", true); err != nil {
+		t.Fatal(err)
+	}
+	granted := true
+	server, err := (&mcpserver.Server{Registry: app.Registry, Index: app.Index, Scope: util.DiscoverProjectScope(ctx, here), Version: "test", WatchStatus: func(context.Context) (herdr.WatchStatus, error) {
+		if !granted {
+			return herdr.WatchStatus{}, errors.New("discovery incomplete")
+		}
+		return herdr.WatchStatus{Groups: map[string][]string{"ses_super": {"ses_member"}}, Live: map[string]herdr.LiveSession{"ses_member": {Title: "Live title", State: "working", Terminal: "t2"}}}, nil
+	}}).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := server.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ss.Close() }()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cs.Close() }()
+	for _, id := range []string{"ses_super", "ses_member"} {
+		if _, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: mcpserver.SessionURI("opencode", id)}); err != nil {
+			t.Fatalf("group read %s: %v", id, err)
+		}
+	}
+	for _, uri := range []string{mcpserver.SessionURI("opencode", "ses_unrelated"), mcpserver.SessionURI("other", "ses_member")} {
+		if _, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri}); err == nil {
+			t.Fatalf("unexpected grant: %s", uri)
+		}
+	}
+	tools, err := cs.ListTools(ctx, nil)
+	if err != nil || len(tools.Tools) != 1 || tools.Tools[0].Name != "watch_status" {
+		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "watch_status", Arguments: map[string]any{}})
+	if err != nil || result.IsError {
+		t.Fatalf("tool=%+v err=%v", result, err)
+	}
+	encoded, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"Live title", "working", elsewhere, "opencode", "ses_member"} {
+		if !strings.Contains(string(encoded), strings.Trim(string(mustJSON(t, text)), `"`)) {
+			t.Fatalf("tool omitted %q: %s", text, encoded)
+		}
+	}
+	granted = false
+	if _, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: mcpserver.SessionURI("opencode", "ses_member")}); err == nil {
+		t.Fatal("stale grant survived incomplete discovery")
+	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	out, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // The server lists what this project holds, across agents, and reads only
