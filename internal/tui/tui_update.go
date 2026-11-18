@@ -261,9 +261,7 @@ func (m modelState) onBatchModels(msg batchModelsMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m modelState) onBatchApplied(msg batchAppliedMsg) (tea.Model, tea.Cmd) {
-	for _, id := range msg.appliedIDs {
-		delete(m.marked, id)
-	}
+	m.removeMarks(msg.appliedIDs...)
 	m.overlay = overlayNone
 	m.resetBatch()
 	switch {
@@ -949,12 +947,10 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.folderRoots = nil
 			return dispatchPageLoadModel(m)
 		}
-		// A batch selection is the same kind of transient state as a search or
-		// an undo offer, and esc is how all of them are put down. Without this
-		// the only way to clear a partial selection was X twice — which marks
-		// every row on the page before it clears them.
+		// Esc clears the entire selection, including marks on other pages.
 		if len(m.marked) > 0 {
 			clear(m.marked)
+			m.markAnchor = ""
 			m.status = ""
 			return m, nil
 		}
@@ -1099,38 +1095,17 @@ func (m modelState) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// primary browsing action and must keep it.
 		if it, ok := m.sessions.SelectedItem().(sessionItem); ok {
 			if m.marked[it.summary.ID] {
-				delete(m.marked, it.summary.ID)
+				m.removeMarks(it.summary.ID)
 			} else {
 				m.marked[it.summary.ID] = true
+				m.markAnchor = it.summary.ID
 			}
 			m.status = m.markStatus()
 		}
 		return m, nil
 	case "X":
-		// Toggling covers the viewport only: the page in front of the reader.
-		// Pressing X on each page accumulates a wider set, and esc still
-		// clears everything at once. Group headers are rows in the list but
-		// never sessions, so they are skipped rather than marked.
-		visible := m.sessions.VisibleItems()
-		start, end := m.sessions.Paginator.GetSliceBounds(len(visible))
-		page := visible[start:end]
-		allMarked := len(page) > 0
-		for _, li := range page {
-			if it, ok := li.(sessionItem); ok && !m.marked[it.summary.ID] {
-				allMarked = false
-				break
-			}
-		}
-		for _, li := range page {
-			it, ok := li.(sessionItem)
-			if !ok {
-				continue
-			}
-			if allMarked {
-				delete(m.marked, it.summary.ID)
-			} else {
-				m.marked[it.summary.ID] = true
-			}
+		if !m.extendMarks() {
+			m.togglePageMarks()
 		}
 		m.status = m.markStatus()
 		return m, nil

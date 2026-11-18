@@ -59,6 +59,62 @@ type batchSkip struct {
 	agents string
 }
 
+func (m *modelState) removeMarks(ids ...string) {
+	for _, id := range ids {
+		delete(m.marked, id)
+	}
+	if !m.marked[m.markAnchor] {
+		m.markAnchor = ""
+	}
+}
+
+// extendMarks uses the full visible list, including rows on other pages,
+// without selecting filtered-out sessions or group headers.
+func (m *modelState) extendMarks() bool {
+	cur, ok := m.sessions.SelectedItem().(sessionItem)
+	if !ok || !m.marked[m.markAnchor] || cur.summary.ID == m.markAnchor {
+		return false
+	}
+	visible := m.sessions.VisibleItems()
+	for anchor, item := range visible {
+		row, ok := item.(sessionItem)
+		if !ok || row.summary.ID != m.markAnchor {
+			continue
+		}
+		cursor := m.sessions.Index()
+		for _, item := range visible[min(anchor, cursor) : max(anchor, cursor)+1] {
+			if row, ok := item.(sessionItem); ok {
+				m.marked[row.summary.ID] = true
+			}
+		}
+		m.markAnchor = cur.summary.ID
+		return true
+	}
+	return false
+}
+
+func (m *modelState) togglePageMarks() {
+	visible := m.sessions.VisibleItems()
+	start, end := m.sessions.Paginator.GetSliceBounds(len(visible))
+	page := visible[start:end]
+	allMarked := len(page) > 0
+	for _, item := range page {
+		if row, ok := item.(sessionItem); ok && !m.marked[row.summary.ID] {
+			allMarked = false
+			break
+		}
+	}
+	for _, item := range page {
+		if row, ok := item.(sessionItem); ok {
+			if allMarked {
+				m.removeMarks(row.summary.ID)
+			} else {
+				m.marked[row.summary.ID] = true
+			}
+		}
+	}
+}
+
 func (s batchSkip) text() string {
 	if s.count == 0 {
 		return ""
@@ -266,9 +322,7 @@ func copyBatchCmd(text string, count int) tea.Cmd {
 // landed leaves the selection, what did not stays for another attempt.
 func (m modelState) onArchiveBatchDone(msg archiveBatchDoneMsg) (tea.Model, tea.Cmd) {
 	m.loading = false
-	for _, id := range msg.done {
-		delete(m.marked, id)
-	}
+	m.removeMarks(msg.done...)
 	verb := txt.archiveBatchVerbArchived
 	if !msg.archived {
 		verb = txt.archiveBatchVerbUnarchived
@@ -282,7 +336,7 @@ func (m modelState) onArchiveBatchDone(msg archiveBatchDoneMsg) (tea.Model, tea.
 		m.status += mutedStyle.Render(fmt.Sprintf(txt.batchFailedSuffixFmt, len(msg.failed), batchFailureText(msg.failed)))
 	}
 	m.status += mutedStyle.Render(msg.skip.text())
-	return m, nil
+	return dispatchPageLoadModel(m)
 }
 
 func (m modelState) onDeleteBatchDone(msg deleteBatchDoneMsg) (tea.Model, tea.Cmd) {
@@ -291,9 +345,7 @@ func (m modelState) onDeleteBatchDone(msg deleteBatchDoneMsg) (tea.Model, tea.Cm
 	m.deleteBatch, m.deleteBatchSkip = nil, batchSkip{}
 	m.lastDeleted, m.restoreDeleted = nil, nil
 	m.lastDeletedEntryID = ""
-	for _, id := range msg.done {
-		delete(m.marked, id)
-	}
+	m.removeMarks(msg.done...)
 	if len(msg.done) == 0 {
 		m.err = fmt.Sprintf(txt.batchSetNoneFmt, txt.batchVerbDeleted, len(msg.failed), batchFailureText(msg.failed))
 		return m, nil
@@ -312,7 +364,7 @@ func (m modelState) onCopyBatchDone(msg copyBatchDoneMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.status = okStyle.Render(fmt.Sprintf(txt.copyBatchDoneFmt, msg.count))
-	return dispatchPageLoadModel(m)
+	return m, nil
 }
 
 // batchFailureText names the first failure so the status line says something a
@@ -364,9 +416,7 @@ func (m modelState) onMigrateBatchDone(msg migrateBatchDoneMsg) (tea.Model, tea.
 	m.loading = false
 	m.overlay = overlayNone
 	m.migrateBatch = nil
-	for _, id := range msg.done {
-		delete(m.marked, id)
-	}
+	m.removeMarks(msg.done...)
 	target := registry.DisplayName(m.reg, msg.targetID)
 	if len(msg.done) == 0 {
 		m.err = fmt.Sprintf(txt.batchSetNoneFmt, txt.migratedPrefix, len(msg.failed), batchFailureText(msg.failed))

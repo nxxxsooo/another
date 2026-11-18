@@ -233,9 +233,7 @@ func (m modelState) onRelocateBatchDone(msg relocateBatchDoneMsg) (tea.Model, te
 	m.overlay = overlayNone
 	m.relocateInput.Blur()
 	m.relocateBatch, m.relocateSkipped = nil, 0
-	for _, id := range msg.done {
-		delete(m.marked, id)
-	}
+	m.removeMarks(msg.done...)
 	if len(msg.done) == 0 {
 		m.err = fmt.Sprintf(txt.relocateBatchAllFailedFmt, len(msg.failed), relocateFailureText(msg.failed))
 		return m, nil

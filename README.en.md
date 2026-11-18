@@ -189,7 +189,7 @@ Ctrl+L    redraw the screen without resetting your input or selection
 Tab       accept the AI title suggestion, when one is configured and arrives
 m         fork or move the session into another project directory
 a         archive the current session (the whole marked set when there is one); press a again to archive the next
-x / X     mark the row under the cursor / mark or clear the rows on screen
+x / X     toggle one mark / mark a range or toggle the current page
 d         delete after an explicit confirmation (the whole marked set when there is one)
 u         undo the latest archive or reversible delete; Esc dismisses the offer
 h         open the action history — what another archived, renamed or deleted, newest first; enter reverses one
@@ -306,7 +306,7 @@ This is not a migration. Migration rewrites the conversation through a portable 
 
 Every relocation is read back before it is reported: OpenCode V2 compares the directory in the session's own row, Pi compares a content digest. An OpenCode V2 session that is mid-turn takes the move into its own queue and applies it when the running turn ends; another reports that move as queued rather than failed, and the list shows the new directory once it lands. Move deletes the original only after the new file verifies, and a fork that cannot be created leaves nothing behind in the source directory. By default the target directory has to exist — a mistyped path should fail immediately instead of producing a session that points at nothing. When the directory genuinely is not there yet (a worktree you are about to open), press `Enter` a second time in the TUI to create it, or pass `--create` on the command line.
 
-The marked set is a first-class thing: once anything is marked, `m` to relocate, `a` to archive, `d` to delete, `r` to retitle, `c` to copy resume commands, and `→` to carry to another agent all act on the whole set, so only unmarked rows are left alone. To carry several at once, mark them with `x` (`X` toggles the rows on screen) and press `m`: the box acts on the marked set, and sessions whose agent cannot relocate are skipped and counted before you confirm. Each session still goes through its own native operation, so one failure does not stop the rest; failed rows keep their marks, and another `m` retries only those. The command-line form is `another relocate <id> <id>... --to-dir <path>`.
+Once anything is marked, `m` to relocate, `a` to archive, `d` to delete, `r` to retitle, `c` to copy resume commands, and `→` to carry to another agent all act on the marked set. Mark a session with `x`, move the cursor, and press `X` to add the range, including both ends. The cursor becomes the new anchor; without a visible anchor on a different row, `X` marks or clears the current page. Press `m` to relocate the set: sessions whose agent cannot relocate are skipped and counted before you confirm. Each session still goes through its own native operation, so one failure does not stop the rest; failed rows keep their marks, and another `m` retries only those. The command-line form is `another relocate <id> <id>... --to-dir <path>`.
 
 ## Agents
 
@@ -359,7 +359,7 @@ The second setup page picks the title language with `←→`, independently of t
 
 A batch delete offers no single-step undo — the one-step offer restores a single session, and one row coming back without its neighbours is not the state you had. Each session another can snapshot, however, is listed in the action history (`h`) and can be restored from there one at a time while its bytes are kept; the confirmation states the count before anything is deleted. The history keeps the newest fifty deletes for thirty days: past that a delete stays listed but is marked no longer recoverable, and its bytes are gone from disk.
 
-For more than one title at a time, mark sessions with `x` (`X` toggles the rows on screen) and press `r`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `r` retries exactly those.
+For more than one title at a time, mark sessions with `x` or `X` and press `r`. A row that fails transiently — a timeout, a rate limit, a CLI that died once — is retried once after two seconds; a missing CLI, an agent that cannot generate titles, or a session without a creation date fails straight to the review page, because a second attempt would print the same line. On the review page `r` re-runs the rows that failed or were cut short by `esc`, keeping the suggestions that already landed. Rows that fail during apply keep their marks, so `r` retries exactly those.
 
 The batch header names the agent, model, and language this run uses, and `m` opens the same picker setup uses.
 

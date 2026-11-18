@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
@@ -113,6 +114,120 @@ func TestMarkAllSkipsGroupHeaders(t *testing.T) {
 	}
 	if len(got.marked) != want {
 		t.Fatalf("X marked %d, want the %d sessions on this page", len(got.marked), want)
+	}
+}
+
+func TestMarkRange(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		anchor, cursor int
+	}{
+		{name: "downward across pages", anchor: 1, cursor: 3},
+		{name: "upward across pages", anchor: 3, cursor: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := rangeMarkModel()
+			m.sessions.Paginator.PerPage = 2
+			m.sessions.Paginator.SetTotalPages(len(m.sessions.VisibleItems()))
+			m = markKeyAt(m, 4, 'x') // Already marked, outside the range.
+			m = markKeyAt(m, tc.anchor, 'x')
+			m = markKeyAt(m, tc.cursor, 'X')
+			assertMarks(t, m, "s1", "s2", "s3", "s4")
+			if want := fmt.Sprintf("s%d", tc.cursor); m.markAnchor != want {
+				t.Fatalf("anchor = %q, want %q", m.markAnchor, want)
+			}
+			m = markKeyAt(m, 0, 'X')
+			assertMarks(t, m, "s0", "s1", "s2", "s3", "s4")
+		})
+	}
+}
+
+func TestMarkRangeSkipsGroupHeader(t *testing.T) {
+	m := rangeMarkModel()
+	items := append([]list.Item{m.sessions.Items()[0], groupHeader{label: "Next group"}}, m.sessions.Items()[1:]...)
+	m.sessions.SetItems(items)
+	m = markKeyAt(m, 0, 'x')
+	m = markKeyAt(m, 2, 'X')
+	assertMarks(t, m, "s0", "s1")
+}
+
+func TestMarkRangeFallsBackAfterAnchorUnmarked(t *testing.T) {
+	m := rangeMarkModel()
+	m = markKeyAt(m, 0, 'x')
+	m = markKeyAt(m, 2, 'x')
+	m = markKeyAt(m, 2, 'x')
+	assertMarks(t, m, "s0")
+	if m.markAnchor != "" {
+		t.Fatalf("unmarking the anchor left %q", m.markAnchor)
+	}
+	m = markKeyAt(m, 3, 'X')
+	assertMarks(t, m, "s0", "s1", "s2", "s3", "s4")
+	m = markKeyAt(m, 3, 'X')
+	assertMarks(t, m)
+}
+
+func TestMarkRangeUsesFilteredIndices(t *testing.T) {
+	m := rangeMarkModel()
+	m.sessions.SetFilteringEnabled(true)
+	m.sessions.Filter = func(_ string, _ []string) []list.Rank {
+		return []list.Rank{{Index: 2}, {Index: 0}, {Index: 4}}
+	}
+	m.sessions, _ = m.sessions.Update(runeKey('/'))
+	var cmd tea.Cmd
+	m.sessions, cmd = m.sessions.Update(runeKey('n'))
+	for _, msg := range flattenCmd(t, cmd) {
+		if matches, ok := msg.(list.FilterMatchesMsg); ok {
+			m.sessions, _ = m.sessions.Update(matches)
+		}
+	}
+	m.sessions, _ = m.sessions.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.sessions.VisibleItems()) != 3 {
+		t.Fatal("test setup did not filter the underlying list")
+	}
+	m = markKeyAt(m, 0, 'x')
+	m = markKeyAt(m, 1, 'X')
+	assertMarks(t, m, "s2", "s0")
+}
+
+func TestClearMarksClearsAnchor(t *testing.T) {
+	m := markKeyAt(rangeMarkModel(), 1, 'x')
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(modelState)
+	assertMarks(t, m)
+	if m.markAnchor != "" {
+		t.Fatalf("esc retained anchor %q", m.markAnchor)
+	}
+}
+
+func rangeMarkModel() modelState {
+	m := layoutTestModel()
+	items := make([]list.Item, 5)
+	first := m.sessions.SelectedItem().(sessionItem)
+	for i := range items {
+		row := first
+		row.summary.ID = fmt.Sprintf("s%d", i)
+		items[i] = row
+	}
+	m.sessions.SetItems(items)
+	m.width, m.height = 120, 40
+	m.layout()
+	return m
+}
+
+func markKeyAt(m modelState, i int, key rune) modelState {
+	m.sessions.Select(i)
+	updated, _ := m.Update(runeKey(key))
+	return updated.(modelState)
+}
+
+func assertMarks(t *testing.T, m modelState, ids ...string) {
+	t.Helper()
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	if !maps.Equal(m.marked, want) {
+		t.Fatalf("marked = %v, want %v", m.marked, want)
 	}
 }
 

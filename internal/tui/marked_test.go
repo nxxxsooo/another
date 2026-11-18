@@ -55,6 +55,7 @@ func markedModel(t *testing.T, n int) modelState {
 // the agent cannot archive is counted rather than dropped in silence.
 func TestArchiveActsOnTheMarkedSet(t *testing.T) {
 	m := markedModel(t, 2)
+	m.markAnchor = "two"
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	m = updated.(modelState)
 	if cmd == nil {
@@ -68,10 +69,13 @@ func TestArchiveActsOnTheMarkedSet(t *testing.T) {
 		t.Fatalf("archived %d sessions, want the two marked", len(done.done))
 	}
 
-	updated, _ = m.Update(done)
+	updated, cmd = m.Update(done)
 	m = updated.(modelState)
-	if len(m.marked) != 0 {
-		t.Fatalf("applied rows stayed marked: %v", m.marked)
+	if len(m.marked) != 0 || m.markAnchor != "" {
+		t.Fatalf("applied rows stayed marked: %v, anchor %q", m.marked, m.markAnchor)
+	}
+	if cmd == nil || !m.loading {
+		t.Fatal("completed archive batch did not reload the list")
 	}
 	if !strings.Contains(ansi.Strip(m.status), "2") {
 		t.Fatalf("the report does not say how many landed: %q", ansi.Strip(m.status))

@@ -138,6 +138,7 @@ type modelState struct {
 	scopeProjects  int
 	sessionSpacing int
 	marked         map[string]bool
+	markAnchor     string // ID to extend from with X
 
 	// batch* carries the bulk-rename flow. Items keep mark order, results
 	// stream in out of order, and total counts both from the moment the
