@@ -144,33 +144,20 @@ release:
 
     ## Compatibility
 
-    v0.28.0 adds OpenCode 2's `/ref` reference/watch menu, fast cached reads,
-    and clearer bounded session context. Install or refresh the OpenCode recall
-    integration after upgrading:
+    v0.29.0 adds native OpenCode V2 archiving and range selection in the TUI.
 
-    ```bash
-    another integrations install opencode --kind recall
-    ```
-
-    - `/ref` and watching require the installed OpenCode 2 integration, verified
-      with OpenCode 2.2.7. Enter selects a reference; the multiline comment box
-      sends on Enter and cancels on Escape. Ctrl+A changes scope, Alt+P cycles
-      providers, and Ctrl+W watches/unwatches. Keywords use cached full-text
-      search; `--all` starts across projects. Bare `/ref` first accepts native
-      slash completion, so press Enter again (or add a trailing space).
-    - Watching covers OpenCode sessions on the connected shared server, idle
-      or busy. Standalone servers have separate groups/events. Reports arrive
-      as queued synthetic cards; watching does not expand MCP project scope
-      and no longer depends on Herdr. The existing Herdr H action is unchanged.
-    - Cached list/search/context avoid foreground discovery and content indexing.
-      Cached search only covers content already indexed. Enabled remote-store
-      discovery failures (including Doubao) back off for one minute across CLI
-      invocations; explicit --refresh or rebuild can retry immediately. Doubao
-      remains opt-in and macOS-only, requiring the user's native login.
-    - Notification-only hc/hc-report user turns no longer count toward bounded
-      recall slots or counts. Full export, migration and show are unchanged.
-      Context headers include another://session links and a context --all path
-      for cross-project reads; the MCP server remains strictly project-scoped.
+    - OpenCode V2 archive and restore require the matching installed CLI and
+      native archive support, verified with OpenCode 2.3.2. Press `a` to
+      archive one session or the marked set. Press `u` to undo a single
+      archive, or use `h` to restore a session from history. Archived rows
+      leave the active list. OpenCode V1 archiving is unchanged.
+    - Mark with `x`, move, then press `X` to add the inclusive range. Without
+      a visible anchor on a different row, `X` still toggles the current page.
+    - Startup shows the cached list first, then rescans in the background to
+      pick up external changes. Batch archive reloads the list automatically,
+      and SQLite change detection follows a symlinked database's real WAL.
+    - Existing OpenCode `/ref` installations do not need to be reinstalled
+      for this release. Doubao remains opt-in and macOS-only.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
