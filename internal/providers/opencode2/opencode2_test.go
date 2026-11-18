@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -93,6 +94,35 @@ func TestDiscoverAndLoadV2Schema(t *testing.T) {
 	if conv.Migration == nil || conv.Migration.OriginID != "origin" {
 		t.Fatalf("migration marker = %+v", conv.Migration)
 	}
+}
+
+func TestDiscoverHidesArchivedV2Sessions(t *testing.T) {
+	path := fixtureDB(t)
+	db := addArchiveColumn(t, path)
+	if _, err := db.Exec(`INSERT INTO session_v2
+		(id,project_id,slug,directory,title,version,time_created,time_updated,time_archived)
+		SELECT 'ses_archived',project_id,slug,directory,title,version,time_created,time_updated,0
+		FROM session_v2 WHERE id = 'ses_fixture'`); err != nil {
+		t.Fatal(err)
+	}
+	p := opencode2.NewAt(path, "")
+	sums, err := p.Discover(context.Background(), provider.DiscoverOpts{})
+	if err != nil || len(sums) != 1 || sums[0].ID != "ses_fixture" {
+		t.Fatalf("active summaries = %+v, err = %v", sums, err)
+	}
+}
+
+func addArchiveColumn(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`ALTER TABLE session_v2 ADD COLUMN time_archived INTEGER`); err != nil {
+		t.Fatal(err)
+	}
+	return db
 }
 
 // importStub stands in for the OpenCode 2 CLI: it records every call, copies
@@ -436,6 +466,92 @@ func TestRenameReportsARefusalTheCLIHides(t *testing.T) {
 	if !strings.Contains(err.Error(), "OpenCode 2 title") {
 		t.Fatalf("error does not show the surviving title: %v", err)
 	}
+}
+
+func TestArchiveUsesOfficialAPIAndVerifiesStoredState(t *testing.T) {
+	requireShellStub(t)
+	for _, archived := range []bool{true, false} {
+		t.Run(fmt.Sprintf("archived=%t", archived), func(t *testing.T) {
+			path := fixtureDB(t)
+			db := addArchiveColumn(t, path)
+			if !archived {
+				if _, err := db.Exec(`UPDATE session_v2 SET time_archived = 123`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			dir := filepath.Join(t.TempDir(), "missing", "project")
+			storeDirectory(t, path, "ses_fixture", dir)
+			t.Setenv("SESSION_DIR", dir)
+			capture := filepath.Join(t.TempDir(), "args")
+			script := archiveStub(t, capture)
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				ticker := time.NewTicker(100 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						done <- ctx.Err()
+						return
+					case <-ticker.C:
+					}
+					if _, err := os.Stat(capture); err != nil {
+						continue
+					}
+					var stamp sql.NullInt64
+					if archived {
+						stamp = sql.NullInt64{Int64: 123, Valid: true}
+					}
+					_, err := db.ExecContext(ctx, `UPDATE session_v2 SET time_archived = ?`, stamp)
+					done <- err
+					return
+				}
+			}()
+
+			p := opencode2.NewAt(path, script)
+			err := p.ArchiveSession(ctx, provider.SessionRef{ID: "ses_fixture"}, archived)
+			if err != nil {
+				cancel()
+			}
+			if storeErr := <-done; err != nil || storeErr != nil {
+				t.Fatalf("archive: %v, native write: %v", err, storeErr)
+			}
+			want := fmt.Sprintf("api\nPATCH\n/api/session/ses_fixture\n--data\n{\"archived\":%t}\n", archived)
+			if got := string(mustReadFile(t, capture)); got != want {
+				t.Fatalf("archive command = %q, want %q", got, want)
+			}
+			if _, err := os.Stat(filepath.Dir(dir)); !os.IsNotExist(err) {
+				t.Fatalf("temporary session directory was not cleaned up: %v", err)
+			}
+		})
+	}
+}
+
+func TestArchiveReportsARefusalTheCLIHides(t *testing.T) {
+	requireShellStub(t)
+	path := fixtureDB(t)
+	addArchiveColumn(t, path)
+	dir := t.TempDir()
+	storeDirectory(t, path, "ses_fixture", dir)
+	t.Setenv("SESSION_DIR", dir)
+	p := opencode2.NewAt(path, archiveStub(t, filepath.Join(t.TempDir(), "args")))
+	err := p.ArchiveSession(context.Background(), provider.SessionRef{ID: "ses_fixture"}, true)
+	if err == nil || !strings.HasPrefix(err.Error(), "OpenCode archive:") || !strings.Contains(err.Error(), "did not persist archived=true") {
+		t.Fatalf("archive refusal = %v", err)
+	}
+}
+
+func archiveStub(t *testing.T, capture string) string {
+	t.Helper()
+	t.Setenv("CAPTURE", capture)
+	script := filepath.Join(t.TempDir(), "opencode2")
+	body := "#!/bin/sh\n[ -d \"$SESSION_DIR\" ] || exit 1\nprintf '%s\\n' \"$@\" > \"$CAPTURE\"\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return script
 }
 
 func TestDeleteUsesOfficialAPI(t *testing.T) {

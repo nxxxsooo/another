@@ -121,9 +121,7 @@ func (m modelState) canDelete(sm model.Summary) bool {
 func (m modelState) archiveMarked() (tea.Model, tea.Cmd) {
 	split := m.markedSplit(m.canArchive)
 	if len(split.todo) == 0 {
-		// Naming the agent is the difference between "it cannot be archived"
-		// and knowing which store to look at: OpenCode archives its legacy
-		// V1 sessions and has no archive for the current store.
+		// Name the agents whose marked sessions do not support archive.
 		m.err = fmt.Sprintf(txt.noneEligibleFmt, txt.batchVerbArchive, m.skipOf(split.skipped).agents)
 		return m, nil
 	}

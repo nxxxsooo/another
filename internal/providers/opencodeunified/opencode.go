@@ -271,6 +271,9 @@ func (p *Provider) ArchiveSession(ctx context.Context, ref provider.SessionRef, 
 	if !ok {
 		return fmt.Errorf("OpenCode session does not support archive")
 	}
+	if b.v2 && !commandAvailable(b.command) {
+		return fmt.Errorf("OpenCode archive: this OpenCode V2 session needs %s, but that command is not installed", b.command)
+	}
 	return a.ArchiveSession(ctx, ref, archived)
 }
 

@@ -255,7 +255,7 @@ OpenCode V2 正式版与 V1 历史会话共用一个 `opencode` provider。anoth
 | Codex | `codex` | `CDX` | `codex resume <id>` | ✓ | ✓ | — | ✓ |
 | Claude Code | `claude-code` | `CLA` | `claude --resume <id>` | ✓ | — | — | ✓ |
 | Cursor | `cursor` | `CUR` | `cursor-agent --resume <id>` | — | — | — | ✓ |
-| OpenCode | `opencode` | `OPC` | `opencode --session <id>`；旧隔离库沿用 `opencode2` | ✓ | V1 历史会话 | V2 会话 | ✓ |
+| OpenCode | `opencode` | `OPC` | `opencode --session <id>`；旧隔离库沿用 `opencode2` | ✓ | ✓ | V2 会话 | ✓ |
 | CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | — | ✓ |
 | CodeM | `codem` | `CDM` | `codem --resume <id>` | ✓ | ✓ | — | ✓ |
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |

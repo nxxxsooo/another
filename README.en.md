@@ -324,7 +324,7 @@ The session list marks each agent with a fixed-width color chip. Agent names dif
 | Codex | `codex` | `CDX` | `codex resume <id>` | ✓ | ✓ | — | ✓ |
 | Claude Code | `claude-code` | `CLA` | `claude --resume <id>` | ✓ | — | — | ✓ |
 | Cursor | `cursor` | `CUR` | `cursor-agent --resume <id>` | — | — | — | ✓ |
-| OpenCode | `opencode` | `OPC` | `opencode --session <id>`; old isolated stores retain `opencode2` | ✓ | V1 history | V2 sessions | ✓ |
+| OpenCode | `opencode` | `OPC` | `opencode --session <id>`; old isolated stores retain `opencode2` | ✓ | ✓ | V2 sessions | ✓ |
 | CommandCode | `commandcode` | `CMD` | `commandcode --resume <id>` | — | — | — | ✓ |
 | CodeM | `codem` | `CDM` | `codem --resume <id>` | ✓ | ✓ | — | ✓ |
 | Hermes | `hermes` | `HRM` | `hermes --resume <id>` | — | ✓ | — | ✓ |

@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
+	v2 "github.com/nxxxsooo/another/internal/providers/opencode2"
 	_ "modernc.org/sqlite"
 )
 
@@ -162,5 +164,44 @@ func TestIsolatedV2WithoutItsCommandIsHistoryOnly(t *testing.T) {
 	}
 	if reason := p.ResumeUnavailableReason(provider.WriteResult{SessionID: ref.ID, StoragePath: ref.StoragePath}); reason == "" {
 		t.Fatal("missing compatibility command did not block resume")
+	}
+}
+
+func TestV2ArchiveCapabilityAndArchivedSessionLookup(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "opencode.db")
+	if err := createStore(path, `
+CREATE TABLE session_v2 (id TEXT, directory TEXT, title TEXT, parent_id TEXT, time_created INTEGER, time_updated INTEGER, time_archived INTEGER);
+CREATE TABLE session_message (session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT);
+INSERT INTO session_v2 VALUES ('ses_archived','','Archived V2 session',NULL,1000,2000,3000);
+INSERT INTO session_message VALUES ('ses_archived',0,'user',1000,'{"text":"message"}');`); err != nil {
+		t.Fatal(err)
+	}
+	command, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Provider{backends: []backend{{p: v2.NewAt(path, command), path: path, v2: true, command: command}}}
+	rows, err := p.Discover(ctx, provider.DiscoverOpts{})
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("discover = %+v, err = %v", rows, err)
+	}
+	for _, storage := range []string{path + "#v2:ses_archived", path + "#ses_archived"} {
+		ref := provider.SessionRef{ID: "ses_archived", StoragePath: storage}
+		if caps := p.Capabilities(ref); !caps.Archive {
+			t.Fatalf("V2 archive capability missing for %q: %+v", storage, caps)
+		}
+		conv, err := p.Load(ctx, ref)
+		if err != nil || conv.ID != ref.ID {
+			t.Fatalf("archived V2 session could not be loaded from %q: %+v, %v", storage, conv, err)
+		}
+	}
+	p.backends[0].command = filepath.Join(t.TempDir(), "missing-opencode")
+	ref := provider.SessionRef{ID: "ses_archived", StoragePath: path + "#v2:ses_archived"}
+	if caps := p.Capabilities(ref); caps.Archive {
+		t.Fatalf("V2 advertises archive without its CLI: %+v", caps)
+	}
+	if err := p.ArchiveSession(ctx, ref, false); err == nil || !strings.Contains(err.Error(), "command is not installed") {
+		t.Fatalf("missing CLI error = %v", err)
 	}
 }

@@ -87,6 +87,12 @@ func sqliteTableExists(db *sql.DB, table string) bool {
 	return err == nil && name == table
 }
 
+func sqliteColumnExists(ctx context.Context, db *sql.DB, table, column string) (bool, error) {
+	var exists bool
+	err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pragma_table_info(?) WHERE name = ?)`, table, column).Scan(&exists)
+	return exists, err
+}
+
 func (p *Provider) openRO() (*sql.DB, error) {
 	return sql.Open("sqlite", p.dbPath+"?mode=ro&_pragma=busy_timeout(5000)")
 }
@@ -115,7 +121,15 @@ func (p *Provider) Discover(ctx context.Context, opts provider.DiscoverOpts) ([]
 		// read, which is an empty scan rather than a failed one.
 		return nil, nil
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, directory, COALESCE(title,''), COALESCE(parent_id,''), time_created, time_updated FROM session_v2 ORDER BY time_updated DESC`)
+	hasArchive, err := sqliteColumnExists(ctx, db, "session_v2", "time_archived")
+	if err != nil {
+		return nil, err
+	}
+	query := `SELECT id, directory, COALESCE(title,''), COALESCE(parent_id,''), time_created, time_updated FROM session_v2`
+	if hasArchive {
+		query += ` WHERE time_archived IS NULL`
+	}
+	rows, err := db.QueryContext(ctx, query+` ORDER BY time_updated DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -604,6 +618,61 @@ func (p *Provider) storedTitle(sessionID string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(title.String), nil
+}
+
+func (p *Provider) ArchiveSession(ctx context.Context, ref provider.SessionRef, archived bool) error {
+	if ref.ID == "" {
+		return fmt.Errorf("OpenCode archive: missing session id")
+	}
+	data, _ := json.Marshal(map[string]bool{"archived": archived})
+	return p.withSessionDirectory(ref.ID, func() error {
+		out, err := p.apiOnce(ctx, "PATCH", "/api/session/"+ref.ID, data)
+		if err != nil {
+			return fmt.Errorf("OpenCode archive: %w: %s", err, strings.TrimSpace(out))
+		}
+		if err := p.awaitArchived(ctx, ref.ID, archived); err != nil {
+			return fmt.Errorf("OpenCode archive: %w", err)
+		}
+		return nil
+	})
+}
+
+// An exit code of 0 can hide an HTTP error. Verify the session's native state
+// even when the CLI appears to have accepted the update.
+func (p *Provider) awaitArchived(ctx context.Context, sessionID string, want bool) error {
+	db, err := p.openRO()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for waitCtx.Err() == nil {
+		var stamp sql.NullInt64
+		err := db.QueryRowContext(waitCtx, `SELECT time_archived FROM session_v2 WHERE id = ?`, sessionID).Scan(&stamp)
+		if waitCtx.Err() != nil {
+			break
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("session %s is gone", sessionID)
+		}
+		if err != nil {
+			return fmt.Errorf("cannot read session %s's archive state: %w", sessionID, err)
+		}
+		if stamp.Valid == want {
+			return nil
+		}
+		select {
+		case <-waitCtx.Done():
+		case <-ticker.C:
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return fmt.Errorf("OpenCode V2 did not persist archived=%t for session %s", want, sessionID)
 }
 
 func (p *Provider) DeleteSession(ctx context.Context, ref provider.SessionRef) error {

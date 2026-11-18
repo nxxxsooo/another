@@ -256,9 +256,8 @@ func TestTheFooterFollowsTheStateItIsIn(t *testing.T) {
 	}
 }
 
-// A set the agent cannot act on has to say which agent, because "its agent"
-// hides the one fact that explains it: OpenCode archives its legacy V1 sessions
-// and has no archive for the store its current sessions live in.
+// If none of the marked sessions can be archived, the refusal must name the
+// agent whose sessions were skipped.
 func TestABlanketRefusalNamesTheAgent(t *testing.T) {
 	m := layoutTestModel()
 	m.reg = registry.NewWith(noArchiveProvider{})
