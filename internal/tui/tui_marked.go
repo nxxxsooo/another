@@ -312,7 +312,7 @@ func (m modelState) onCopyBatchDone(msg copyBatchDoneMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.status = okStyle.Render(fmt.Sprintf(txt.copyBatchDoneFmt, msg.count))
-	return m, nil
+	return dispatchPageLoadModel(m)
 }
 
 // batchFailureText names the first failure so the status line says something a

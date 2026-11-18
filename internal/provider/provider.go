@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,6 +39,18 @@ type DiscoverOpts struct {
 // SQLiteSourceStamp includes uncheckpointed WAL data in a database fingerprint.
 func SQLiteSourceStamp(path string, main os.FileInfo) (time.Time, int64, error) {
 	mtime, size := main.ModTime(), main.Size()
+	// SQLite uses the resolved database name for sidecars, not a symlink
+	// alias that may have a stale -wal beside it.
+	info, err := os.Lstat(path)
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		path, err = filepath.EvalSymlinks(path)
+		if err != nil {
+			return time.Time{}, 0, err
+		}
+	}
 	wal, err := os.Stat(path + "-wal")
 	if os.IsNotExist(err) {
 		return mtime, size, nil

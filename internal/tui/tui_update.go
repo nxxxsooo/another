@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/model"
 	"github.com/nxxxsooo/another/internal/provider"
 	"github.com/nxxxsooo/another/internal/titler"
@@ -412,7 +414,10 @@ func (m modelState) onIndexRefreshed(msg indexRefreshedMsg) (tea.Model, tea.Cmd)
 	m.loading = false
 	if msg.err != nil {
 		m.err = msg.err.Error()
-		return m, nil
+		var partial *index.ScanFailure
+		if !msg.reloadPage || !errors.As(msg.err, &partial) {
+			return m, nil
+		}
 	}
 	if msg.project != nil {
 		m.projectScope = *msg.project

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -343,14 +342,13 @@ func run(reg *registry.Registry, idx *index.Store, engine *migrate.Engine, initi
 		projectScope: projectScope, scopeMode: initialScope,
 		pathBase: pathBase, pathDepth: pathDepth, recentDays: recentDays,
 		groupMode: lastGroup(last),
-		indexing:  index.NeedsIncrementalIndex(reg, idx, 5*time.Minute), pageGen: 1,
+		indexing:  true, pageGen: 1,
 		ctx: ctx, cancel: cancel, contextMode: contextMode,
 		movedAway: movedAwayDirectories(idx, initialOpts.ProjectRoots),
 	}
 	if err != nil {
 		m.err = txt.cwdUnreadable + err.Error()
 	}
-	m.contentIndexing = !m.indexing
 	// The source drawer is a view of the same selection the header reads;
 	// pointing it at the restored filter keeps the two in step before the
 	// drawer is ever opened.
@@ -477,11 +475,9 @@ func (m modelState) Init() tea.Cmd {
 	if cmd := m.focusPreviewCmd(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
-	if m.indexing {
-		cmds = append(cmds, backgroundIndexCmd(m.ctx, m.reg, m.idx))
-	} else {
-		cmds = append(cmds, contentIndexCmd(m.ctx, m.reg, m.idx))
-	}
+	// Show the cached list immediately, but even a fresh cache can predate
+	// a native archive or deletion performed outside another.
+	cmds = append(cmds, backgroundIndexCmd(m.ctx, m.reg, m.idx))
 	return tea.Batch(cmds...)
 }
 
