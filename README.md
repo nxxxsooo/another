@@ -298,9 +298,9 @@ setup 第二页用 `←→` 选标题语言（与第一页的界面语言互不�
 
 批量页顶部标明这次用的 agent、模型和语言。生成结束或取消后按 `m` 打开和 setup 同一个模型选择器（同样是 CLI 自己给出的列表，输入过滤，最后一行可手输），`Enter` 用新模型重跑当前这批会话。这个模型不会写回配置：给几十条旧会话选一个便宜的模型，不该变成下次单条重命名的默认。
 
-生成标题时，Codex、Antigravity、OpenCode 这些 CLI 会为每次无头调用留下一条自己的会话，而且没有关掉的开关。Claude Code 和 CodeM 有开关，another 就用它们：`--no-session-persistence` 和 `--no-session` 让这次运行根本不落盘，比事后认出来再清掉更干净（Claude Code 这一路同时带上 `--disable-slash-commands`，会话内容是不可信输入，不该由它触发命令或 Skill）。另一侧 another 会认出剩下这些残留并挡在索引之外，旧版本 Claude Code 留下的也一并清掉：提示词第一行是固定标记，运行目录是 `another-titler-*` 临时目录，两者任一命中即不入库。Antigravity 两条都躲得掉——它按模型答案给这次运行命名，于是残留顶着一个符合命名规则的标题，而且根本不记录运行目录——所以短到只可能是残留的会话会被打开，直接比对里面的提示词本身；长会话不会被读取。之前版本已经入库的残留会在下次刷新时清掉。清的只是 another 自己的索引，agent 自己的会话文件仍在它自己的目录里。
+生成标题时，Codex 和 Antigravity 会为无头调用保留原生会话。Claude Code 和 CodeM 分别通过 `--no-session-persistence` 和 `--no-session` 禁用持久化；Claude Code 同时禁用斜杠命令，避免会话内容触发命令或 Skill。another 用固定提示词或 `another-titler-*` 目录识别残留；对不记录目录、标题也无法识别的 Antigravity，只检查短会话的提示词。刷新会移除已入库的残留，但只清理 another 自己的索引，不碰原生记录。
 
-OpenCode 标题调用仍使用独立的 `another-titler-*` 临时目录，但结束时会通过同一个 CLI 调用 V2 的 `DELETE /api/debug/location`，只释放这次目录的服务缓存及 MCP 连接；失败或取消也会执行，清理本身另有 10 秒超时。仅删除目录不会释放共享后台服务持有的实例，因此必须先释放实例、再删除目录。若释放失败（包括旧版 OpenCode 不支持该 API），本次建议会报错，而不是假装清理成功。这个操作不删除原生会话记录，也不重启共享服务或释放其他项目。
+用 OpenCode 生成标题建议需支持归档运行和删除会话的 V2 CLI（已在 2.3.2 验证）。another 在同一个空缓存目录运行，创建时即归档并指定标题，避免进入常规列表或触发 OpenCode 自动拟题。成功、失败或取消后都尝试删除本次原生会话，删除失败会报错。复用目录避免每次新增项目；旧版本留下的原生会话和项目不会被删除。
 
 <img src="docs/assets/tui-batch.svg" width="100%" alt="another 批量命名确认页：原名到新名的对照表与折叠计数">
 

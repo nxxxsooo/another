@@ -144,20 +144,13 @@ release:
 
     ## Compatibility
 
-    v0.29.0 adds native OpenCode V2 archiving and range selection in the TUI.
-
-    - OpenCode V2 archive and restore require the matching installed CLI and
-      native archive support, verified with OpenCode 2.3.2. Press `a` to
-      archive one session or the marked set. Press `u` to undo a single
-      archive, or use `h` to restore a session from history. Archived rows
-      leave the active list. OpenCode V1 archiving is unchanged.
-    - Mark with `x`, move, then press `X` to add the inclusive range. Without
-      a visible anchor on a different row, `X` still toggles the current page.
-    - Startup shows the cached list first, then rescans in the background to
-      pick up external changes. Batch archive reloads the list automatically,
-      and SQLite change detection follows a symlinked database's real WAL.
-    - Existing OpenCode `/ref` installations do not need to be reinstalled
-      for this release. Doubao remains opt-in and macOS-only.
+    - If OpenCode generates your title suggestions, use OpenCode V2 with
+      archived-run and session deletion support (verified on 2.3.2). another
+      removes each new title session and reuses one work directory instead
+      of adding a project per suggestion. Existing sessions and projects
+      are not modified.
+    - Existing title integrations and OpenCode `/ref` installations do not
+      need to be reinstalled. Doubao remains opt-in and macOS-only.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
