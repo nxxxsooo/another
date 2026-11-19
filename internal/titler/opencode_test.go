@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,9 +47,16 @@ func TestMain(m *testing.M) {
 			panic(err)
 		}
 		if os.Args[1] == "api" {
-			if os.Getenv("ANOTHER_OPENCODE_TEST_DISPOSE_FAIL") == "1" {
-				fmt.Fprintln(os.Stderr, "disposal rejected")
-				os.Exit(1)
+			if id, ok := strings.CutPrefix(os.Args[3], "/api/session/"); ok {
+				switch os.Getenv("ANOTHER_OPENCODE_TEST_DELETE") {
+				case "missing":
+					fmt.Printf("{\"_tag\":\"SessionNotFoundError\",\"sessionID\":%q}\n", id)
+					fmt.Fprintln(os.Stderr, "HTTP 404 Not Found")
+					os.Exit(1)
+				case "fail":
+					// A CLI can print an HTTP error yet exit successfully.
+					fmt.Fprintln(os.Stderr, "HTTP 500 deletion rejected")
+				}
 			}
 			os.Exit(0)
 		}
@@ -64,22 +72,34 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, "model rejected")
 			os.Exit(1)
 		}
+		if os.Getenv("ANOTHER_OPENCODE_TEST_WRITE") == "1" {
+			if err := os.WriteFile("unexpected-output", []byte("fixture"), 0o600); err != nil {
+				panic(err)
+			}
+		}
 		fmt.Println("0903｜Fix｜Release title services")
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }
 
-func TestSuggestDisposesOpenCodeLocation(t *testing.T) {
-	tempRoot := filepath.Join(t.TempDir(), "title cache & 中文 + #")
-	if err := os.Mkdir(tempRoot, 0o700); err != nil {
+func TestSuggestCleansUpOpenCode(t *testing.T) {
+	cacheRoot := filepath.Join(t.TempDir(), "title cache & 中文 + #")
+	if err := os.Mkdir(cacheRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
-		t.Setenv(name, tempRoot)
+	for _, name := range []string{"HOME", "LOCALAPPDATA", "XDG_CACHE_HOME"} {
+		t.Setenv(name, cacheRoot)
 	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workDir := filepath.Join(cache, "another", "another-titler-opencode")
+	idPattern := regexp.MustCompile(`^ses_[0-9a-f]{32}$`)
+	seenIDs := make(map[string]bool)
 	for _, provider := range []string{"opencode", "opencode2"} {
-		for _, scenario := range []string{"success", "run failure", "cancel", "dispose failure", "both fail"} {
+		for _, scenario := range []string{"success", "run failure", "cancel", "delete failure", "both fail", "unexpected write"} {
 			t.Run(provider+"/"+scenario, func(t *testing.T) {
 				binDir := filepath.Join(t.TempDir(), "agent bin")
 				if err := os.Mkdir(binDir, 0o700); err != nil {
@@ -104,13 +124,21 @@ func TestSuggestDisposesOpenCodeLocation(t *testing.T) {
 				t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 				t.Setenv("ANOTHER_OPENCODE_TEST_CAPTURE", capture)
 				t.Setenv("ANOTHER_OPENCODE_TEST_RUN_FAIL", "0")
-				t.Setenv("ANOTHER_OPENCODE_TEST_DISPOSE_FAIL", "0")
+				t.Setenv("ANOTHER_OPENCODE_TEST_WRITE", "0")
+				t.Setenv("ANOTHER_OPENCODE_TEST_DELETE", "")
 				t.Setenv("ANOTHER_OPENCODE_TEST_CANCEL_URL", "")
+				if scenario == "unexpected write" {
+					t.Setenv("ANOTHER_OPENCODE_TEST_WRITE", "1")
+					t.Cleanup(func() { _ = os.Remove(filepath.Join(workDir, "unexpected-output")) })
+				}
 				if scenario == "run failure" || scenario == "both fail" {
 					t.Setenv("ANOTHER_OPENCODE_TEST_RUN_FAIL", "1")
 				}
-				if scenario == "dispose failure" || scenario == "both fail" {
-					t.Setenv("ANOTHER_OPENCODE_TEST_DISPOSE_FAIL", "1")
+				if scenario == "run failure" {
+					t.Setenv("ANOTHER_OPENCODE_TEST_DELETE", "missing")
+				}
+				if scenario == "delete failure" || scenario == "both fail" {
+					t.Setenv("ANOTHER_OPENCODE_TEST_DELETE", "fail")
 				}
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
@@ -130,12 +158,15 @@ func TestSuggestDisposesOpenCodeLocation(t *testing.T) {
 				} else if err == nil || got != "" {
 					t.Fatalf("Suggest = %q, %v; want failure without suggestion", got, err)
 				}
-				for marker, required := range map[string]bool{
-					"model rejected":    scenario == "run failure" || scenario == "both fail",
-					"disposal rejected": scenario == "dispose failure" || scenario == "both fail",
+				for marker, want := range map[string]bool{
+					"model rejected":       scenario == "run failure" || scenario == "both fail",
+					"timed out":            scenario == "cancel",
+					"deletion rejected":    scenario == "delete failure" || scenario == "both fail",
+					"SessionNotFoundError": false,
+					"not empty":            scenario == "unexpected write",
 				} {
-					if required && !strings.Contains(err.Error(), marker) {
-						t.Errorf("error %v lost %q", err, marker)
+					if found := err != nil && strings.Contains(err.Error(), marker); found != want {
+						t.Errorf("error %v contains %q = %t; want %t", err, marker, found, want)
 					}
 				}
 				raw, err := os.ReadFile(capture)
@@ -144,33 +175,48 @@ func TestSuggestDisposesOpenCodeLocation(t *testing.T) {
 				}
 				lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
 				if len(lines) != 2 {
-					t.Fatalf("want run and disposal, got %s", raw)
+					t.Fatalf("want run and session deletion only, got %s", raw)
 				}
-				var run, dispose openCodeCall
-				if err := json.Unmarshal([]byte(lines[0]), &run); err != nil {
-					t.Fatal(err)
+				var run, remove openCodeCall
+				for i, call := range []*openCodeCall{&run, &remove} {
+					if err := json.Unmarshal([]byte(lines[i]), call); err != nil {
+						t.Fatal(err)
+					}
 				}
-				if err := json.Unmarshal([]byte(lines[1]), &dispose); err != nil {
-					t.Fatal(err)
-				}
-				if len(run.Args) != 4 || run.Args[0] != "run" || run.Args[1] != "--model" || run.Args[2] != "test/title-model" || !titler.IsGeneratedPrompt(run.Args[3]) {
+				if len(run.Args) != 9 || !slices.Equal(run.Args[:5], []string{"run", "--archived", "--title", "another title suggestion", "--session"}) ||
+					!slices.Equal(run.Args[6:8], []string{"--model", "test/title-model"}) || !titler.IsGeneratedPrompt(run.Args[8]) {
 					t.Fatalf("run arguments = %q", run.Args)
 				}
-				if len(dispose.Args) != 3 || dispose.Args[0] != "api" || dispose.Args[1] != "DELETE" {
-					t.Fatalf("disposal arguments = %q", dispose.Args)
+				id := run.Args[5]
+				if !idPattern.MatchString(id) || seenIDs[id] {
+					t.Fatalf("invalid or reused session ID %q", id)
 				}
-				u, err := url.Parse(dispose.Args[2])
+				seenIDs[id] = true
+				if !slices.Equal(remove.Args, []string{"api", "DELETE", "/api/session/" + id}) || remove.Dir != run.Dir {
+					t.Fatalf("deletion must target the run's exact session in its directory: run=%+v delete=%+v", run, remove)
+				}
+				resolved, err := filepath.EvalSymlinks(workDir)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if u.Path != "/api/debug/location" || u.Query().Get("location[directory]") != run.Dir || dispose.Dir != run.Dir {
-					t.Fatalf("disposal must target exactly the run directory: run=%+v dispose=%+v", run, dispose)
+				if run.Dir != resolved {
+					t.Fatalf("run directory = %q; want shared %q", run.Dir, resolved)
 				}
 				if !titler.IsGeneratedSession("unrelated title", run.Dir) {
 					t.Fatalf("leftover not recognized: %q", run.Dir)
 				}
-				if _, err := os.Stat(run.Dir); !os.IsNotExist(err) {
-					t.Fatalf("temporary directory remains: %v", err)
+				if scenario == "unexpected write" {
+					if _, err := os.Stat(filepath.Join(run.Dir, "unexpected-output")); err != nil {
+						t.Fatal(err)
+					}
+					if got, err := titler.Suggest(ctx, titler.Config{Provider: provider}, titler.Request{CreatedAt: time.Now()}); got != "" || err == nil || !strings.Contains(err.Error(), "not empty") {
+						t.Fatalf("Suggest in a nonempty directory = %q, %v", got, err)
+					}
+					if after, err := os.ReadFile(capture); err != nil || string(after) != string(raw) {
+						t.Fatalf("CLI was invoked from a nonempty directory: %q, %v", after, err)
+					}
+				} else if entries, err := os.ReadDir(run.Dir); err != nil || len(entries) != 0 {
+					t.Fatalf("shared directory entries = %v, %v; want empty", entries, err)
 				}
 			})
 		}
@@ -178,19 +224,22 @@ func TestSuggestDisposesOpenCodeLocation(t *testing.T) {
 }
 
 // Explicit opt-in only: creates synthetic title-agent sessions, never reads or
-// renames user sessions. Run twice while observing shared-service children.
+// renames user sessions.
 func TestOpenCodeTitlerLive(t *testing.T) {
 	if os.Getenv("ANOTHER_TEST_OPENCODE_LIVE") != "1" {
 		t.Skip("set ANOTHER_TEST_OPENCODE_LIVE=1 to invoke the installed OpenCode")
 	}
-	for i := 0; i < 2; i++ {
-		got, err := titler.Suggest(context.Background(), titler.Config{Provider: "opencode", Language: titler.LangEnglish}, titler.Request{
-			CreatedAt: time.Now(),
-			Messages:  []model.Message{{Role: model.RoleUser, Content: "Fix a synthetic example that leaks temporary title services. This is a harmless title-generation smoke test."}},
+	for _, provider := range []string{"opencode", "opencode2"} {
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			got, err := titler.Suggest(context.Background(), titler.Config{Provider: provider, Model: os.Getenv("ANOTHER_TEST_OPENCODE_MODEL"), Language: titler.LangEnglish}, titler.Request{
+				CreatedAt: time.Now(),
+				Messages:  []model.Message{{Role: model.RoleUser, Content: "Fix a synthetic example that leaks temporary title services. This is a harmless title-generation smoke test."}},
+			})
+			if err != nil || got == "" {
+				t.Fatalf("Suggest = %q, %v; want a title", got, err)
+			}
+			t.Logf("suggestion: %q", got)
 		})
-		if err != nil {
-			t.Fatalf("invocation %d: %v", i+1, err)
-		}
-		t.Logf("invocation %d suggestion: %q", i+1, got)
 	}
 }

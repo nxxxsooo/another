@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -84,20 +83,9 @@ var launchers = map[string]launcher{
 		}
 		return append(args, "--", p)
 	}},
-	"opencode": {"opencode", func(c Config, p string) []string {
-		args := []string{"run"}
-		if c.Model != "" {
-			args = append(args, "--model", c.Model)
-		}
-		return append(args, p)
-	}},
-	"opencode2": {"opencode2", func(c Config, p string) []string {
-		args := []string{"run"}
-		if c.Model != "" {
-			args = append(args, "--model", c.Model)
-		}
-		return append(args, p)
-	}},
+	// Suggest builds OpenCode argv after allocating an ID for native cleanup.
+	"opencode":  {command: "opencode"},
+	"opencode2": {command: "opencode2"},
 	"qwen": {"qwen", func(c Config, _ string) []string {
 		// --bare also drops the user's auth type and provider settings. That
 		// makes a configured Qwen work interactively but fail here, especially
@@ -228,7 +216,8 @@ func Suggest(ctx context.Context, cfg Config, req Request) (title string, sugges
 	if req.CreatedAt.Unix() <= 0 {
 		return "", permanent(&SuggestError{Reason: SuggestNoCreatedAt})
 	}
-	l, ok := launchers[NormalizeID(cfg.Provider)]
+	providerID := NormalizeID(cfg.Provider)
+	l, ok := launchers[providerID]
 	if !ok {
 		return "", permanent(&SuggestError{Reason: SuggestNoTitles, Command: cfg.Provider})
 	}
@@ -237,29 +226,28 @@ func Suggest(ctx context.Context, cfg Config, req Request) (title string, sugges
 		return "", permanent(&SuggestError{Reason: SuggestNotInstalled, Command: l.command})
 	}
 
-	// A throwaway working directory keeps the agent out of the user's project:
-	// no project-level instructions are loaded from untrusted checkouts, and
-	// whatever session the CLI records lands outside their real projects.
-	dir, err := os.MkdirTemp("", TempDirPrefix)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	if id := NormalizeID(cfg.Provider); id == "opencode" || id == "opencode2" {
-		// OpenCode's shared service caches services (including MCP processes)
-		// by directory. Removing the directory does not release that cache.
-		// Resolve symlinks so run and disposal address the same native location.
-		resolved, err := filepath.EvalSymlinks(dir)
+	// Keep title runs outside the user's checkout and its project instructions.
+	var dir, sessionID string
+	if providerID == "opencode" || providerID == "opencode2" {
+		dir, err = openCodeWorkDir()
 		if err != nil {
 			return "", err
 		}
-		dir = resolved
+		sessionID = newOpenCodeSessionID()
 		defer func() {
-			if err := disposeOpenCodeLocation(bin, dir); err != nil {
+			removeErr := removeOpenCodeSession(bin, dir, sessionID)
+			dirErr := requireEmptyOpenCodeWorkDir(dir)
+			if removeErr != nil || dirErr != nil {
 				title = ""
-				suggestErr = errors.Join(suggestErr, err)
+				suggestErr = errors.Join(suggestErr, removeErr, dirErr)
 			}
 		}()
+	} else {
+		dir, err = os.MkdirTemp("", TempDirPrefix)
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = os.RemoveAll(dir) }()
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
@@ -267,8 +255,14 @@ func Suggest(ctx context.Context, cfg Config, req Request) (title string, sugges
 
 	lang := ResolveLanguage(cfg.Language, req.Messages)
 	prompt := BuildPrompt(req, lang)
-	cmd := exec.CommandContext(ctx, bin, l.args(cfg, prompt)...)
-	if NormalizeID(cfg.Provider) == "qwen" {
+	var args []string
+	if sessionID != "" {
+		args = openCodeArgs(cfg, prompt, sessionID)
+	} else {
+		args = l.args(cfg, prompt)
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	if providerID == "qwen" {
 		cmd.Stdin = strings.NewReader(prompt)
 	}
 	cmd.Dir = dir

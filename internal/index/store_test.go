@@ -80,7 +80,8 @@ func TestStoreUpsertList(t *testing.T) {
 // come back as sessions to manage, including the ones an older build already
 // indexed.
 func TestPruneTitlerSessionsEvictsOwnLeftovers(t *testing.T) {
-	store, err := index.Open(filepath.Join(t.TempDir(), "index.db"))
+	root := t.TempDir()
+	store, err := index.Open(filepath.Join(root, "index.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,17 +89,20 @@ func TestPruneTitlerSessionsEvictsOwnLeftovers(t *testing.T) {
 
 	now := time.Now()
 	rows := []model.Summary{
-		{ID: "real", Provider: "agy", Title: "0903｜修复｜快捷键冲突", ProjectPath: "/Users/x/GitHub/another",
-			UpdatedAt: now, MessageCount: 12, StoragePath: "/store/real.jsonl", SourceMtime: now.Unix()},
+		{ID: "real", Provider: "agy", Title: "0903｜修复｜快捷键冲突", ProjectPath: filepath.Join(root, "workspace"),
+			UpdatedAt: now, MessageCount: 12, StoragePath: filepath.Join(root, "real.jsonl"), SourceMtime: now.Unix()},
 		{ID: "byTitle", Provider: "agy", Title: titler.PromptMarker + "  Follow these rules…",
-			UpdatedAt: now, MessageCount: 2, StoragePath: "/store/noise-1.jsonl", SourceMtime: now.Unix()},
+			UpdatedAt: now, MessageCount: 2, StoragePath: filepath.Join(root, "noise-1.jsonl"), SourceMtime: now.Unix()},
 		// A leftover from an older prompt, recorded without a project path:
 		// only the retired marker identifies it.
 		{ID: "byRetiredTitle", Provider: "agy", Title: "Use the title-formatter skill to name one AI coding session.",
-			UpdatedAt: now, MessageCount: 2, StoragePath: "/store/noise-3.jsonl", SourceMtime: now.Unix()},
+			UpdatedAt: now, MessageCount: 2, StoragePath: filepath.Join(root, "noise-3.jsonl"), SourceMtime: now.Unix()},
 		{ID: "byDir", Provider: "codex", Title: "Session title suggestion",
-			ProjectPath: "/private/var/folders/x/T/" + titler.TempDirPrefix + "42",
-			UpdatedAt:   now, MessageCount: 2, StoragePath: "/store/noise-2.jsonl", SourceMtime: now.Unix()},
+			ProjectPath: filepath.Join(root, titler.TempDirPrefix+"42"),
+			UpdatedAt:   now, MessageCount: 2, StoragePath: filepath.Join(root, "noise-2.jsonl"), SourceMtime: now.Unix()},
+		{ID: "byStableDir", Provider: "opencode2", Title: "another title suggestion",
+			ProjectPath: filepath.Join(root, "cache", "another", "another-titler-opencode"),
+			UpdatedAt:   now, MessageCount: 2, StoragePath: filepath.Join(root, "noise-4.jsonl"), SourceMtime: now.Unix()},
 	}
 	for _, sm := range rows {
 		if err := store.Upsert(sm); err != nil {
@@ -110,8 +114,8 @@ func TestPruneTitlerSessionsEvictsOwnLeftovers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 3 {
-		t.Fatalf("pruned %d rows, want the three leftovers", n)
+	if n != 4 {
+		t.Fatalf("pruned %d rows, want four leftovers", n)
 	}
 	items, err := store.List(index.ListOpts{IncludeSubagents: true})
 	if err != nil {

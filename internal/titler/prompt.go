@@ -28,7 +28,7 @@ const (
 	// marker outlives the prompt that produced it. Retiring a marker is not
 	// allowed: it would strand every leftover an older build created.
 	legacyPromptMarker = "Use the title-formatter skill to name one AI coding session."
-	// TempDirPrefix names the throwaway directory a suggestion runs in.
+	// TempDirPrefix marks a dedicated title suggestion directory.
 	// Agents that record the working directory land here instead of a real
 	// project, which identifies their leftovers even when the title does not.
 	TempDirPrefix = "another-titler-"
