@@ -144,13 +144,13 @@ release:
 
     ## Compatibility
 
-    - If OpenCode generates your title suggestions, use OpenCode V2 with
-      archived-run and session deletion support (verified on 2.3.2). another
-      removes each new title session and reuses one work directory instead
-      of adding a project per suggestion. Existing sessions and projects
-      are not modified.
-    - Existing title integrations and OpenCode `/ref` installations do not
-      need to be reinstalled. Doubao remains opt-in and macOS-only.
+    - OpenCode 2.4 no longer drops the `another` MCP server at startup, so
+      `@` session references work again (verified on 2.4.0). The server now
+      always uses the standard `initialize` handshake and does not offer the
+      2026-07-28 protocol revision; Claude Code and Qwen Code are unaffected.
+    - Existing `@` reference registrations, title integrations, and OpenCode
+      `/ref` installations do not need to be reinstalled; upgrading the
+      binary is enough. Doubao remains opt-in and macOS-only.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
