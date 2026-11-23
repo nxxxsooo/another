@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/nxxxsooo/another/internal/index"
 	"github.com/nxxxsooo/another/internal/mcpserver"
@@ -26,6 +27,60 @@ func TestSessionURIRoundTrips(t *testing.T) {
 		if _, _, ok := mcpserver.ParseSessionURI(bad); ok {
 			t.Errorf("%q should not parse", bad)
 		}
+	}
+}
+
+// OpenCode 2.4 probes with server/discover and then falls back to initialize
+// on the same connection. The probe must not leave the session initialized,
+// or the handshake fails as a duplicate and the client drops the server.
+func TestMCPServerHandshakeSurvivesDiscoverProbe(t *testing.T) {
+	ctx := context.Background()
+	app := newTestApp(t, newFake(t, "alpha"))
+	server, err := (&mcpserver.Server{
+		Registry: app.Registry, Index: app.Index, Version: "test",
+		Scope: util.DiscoverProjectScope(ctx, t.TempDir()),
+	}).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := server.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ss.Close() }()
+	conn, err := ct.Connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	call := func(raw string) *jsonrpc.Response {
+		t.Helper()
+		msg, err := jsonrpc.DecodeMessage([]byte(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.Write(ctx, msg); err != nil {
+			t.Fatal(err)
+		}
+		reply, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, ok := reply.(*jsonrpc.Response)
+		if !ok {
+			t.Fatalf("reply = %T", reply)
+		}
+		return res
+	}
+	call(`{"jsonrpc":"2.0","id":"server-discover-probe-1","method":"server/discover","params":{"_meta":{` +
+		`"io.modelcontextprotocol/protocolVersion":"2026-07-28",` +
+		`"io.modelcontextprotocol/clientInfo":{"name":"probe","version":"0"},` +
+		`"io.modelcontextprotocol/clientCapabilities":{}}}}`)
+	res := call(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}`)
+	if res.Error != nil {
+		t.Fatalf("initialize after discover: %v", res.Error)
 	}
 }
 
