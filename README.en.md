@@ -349,6 +349,8 @@ another providers doctor
 
 ## AI title suggestions
 
+`v0.30.1` restores OpenCode V2 title suggestions on Windows when `opencode` or `opencode2` resolves to a `.cmd` launcher. The complete prompt travels through stdin, preserving the launcher’s configuration. Batch review counts empty or invalid suggestions as failed and shows the reason; a valid suggestion matching the current title is unchanged.
+
 `v0.15.9` fixes missing title suggestions when Qwen Code is selected on Windows. The complete prompt now travels through stdin, avoiding npm's `qwen.cmd` truncating the title rules and session content at the first newline. Your configured account and model are reused; run `another update` to upgrade.
 
 When setup names an agent, `r` opens the rename box on the original title and asks that agent, in the background, for one title using another's own fixed contract: `MMDD｜类型｜主题` in Chinese or `MMDD｜Type｜Topic` in English. It does not depend on a Skill. The date comes from the indexed creation time converted to `Asia/Shanghai`, never from the model. The model does not read the whole session: the opening messages set the intent and the last few say what the session turned out to be, while the middle never reaches the prompt; per-message and total caps keep the prompt small. Suggestions that miss the contract, arrive after the box closes, or fail outright are discarded without touching what you typed. The agent runs in a throwaway directory, so your project's own instructions never reach it.

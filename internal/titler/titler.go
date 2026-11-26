@@ -175,6 +175,8 @@ const (
 	SuggestNotInstalled SuggestFailure = "not-installed"
 	// SuggestTimedOut means the CLI did not answer within Timeout.
 	SuggestTimedOut SuggestFailure = "timed-out"
+	// SuggestNoMatchingTitle means the CLI returned no policy-valid title.
+	SuggestNoMatchingTitle SuggestFailure = "no-matching-title"
 	// SuggestFailed means the CLI failed on its own terms, and Detail
 	// carries its explanation verbatim.
 	SuggestFailed SuggestFailure = "failed"
@@ -199,6 +201,8 @@ func (e *SuggestError) Error() string {
 		return fmt.Sprintf("%s is not installed", e.Command)
 	case SuggestTimedOut:
 		return fmt.Sprintf("%s timed out", e.Command)
+	case SuggestNoMatchingTitle:
+		return fmt.Sprintf("%s returned no title matching the policy", e.Command)
 	default:
 		return fmt.Sprintf("%s: %s", e.Command, e.Detail)
 	}
@@ -257,12 +261,15 @@ func Suggest(ctx context.Context, cfg Config, req Request) (title string, sugges
 	prompt := BuildPrompt(req, lang)
 	var args []string
 	if sessionID != "" {
-		args = openCodeArgs(cfg, prompt, sessionID)
+		args = openCodeArgs(cfg, sessionID)
 	} else {
 		args = l.args(cfg, prompt)
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
-	if providerID == "qwen" {
+	if sessionID != "" || providerID == "qwen" {
+		// OpenCode V2 reads piped prompts. Keep the selected launcher (it
+		// may set the config directory and database), while keeping the
+		// multiline prompt out of Windows .cmd argument expansion.
 		cmd.Stdin = strings.NewReader(prompt)
 	}
 	cmd.Dir = dir
