@@ -387,6 +387,7 @@ type uiText struct {
 	suggestNoTitles       string
 	suggestNotInstalled   string
 	suggestTimedOut       string
+	suggestNoMatch        string
 	suggestFailedFmt      string
 	modelPlaceholder      string
 }
@@ -710,6 +711,7 @@ var englishText = uiText{
 	suggestNoTitles:       "%s cannot write titles",
 	suggestNotInstalled:   "%s is not installed",
 	suggestTimedOut:       "%s took too long to answer",
+	suggestNoMatch:        "%s returned no title matching the policy",
 	suggestFailedFmt:      "%s: %s",
 	modelPlaceholder:      "empty uses that CLI's default model",
 }
@@ -1033,6 +1035,7 @@ var chineseText = uiText{
 	suggestNoTitles:       "%s 不能生成标题",
 	suggestNotInstalled:   "%s 未安装",
 	suggestTimedOut:       "%s 生成超时",
+	suggestNoMatch:        "%s 未返回符合标题规则的建议",
 	suggestFailedFmt:      "%s：%s",
 	modelPlaceholder:      "留空用该 CLI 的默认模型",
 }
@@ -1105,6 +1108,8 @@ func suggestErrorText(err error) string {
 		return fmt.Sprintf(txt.suggestNotInstalled, suggestErr.Command)
 	case titler.SuggestTimedOut:
 		return fmt.Sprintf(txt.suggestTimedOut, suggestErr.Command)
+	case titler.SuggestNoMatchingTitle:
+		return fmt.Sprintf(txt.suggestNoMatch, suggestErr.Command)
 	default:
 		return fmt.Sprintf(txt.suggestFailedFmt, suggestErr.Command, suggestErr.Detail)
 	}

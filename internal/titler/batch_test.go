@@ -258,13 +258,22 @@ func TestDuplicateProposalsFreezeEveryCollidingRow(t *testing.T) {
 	}
 }
 
-func TestARowThatKeepsItsTitleIsNotAChange(t *testing.T) {
-	same := BatchResult{SessionID: "a", Current: "0903｜修复｜主题", Title: "0903｜修复｜主题"}
-	declined := BatchResult{SessionID: "b", Current: "old", Title: ""}
-	if same.Changed() || declined.Changed() {
-		t.Fatalf("unchanged rows reported as changes: %+v %+v", same, declined)
+func TestBatchSeparatesEmptySuggestionsFromUnchangedTitles(t *testing.T) {
+	created := time.Now()
+	const title = "0903｜修复｜保持原有标题"
+	items := []BatchItem{item("same", title, created), item("empty", "old", created)}
+	got := byID(drain(suggestBatch(context.Background(), Config{Provider: "opencode"}, items, 1,
+		func(_ context.Context, _ Config, req Request) (string, error) {
+			if req.Title == title {
+				return title, nil
+			}
+			return "", nil
+		})))
+	var err *SuggestError
+	if !errors.As(got["empty"].Err, &err) || err.Reason != SuggestNoMatchingTitle || err.Command != "opencode" {
+		t.Fatalf("empty suggestion failure = %v", got["empty"].Err)
 	}
-	if c := Summarize([]BatchResult{same, declined}); c.Unchanged != 2 || c.Changed != 0 {
+	if c := Summarize([]BatchResult{got["same"], got["empty"]}); c != (BatchCounts{Unchanged: 1, Failed: 1}) {
 		t.Fatalf("unexpected counts: %+v", c)
 	}
 }

@@ -21,12 +21,12 @@ func newOpenCodeSessionID() string {
 	return fmt.Sprintf("ses_%x", id)
 }
 
-func openCodeArgs(cfg Config, prompt, sessionID string) []string {
+func openCodeArgs(cfg Config, sessionID string) []string {
 	args := []string{"run", "--archived", "--title", "another title suggestion", "--session", sessionID}
 	if cfg.Model != "" {
 		args = append(args, "--model", cfg.Model)
 	}
-	return append(args, prompt)
+	return args
 }
 
 // OpenCode persists one project per directory and caches services by location.

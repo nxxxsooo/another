@@ -134,6 +134,7 @@ func TestEverySuggestFailureHasWords(t *testing.T) {
 			titler.SuggestNoTitles,
 			titler.SuggestNotInstalled,
 			titler.SuggestTimedOut,
+			titler.SuggestNoMatchingTitle,
 			titler.SuggestFailed,
 		}
 		for _, reason := range reasons {

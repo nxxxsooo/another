@@ -58,9 +58,8 @@ const (
 	FreezeSuggestUnsupported FreezeReason = "suggest-unsupported"
 )
 
-// BatchResult reports one row. Exactly one of Title, Frozen, or Err carries the
-// outcome: a frozen row was never sent to a model, an empty Title with no error
-// means the model declined, and Err means the attempt failed.
+// BatchResult reports one row. Exactly one of Title, Frozen, or Err carries
+// the outcome. A valid Title may be identical to the current title.
 type BatchResult struct {
 	SessionID string
 	Current   string
@@ -151,6 +150,10 @@ func runOne(ctx context.Context, cfg Config, item BatchItem, suggest suggestFunc
 	title, err := suggestRetrying(ctx, cfg, item.Request, suggest)
 	if err != nil {
 		res.Err = err
+		return res
+	}
+	if title == "" {
+		res.Err = &SuggestError{Reason: SuggestNoMatchingTitle, Command: cfg.Provider}
 		return res
 	}
 	res.Title = title

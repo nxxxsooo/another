@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,8 +21,10 @@ import (
 )
 
 type openCodeCall struct {
-	Args []string
-	Dir  string
+	Args     []string
+	Dir      string
+	Stdin    string
+	Launcher string
 }
 
 // A native executable fixture exercises argv and filesystem paths on Windows
@@ -32,7 +35,15 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			panic(err)
 		}
-		data, err := json.Marshal(openCodeCall{Args: os.Args[1:], Dir: dir})
+		call := openCodeCall{Args: os.Args[1:], Dir: dir, Launcher: os.Getenv("ANOTHER_OPENCODE_TEST_LAUNCHER")}
+		if os.Args[1] == "run" {
+			input, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				panic(err)
+			}
+			call.Stdin = string(input)
+		}
+		data, err := json.Marshal(call)
 		if err != nil {
 			panic(err)
 		}
@@ -99,7 +110,7 @@ func TestSuggestCleansUpOpenCode(t *testing.T) {
 	idPattern := regexp.MustCompile(`^ses_[0-9a-f]{32}$`)
 	seenIDs := make(map[string]bool)
 	for _, provider := range []string{"opencode", "opencode2"} {
-		for _, scenario := range []string{"success", "run failure", "cancel", "delete failure", "both fail", "unexpected write"} {
+		for _, scenario := range []string{"success", "launcher", "run failure", "cancel", "delete failure", "both fail", "unexpected write"} {
 			t.Run(provider+"/"+scenario, func(t *testing.T) {
 				binDir := filepath.Join(t.TempDir(), "agent bin")
 				if err := os.Mkdir(binDir, 0o700); err != nil {
@@ -116,6 +127,23 @@ func TestSuggestCleansUpOpenCode(t *testing.T) {
 				name := provider
 				if runtime.GOOS == "windows" {
 					name += ".exe"
+				}
+				t.Setenv("ANOTHER_OPENCODE_TEST_LAUNCHER", "")
+				if scenario == "launcher" {
+					name = "native"
+					shimName := provider
+					shim := "#!/bin/sh\nexport ANOTHER_OPENCODE_TEST_LAUNCHER=used\nexec \"${0%/*}/native\" \"$@\"\n"
+					if runtime.GOOS == "windows" {
+						name += ".exe"
+						shimName += ".cmd"
+						shim = "@echo off\r\nsetlocal\r\nset \"ANOTHER_OPENCODE_TEST_LAUNCHER=used\"\r\ncall \"%~dp0npm-opencode.cmd\" %*\r\n"
+						if err := os.WriteFile(filepath.Join(binDir, "npm-opencode.cmd"), []byte("@echo off\r\n\"%~dp0native.exe\" %*\r\n"), 0o700); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if err := os.WriteFile(filepath.Join(binDir, shimName), []byte(shim), 0o700); err != nil {
+						t.Fatal(err)
+					}
 				}
 				if err := os.WriteFile(filepath.Join(binDir, name), data, 0o700); err != nil {
 					t.Fatal(err)
@@ -150,8 +178,10 @@ func TestSuggestCleansUpOpenCode(t *testing.T) {
 					defer server.Close()
 					t.Setenv("ANOTHER_OPENCODE_TEST_CANCEL_URL", server.URL)
 				}
-				got, err := titler.Suggest(ctx, titler.Config{Provider: provider, Model: "test/title-model", Language: titler.LangEnglish}, titler.Request{CreatedAt: time.Now()})
-				if scenario == "success" {
+				const content = "修复标题建议\n保留中文、\"引号\"、%PATH%、!name!、& | < > 和 C:\\project\\file"
+				req := titler.Request{CreatedAt: time.Now(), Messages: []model.Message{{Role: model.RoleUser, Content: content}}}
+				got, err := titler.Suggest(ctx, titler.Config{Provider: provider, Model: "test/title-model", Language: titler.LangEnglish}, req)
+				if scenario == "success" || scenario == "launcher" {
 					if err != nil || got != "0903｜Fix｜Release title services" {
 						t.Fatalf("Suggest = %q, %v", got, err)
 					}
@@ -183,9 +213,15 @@ func TestSuggestCleansUpOpenCode(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if len(run.Args) != 9 || !slices.Equal(run.Args[:5], []string{"run", "--archived", "--title", "another title suggestion", "--session"}) ||
-					!slices.Equal(run.Args[6:8], []string{"--model", "test/title-model"}) || !titler.IsGeneratedPrompt(run.Args[8]) {
+				if len(run.Args) != 8 || !slices.Equal(run.Args[:5], []string{"run", "--archived", "--title", "another title suggestion", "--session"}) ||
+					!slices.Equal(run.Args[6:], []string{"--model", "test/title-model"}) {
 					t.Fatalf("run arguments = %q", run.Args)
+				}
+				if want := titler.BuildPrompt(req, titler.LangEnglish); run.Stdin != want {
+					t.Fatalf("run stdin = %q; want %q", run.Stdin, want)
+				}
+				if scenario == "launcher" && (run.Launcher != "used" || remove.Launcher != "used") {
+					t.Fatalf("launcher environment was not preserved: run=%q delete=%q", run.Launcher, remove.Launcher)
 				}
 				id := run.Args[5]
 				if !idPattern.MatchString(id) || seenIDs[id] {

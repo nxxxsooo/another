@@ -144,12 +144,10 @@ release:
 
     ## Compatibility
 
-    - The TUI goodbye now uses the landing page’s pixel wordmark. The mint
-      copy slides in from the right and settles just behind the violet face.
-      Terminals narrower than 87 columns show the compact banner.
-      Set `ANOTHER_NO_MOTION=1` to show a still image on exit.
-    - Session data, configuration, and existing integrations are unchanged.
-      Doubao remains opt-in and macOS-only.
+    - OpenCode V2 title suggestions work through Windows `.cmd` launchers
+      without changing the configured OpenCode account, model, or database.
+    - Batch rename reports empty or invalid suggestions as failures with a
+      reason. A valid suggestion matching the current title is unchanged.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
