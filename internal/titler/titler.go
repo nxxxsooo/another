@@ -177,13 +177,17 @@ const (
 	SuggestTimedOut SuggestFailure = "timed-out"
 	// SuggestNoMatchingTitle means the CLI returned no policy-valid title.
 	SuggestNoMatchingTitle SuggestFailure = "no-matching-title"
+	// SuggestEmptyOutput means the CLI exited without writing a model answer.
+	SuggestEmptyOutput SuggestFailure = "empty-output"
+	// SuggestDeclined means the model explicitly chose to keep the title.
+	SuggestDeclined SuggestFailure = "declined"
 	// SuggestFailed means the CLI failed on its own terms, and Detail
 	// carries its explanation verbatim.
 	SuggestFailed SuggestFailure = "failed"
 )
 
 // SuggestError is what a failed suggestion returns. Command names the CLI, and
-// Detail carries text only that CLI could have written.
+// Detail carries its process status or diagnostic output when available.
 type SuggestError struct {
 	Reason  SuggestFailure
 	Command string
@@ -203,14 +207,18 @@ func (e *SuggestError) Error() string {
 		return fmt.Sprintf("%s timed out", e.Command)
 	case SuggestNoMatchingTitle:
 		return fmt.Sprintf("%s returned no title matching the policy", e.Command)
+	case SuggestEmptyOutput:
+		return fmt.Sprintf("%s returned empty output", e.Command)
+	case SuggestDeclined:
+		return fmt.Sprintf("%s chose to keep the current title", e.Command)
 	default:
 		return fmt.Sprintf("%s: %s", e.Command, e.Detail)
 	}
 }
 
 // Suggest runs the configured agent once and returns a contract-valid title,
-// or "" when the model declined or drifted. An empty result is not an error:
-// the caller shows nothing and the manual rename path is untouched.
+// or "" when the model explicitly declined. A missing or invalid response is
+// an error, independent of whether the CLI reported a nonzero exit status.
 func Suggest(ctx context.Context, cfg Config, req Request) (title string, suggestErr error) {
 	// Missing creation times arrive in two shapes: a zero time from callers
 	// that never had one, and Unix 0 from the index, which scans back as 1970
@@ -280,19 +288,42 @@ func Suggest(ctx context.Context, cfg Config, req Request) (title string, sugges
 		if ctx.Err() != nil {
 			return "", &SuggestError{Reason: SuggestTimedOut, Command: l.command}
 		}
-		return "", &SuggestError{Reason: SuggestFailed, Command: l.command, Detail: failureReason(stderr.String(), stdout.String(), err)}
+		detail := err.Error()
+		if line := suggestionDiagnostic(stderr.String(), stdout.String()); line != "" {
+			detail += ": " + line
+		}
+		return "", &SuggestError{Reason: SuggestFailed, Command: l.command, Detail: detail}
 	}
-	return Clean(stdout.String(), lang), nil
+	title, keep := cleanTitle(stdout.String(), lang)
+	if title != "" || keep {
+		return title, nil
+	}
+	if detail := suggestionDiagnostic(stderr.String()); detail != "" {
+		return "", &SuggestError{Reason: SuggestFailed, Command: l.command, Detail: detail}
+	}
+	if suggestionDiagnostic(stdout.String()) == "" {
+		return "", &SuggestError{Reason: SuggestEmptyOutput, Command: l.command}
+	}
+	return "", &SuggestError{Reason: SuggestNoMatchingTitle, Command: l.command}
+}
+
+// OpenCode writes an agent/model banner ("> build · …") even if the actual
+// request failed. Do not report that banner as the cause of a title failure.
+func suggestionDiagnostic(sources ...string) string {
+	for _, source := range sources {
+		for _, line := range strings.Split(source, "\n") {
+			if line = normalizeLine(line); line != "" && !(strings.HasPrefix(line, "> ") && strings.Contains(line, " · ")) {
+				return truncateRunes(line, 80)
+			}
+		}
+	}
+	return ""
 }
 
 // failureReason picks the one line worth showing in a status bar.
 func failureReason(stderr, stdout string, err error) string {
-	for _, source := range []string{stderr, stdout} {
-		for _, line := range strings.Split(source, "\n") {
-			if line = normalizeLine(line); line != "" {
-				return truncateRunes(line, 80)
-			}
-		}
+	if line := suggestionDiagnostic(stderr, stdout); line != "" {
+		return line
 	}
 	return err.Error()
 }

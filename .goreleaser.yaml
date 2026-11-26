@@ -144,10 +144,12 @@ release:
 
     ## Compatibility
 
-    - OpenCode V2 title suggestions work through Windows `.cmd` launchers
-      without changing the configured OpenCode account, model, or database.
-    - Batch rename reports empty or invalid suggestions as failures with a
-      reason. A valid suggestion matching the current title is unchanged.
+    - Single and bulk rename show why a title suggestion failed. The review
+      distinguishes an empty reply, a reply outside the title format, and a
+      CLI error; command failures include the exit status and diagnostic
+      when available.
+    - Automatic title hooks still honor an explicit decision to keep a title.
+      OpenCode V2 continues to use the configured Windows `.cmd` launcher.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see

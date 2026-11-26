@@ -238,9 +238,8 @@ func (a *App) suggestTitle(ctx context.Context, p provider.Provider, sm model.Su
 	if err != nil {
 		return "", err
 	}
-	// Suggest returns "" without an error when the model declined or drifted
-	// off the contract. The TUI can show nothing and wait; a hook cannot, so
-	// the ambiguity has to become an exit code here.
+	// The model can explicitly keep the current title. Here --auto was asked
+	// for a replacement, so there is no title to apply in that case.
 	if strings.TrimSpace(suggestion) == "" {
 		return "", fmt.Errorf("%s returned no title matching the policy", cfg.Provider)
 	}

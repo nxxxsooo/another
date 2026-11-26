@@ -153,7 +153,7 @@ func runOne(ctx context.Context, cfg Config, item BatchItem, suggest suggestFunc
 		return res
 	}
 	if title == "" {
-		res.Err = &SuggestError{Reason: SuggestNoMatchingTitle, Command: cfg.Provider}
+		res.Err = &SuggestError{Reason: SuggestDeclined, Command: cfg.Provider}
 		return res
 	}
 	res.Title = title
