@@ -22,7 +22,9 @@ func newOpenCodeSessionID() string {
 }
 
 func openCodeArgs(cfg Config, sessionID string) []string {
-	args := []string{"run", "--archived", "--title", "another title suggestion", "--session", sessionID}
+	// Keep the synthetic title one word so cmd.exe preserves the quoting
+	// around a launcher path containing spaces.
+	args := []string{"run", "--archived", "--title", "another-title-suggestion", "--session", sessionID}
 	if cfg.Model != "" {
 		args = append(args, "--model", cfg.Model)
 	}

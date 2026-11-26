@@ -213,7 +213,7 @@ func TestSuggestCleansUpOpenCode(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if len(run.Args) != 8 || !slices.Equal(run.Args[:5], []string{"run", "--archived", "--title", "another title suggestion", "--session"}) ||
+				if len(run.Args) != 8 || !slices.Equal(run.Args[:5], []string{"run", "--archived", "--title", "another-title-suggestion", "--session"}) ||
 					!slices.Equal(run.Args[6:], []string{"--model", "test/title-model"}) {
 					t.Fatalf("run arguments = %q", run.Args)
 				}
