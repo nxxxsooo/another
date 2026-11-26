@@ -349,6 +349,8 @@ another providers doctor
 
 ## AI title suggestions
 
+`v0.30.2` gives single and bulk rename the same failure details: an empty reply, a reply outside the title format, or the command’s exit status and diagnostic. An explicit `KEEP` leaves automatic naming alone and tells you the model chose to keep the title during a manual review.
+
 `v0.30.1` restores OpenCode V2 title suggestions on Windows when `opencode` or `opencode2` resolves to a `.cmd` launcher. The complete prompt travels through stdin, preserving the launcher’s configuration. Batch review counts empty or invalid suggestions as failed and shows the reason; a valid suggestion matching the current title is unchanged.
 
 `v0.15.9` fixes missing title suggestions when Qwen Code is selected on Windows. The complete prompt now travels through stdin, avoiding npm's `qwen.cmd` truncating the title rules and session content at the first newline. Your configured account and model are reused; run `another update` to upgrade.

@@ -3,6 +3,7 @@ package titler_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,6 +84,20 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, "model rejected")
 			os.Exit(1)
 		}
+		switch os.Getenv("ANOTHER_OPENCODE_TEST_REPLY") {
+		case "silence":
+			fmt.Fprintln(os.Stderr, "> build · test")
+			os.Exit(0)
+		case "malformed":
+			fmt.Println("Missing the title format.")
+			os.Exit(0)
+		case "stderr":
+			fmt.Fprintln(os.Stderr, "> build · test\nprovider disconnected")
+			os.Exit(0)
+		case "declined":
+			fmt.Println("KEEP")
+			os.Exit(0)
+		}
 		if os.Getenv("ANOTHER_OPENCODE_TEST_WRITE") == "1" {
 			if err := os.WriteFile("unexpected-output", []byte("fixture"), 0o600); err != nil {
 				panic(err)
@@ -110,7 +125,7 @@ func TestSuggestCleansUpOpenCode(t *testing.T) {
 	idPattern := regexp.MustCompile(`^ses_[0-9a-f]{32}$`)
 	seenIDs := make(map[string]bool)
 	for _, provider := range []string{"opencode", "opencode2"} {
-		for _, scenario := range []string{"success", "launcher", "run failure", "cancel", "delete failure", "both fail", "unexpected write"} {
+		for _, scenario := range []string{"success", "launcher", "run failure", "cancel", "delete failure", "both fail", "unexpected write", "silence", "malformed", "stderr", "declined"} {
 			t.Run(provider+"/"+scenario, func(t *testing.T) {
 				binDir := filepath.Join(t.TempDir(), "agent bin")
 				if err := os.Mkdir(binDir, 0o700); err != nil {
@@ -152,6 +167,7 @@ func TestSuggestCleansUpOpenCode(t *testing.T) {
 				t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 				t.Setenv("ANOTHER_OPENCODE_TEST_CAPTURE", capture)
 				t.Setenv("ANOTHER_OPENCODE_TEST_RUN_FAIL", "0")
+				t.Setenv("ANOTHER_OPENCODE_TEST_REPLY", scenario)
 				t.Setenv("ANOTHER_OPENCODE_TEST_WRITE", "0")
 				t.Setenv("ANOTHER_OPENCODE_TEST_DELETE", "")
 				t.Setenv("ANOTHER_OPENCODE_TEST_CANCEL_URL", "")
@@ -181,19 +197,38 @@ func TestSuggestCleansUpOpenCode(t *testing.T) {
 				const content = "修复标题建议\n保留中文、\"引号\"、%PATH%、!name!、& | < > 和 C:\\project\\file"
 				req := titler.Request{CreatedAt: time.Now(), Messages: []model.Message{{Role: model.RoleUser, Content: content}}}
 				got, err := titler.Suggest(ctx, titler.Config{Provider: provider, Model: "test/title-model", Language: titler.LangEnglish}, req)
-				if scenario == "success" || scenario == "launcher" {
+				switch scenario {
+				case "success", "launcher":
 					if err != nil || got != "0903｜Fix｜Release title services" {
 						t.Fatalf("Suggest = %q, %v", got, err)
 					}
-				} else if err == nil || got != "" {
-					t.Fatalf("Suggest = %q, %v; want failure without suggestion", got, err)
+				case "declined":
+					if err != nil || got != "" {
+						t.Fatalf("explicit KEEP = %q, %v; want no suggestion and no error", got, err)
+					}
+				default:
+					if err == nil || got != "" {
+						t.Fatalf("Suggest = %q, %v; want failure without suggestion", got, err)
+					}
+				}
+				detailedFailure := map[string]titler.SuggestFailure{
+					"silence": titler.SuggestEmptyOutput, "malformed": titler.SuggestNoMatchingTitle, "stderr": titler.SuggestFailed,
+				}
+				if want, check := detailedFailure[scenario]; check {
+					var suggestErr *titler.SuggestError
+					if !errors.As(err, &suggestErr) || suggestErr.Reason != want {
+						t.Errorf("failure = %v; want %s", err, want)
+					}
 				}
 				for marker, want := range map[string]bool{
-					"model rejected":       scenario == "run failure" || scenario == "both fail",
-					"timed out":            scenario == "cancel",
-					"deletion rejected":    scenario == "delete failure" || scenario == "both fail",
-					"SessionNotFoundError": false,
-					"not empty":            scenario == "unexpected write",
+					"model rejected":        scenario == "run failure" || scenario == "both fail",
+					"exit status 1":         scenario == "run failure" || scenario == "both fail",
+					"provider disconnected": scenario == "stderr",
+					"> build":               false,
+					"timed out":             scenario == "cancel",
+					"deletion rejected":     scenario == "delete failure" || scenario == "both fail",
+					"SessionNotFoundError":  false,
+					"not empty":             scenario == "unexpected write",
 				} {
 					if found := err != nil && strings.Contains(err.Error(), marker); found != want {
 						t.Errorf("error %v contains %q = %t; want %t", err, marker, found, want)

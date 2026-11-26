@@ -975,6 +975,15 @@ func TestStaleAndFailedSuggestionsStayOutOfTheWay(t *testing.T) {
 	if fail.suggesting || !strings.Contains(fail.View(), strings.TrimSpace(txt.suggestionFailed)) {
 		t.Fatal("a failed suggestion is not reported in the rename box")
 	}
+	detailed, _ := got.Update(titleSuggestionMsg{sessionID: "session", err: &titler.SuggestError{
+		Reason: titler.SuggestFailed, Command: "opencode", Detail: "exit status 23: synthetic model rejection",
+	}})
+	view := ansi.Strip(detailed.(modelState).View())
+	for _, want := range []string{"exit status 23", "rejection"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("rename diagnostic dropped %q", want)
+		}
+	}
 
 	closed, _ := fail.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if s := closed.(modelState); s.suggestErr != "" || s.suggestFor != "" {

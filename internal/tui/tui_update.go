@@ -175,7 +175,7 @@ func (m modelState) onTitleSuggestion(msg titleSuggestionMsg) (tea.Model, tea.Cm
 	case msg.err != nil:
 		m.suggestErr = suggestErrorText(msg.err)
 	case msg.title == "":
-		m.suggestErr = txt.noSuggestion
+		m.suggestErr = suggestErrorText(&titler.SuggestError{Reason: titler.SuggestDeclined, Command: titler.Command(m.titleCfg.Provider)})
 	default:
 		m.suggestion = msg.title
 	}

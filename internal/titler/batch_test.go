@@ -270,7 +270,7 @@ func TestBatchSeparatesEmptySuggestionsFromUnchangedTitles(t *testing.T) {
 			return "", nil
 		})))
 	var err *SuggestError
-	if !errors.As(got["empty"].Err, &err) || err.Reason != SuggestNoMatchingTitle || err.Command != "opencode" {
+	if !errors.As(got["empty"].Err, &err) || err.Reason != SuggestDeclined || err.Command != "opencode" {
 		t.Fatalf("empty suggestion failure = %v", got["empty"].Err)
 	}
 	if c := Summarize([]BatchResult{got["same"], got["empty"]}); c != (BatchCounts{Unchanged: 1, Failed: 1}) {

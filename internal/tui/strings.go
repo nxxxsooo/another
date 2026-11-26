@@ -110,7 +110,6 @@ type uiText struct {
 	warningsFmt          string
 	titleEmpty           string
 	noSessionSelected    string
-	noSuggestion         string
 	resumeUnsupportedFmt string
 	noResumeCommandFmt   string
 	projectUnknown       string
@@ -388,6 +387,8 @@ type uiText struct {
 	suggestNotInstalled   string
 	suggestTimedOut       string
 	suggestNoMatch        string
+	suggestEmpty          string
+	suggestDeclined       string
 	suggestFailedFmt      string
 	modelPlaceholder      string
 }
@@ -465,7 +466,6 @@ var englishText = uiText{
 	warningsFmt:          "  ·  %d warning(s)",
 	titleEmpty:           "A title cannot be empty",
 	noSessionSelected:    "No session selected",
-	noSuggestion:         "No suggestion available",
 	resumeUnsupportedFmt: "%s cannot be opened directly",
 	noResumeCommandFmt:   "%s has no resume command",
 	projectUnknown:       "Could not determine the current project",
@@ -712,6 +712,8 @@ var englishText = uiText{
 	suggestNotInstalled:   "%s is not installed",
 	suggestTimedOut:       "%s took too long to answer",
 	suggestNoMatch:        "%s returned no title matching the policy",
+	suggestEmpty:          "%s returned empty output",
+	suggestDeclined:       "%s chose to keep the current title",
 	suggestFailedFmt:      "%s: %s",
 	modelPlaceholder:      "empty uses that CLI's default model",
 }
@@ -789,7 +791,6 @@ var chineseText = uiText{
 	warningsFmt:          "  ·  %d 条警告",
 	titleEmpty:           "标题不能为空",
 	noSessionSelected:    "没有选中的会话",
-	noSuggestion:         "没有可用建议",
 	resumeUnsupportedFmt: "%s 不支持直接进入",
 	noResumeCommandFmt:   "%s 没有可用的 resume 命令",
 	projectUnknown:       "无法确定当前项目",
@@ -1036,6 +1037,8 @@ var chineseText = uiText{
 	suggestNotInstalled:   "%s 未安装",
 	suggestTimedOut:       "%s 生成超时",
 	suggestNoMatch:        "%s 未返回符合标题规则的建议",
+	suggestEmpty:          "%s 未返回任何输出",
+	suggestDeclined:       "%s 选择保留原有标题",
 	suggestFailedFmt:      "%s：%s",
 	modelPlaceholder:      "留空用该 CLI 的默认模型",
 }
@@ -1110,6 +1113,10 @@ func suggestErrorText(err error) string {
 		return fmt.Sprintf(txt.suggestTimedOut, suggestErr.Command)
 	case titler.SuggestNoMatchingTitle:
 		return fmt.Sprintf(txt.suggestNoMatch, suggestErr.Command)
+	case titler.SuggestEmptyOutput:
+		return fmt.Sprintf(txt.suggestEmpty, suggestErr.Command)
+	case titler.SuggestDeclined:
+		return fmt.Sprintf(txt.suggestDeclined, suggestErr.Command)
 	default:
 		return fmt.Sprintf(txt.suggestFailedFmt, suggestErr.Command, suggestErr.Detail)
 	}

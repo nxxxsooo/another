@@ -398,6 +398,11 @@ func truncateRunes(s string, limit int) string {
 // result. A line that is exactly KEEP means the model declined, which is a
 // valid answer and returns "".
 func Clean(raw string, lang Language) string {
+	title, _ := cleanTitle(raw, lang)
+	return title
+}
+
+func cleanTitle(raw string, lang Language) (title string, keep bool) {
 	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := normalizeLine(lines[i])
@@ -405,7 +410,7 @@ func Clean(raw string, lang Language) string {
 			continue
 		}
 		if line == keepMarker {
-			return ""
+			return "", true
 		}
 		if !accepts(lang, line) {
 			continue
@@ -413,9 +418,9 @@ func Clean(raw string, lang Language) string {
 		if len([]rune(line)) > maxTitleRunes {
 			continue
 		}
-		return line
+		return line, false
 	}
-	return ""
+	return "", false
 }
 
 // normalizeLine removes the decoration models and CLIs wrap answers in.
