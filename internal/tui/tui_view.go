@@ -302,10 +302,10 @@ func cutRight(line string, from, to int) string {
 	return strings.Repeat(" ", max(0, cells-ansi.StringWidth(s))) + s
 }
 
-// suggestionLine renders at most one extra row under the rename input. It adds
-// a single line and clips it: the rename box has to keep fitting inside the
-// terminal it is drawn over, whatever a model returns.
+// suggestionLine keeps a normal suggestion on one row. Diagnostics wrap so a
+// command name and exit status do not crowd the useful stderr out of the box.
 func (m modelState) suggestionLine() string {
+	inner := modalInnerWidth(m.bandWidth())
 	var line string
 	switch {
 	case m.suggesting:
@@ -315,12 +315,17 @@ func (m modelState) suggestionLine() string {
 	case m.suggestion != "":
 		line = okStyle.Render(txt.suggestionPrefix) + m.suggestion + mutedStyle.Render(txt.suggestionAccept)
 	case m.suggestErr != "":
-		line = mutedStyle.Render(txt.suggestionFailed + m.suggestErr)
+		maxLines := 3
+		if m.height < 16 {
+			maxLines = 2
+		}
+		lines := strings.SplitN(ansi.Wrap(txt.suggestionFailed+m.suggestErr, inner, ""), "\n", maxLines+1)
+		if len(lines) > maxLines {
+			lines = lines[:maxLines]
+			lines[maxLines-1] = ansi.Truncate(lines[maxLines-1]+"…", inner, "…")
+		}
+		return "\n" + mutedStyle.Render(strings.Join(lines, "\n"))
 	default:
-		return ""
-	}
-	inner := modalInnerWidth(m.bandWidth())
-	if inner < 8 {
 		return ""
 	}
 	return "\n" + ansi.Truncate(line, inner, "…")

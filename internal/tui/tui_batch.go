@@ -664,7 +664,7 @@ func (m modelState) batchView() string {
 			if shown >= maxBatchPreviewRows {
 				break
 			}
-			b.WriteString(ansi.Truncate(batchRestLine(r), inner, "…") + "\n")
+			b.WriteString(batchRestLine(r, inner) + "\n")
 			shown++
 		}
 		if rest > shown {
@@ -705,17 +705,19 @@ func (m modelState) batchAgentLine() string {
 	return line
 }
 
-func batchRestLine(r titler.BatchResult) string {
+func batchRestLine(r titler.BatchResult, width int) string {
 	name := truncateDisplay(r.Current, 40)
 	if name == "" {
 		name = r.SessionID
 	}
 	switch {
 	case r.Err != nil:
-		return mutedStyle.Render(txt.rowFailed) + name + mutedStyle.Render(" · "+suggestErrorText(r.Err))
+		session := ansi.Truncate(mutedStyle.Render(txt.rowFailed)+name, width, "…")
+		reason := strings.Join(strings.Fields(suggestErrorText(r.Err)), " ")
+		return session + "\n" + ansi.Truncate(mutedStyle.Render("  "+reason), width, "…")
 	case r.Frozen != titler.FreezeNone:
-		return mutedStyle.Render(txt.rowFrozen) + name + mutedStyle.Render(" · "+freezeText(r.Frozen))
+		return ansi.Truncate(mutedStyle.Render(txt.rowFrozen)+name+mutedStyle.Render(" · "+freezeText(r.Frozen)), width, "…")
 	default:
-		return mutedStyle.Render(txt.rowUnchanged) + name
+		return ansi.Truncate(mutedStyle.Render(txt.rowUnchanged)+name, width, "…")
 	}
 }
