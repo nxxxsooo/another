@@ -144,13 +144,12 @@ release:
 
     ## Compatibility
 
-    - OpenCode 2.4 no longer drops the `another` MCP server at startup, so
-      `@` session references work again (verified on 2.4.0). The server now
-      always uses the standard `initialize` handshake and does not offer the
-      2026-07-28 protocol revision; Claude Code and Qwen Code are unaffected.
-    - Existing `@` reference registrations, title integrations, and OpenCode
-      `/ref` installations do not need to be reinstalled; upgrading the
-      binary is enough. Doubao remains opt-in and macOS-only.
+    - The TUI goodbye now uses the landing page’s pixel wordmark. The mint
+      copy slides in from the right and settles just behind the violet face.
+      Terminals narrower than 87 columns show the compact banner.
+      Set `ANOTHER_NO_MOTION=1` to show a still image on exit.
+    - Session data, configuration, and existing integrations are unchanged.
+      Doubao remains opt-in and macOS-only.
     - Building another from source requires Go 1.25 or newer.
 
     Coverage gaps are documented per platform: see
