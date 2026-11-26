@@ -493,7 +493,7 @@ never needs a font installed:
 ./scripts/render-readme-assets.py                                  # TUI preview SVG
 python3 ./scripts/render-motion-banner.py                          # identity banner; Pillow and ffmpeg
 python3 ./scripts/render-goodbye-gif.py                            # goodbye GIF; Pillow
-python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # wordmark; Pillow and JetBrains Mono ExtraBold
+python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # landing wordmark bitmap
 python3 ./scripts/render-mark-transparent.py                       # transparent mark, derived from the master; Pillow
 ```
 
@@ -524,7 +524,7 @@ The name is also a quiet nod to [*Another*](https://www.pa-works.jp/works/anothe
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/tui-goodbye-static.png">
-    <img src="docs/assets/tui-goodbye.gif" width="500" alt="the another wordmark printed on exit; two copies of the mark, one violet and one mint, close on each other from either side, tearing into offset horizontal bands on the way in as both colours give way to the intersection cyan they share, then meeting as a single cyan wordmark">
+    <img src="docs/assets/tui-goodbye.gif" width="500" alt="The pixel-art another wordmark printed on exit. A mint copy tears into horizontal bands as it slides in from the right, then settles just below and behind the violet face.">
   </picture>
 </p>
 

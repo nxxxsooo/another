@@ -2,28 +2,27 @@
 
 package tui
 
-// faceBits is `another` rasterized from JetBrains Mono ExtraBold at
-// 10 square sub-pixels, one string per sub-pixel row, where
-// '#' is ink and ' ' is bare.
-//
-// The rows are deliberately left unpacked. The goodbye overlays two
-// horizontally offset copies of this bitmap, and that has to happen
-// before pairs of sub-rows are folded into half-block cells, so the
-// packing lives in logo.go instead of here.
+// faceBits is the landing page wordmark on a 5-unit grid, with '#' for ink
+// and ' ' for bare. The rows stay unpacked so logo.go can overlay the copies
+// before folding pairs of sub-rows into terminal cells.
 var faceBits = []string{
-	"                          ##     ##                     ",
-	"                          ##     ##                     ",
-	"   ##    #  #      ##    ######  ## ##     ##    #  ##  ",
-	" ######  ######  ###### #######  ######  ######  ###### ",
-	" ##  ##  ##  ##  ##  ##   ##     ##  ##  ##  ##  ##  ## ",
-	"  #####  ##  ##  ##  ##   ##     ##  ##  ######  ##  ## ",
-	" ######  ##  ##  ##  ##   ##     ##  ##  ####    ##     ",
-	" ##  ##  ##  ##  ##  ##   ##     ##  ##  ##      ##     ",
-	" ######  ##  ##  ######   #####  ##  ##  ######  ##     ",
-	"  ## ##  ##  ##   ####     ####  ##  ##   ####   ##     ",
+	"  ######    ####    ##    ######    ##########  ####  ####  ##########  ########  ",
+	"  ######    ####    ##    ######    ##########  ####  ####  ##########  ########  ",
+	"##########  ######  ##  ##########  ##########  ####  ####  ##########  ##########",
+	"##########  ######  ##  ##########  ##########  ####  ####  ##########  ##########",
+	"####  ####  ######  ##  ####  ####     ####     ####  ####  ####        ####  ####",
+	"####  ####  ######  ##  ####  ####     ####     ##########  ########    ####  ####",
+	"####  ####  ##########  ####  ####     ####     ##########  ########    ##########",
+	"##########  ##########  ####  ####     ####     ##########  ########    ########  ",
+	"##########  ### ######  ####  ####     ####     ##########  ########    ########  ",
+	"##########  ### ######  ####  ####     ####     ####  ####  ####        ##########",
+	"####  ####  ###   ####  ##########     ####     ####  ####  ##########  ####  ####",
+	"####  ####  ###   ####  ##########     ####     ####  ####  ##########  ####  ####",
+	"####  ####  ###   ####    ######       ####     ####  ####  ##########  ####  ####",
+	"####  ####  ###   ####    ######       ####     ####  ####  ##########  ####  ####",
 }
 
 const (
-	markWidth   = 56
-	faceSubRows = 10
+	markWidth   = 82
+	faceSubRows = 14
 )

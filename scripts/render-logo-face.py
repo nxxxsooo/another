@@ -1,127 +1,68 @@
 #!/usr/bin/env python3
-"""Generate the TUI goodbye wordmark from a real typeface.
-
-A terminal cell is about 1:2, so letterforms drawn from whole blocks are twice
-as tall per pixel as they are wide and the mark towers over everything else on
-screen. Packing two sub-rows into one cell with the half-block characters
-▀ ▄ █ makes the sub-pixel grid square, which is the grid a typeface is actually
-designed on. The wordmark is therefore rasterized from JetBrains Mono rather
-than hand-drawn.
-
-This script emits the *unpacked* sub-pixel bitmap. The goodbye composites two
-horizontally offset copies of the mark, and that compositing has to happen at
-sub-pixel resolution: once two sub-rows are folded into one half-block cell the
-individual sub-pixels are no longer addressable. Packing therefore lives in
-logo.go and runs after the two ghosts are combined.
-
-Two details decide whether the mark reads cleanly, and both are about landing
-strokes on whole sub-pixels rather than about the typeface:
-
-  * The width is pinned to CELLS_PER_LETTER per glyph instead of being derived
-    from the ink's aspect ratio. JetBrains Mono is monospace, so an exact
-    integer advance puts every stem on the same sub-pixel phase and every stem
-    quantizes to the same width. A derived width lands stems wherever they
-    happen to fall and produces a mark with one-cell and two-cell stems side by
-    side, which reads as broken rather than light.
-
-  * The crop is the word's advance box, not its ink bounding box. Cropping to
-    ink starts at the left edge of `a` and ends at the right edge of `r`, which
-    throws the letters off the cell grid and makes the gaps between them
-    uneven. The advance box keeps the monospace rhythm the face was designed
-    with.
-
-The weight stays ExtraBold. Lighter weights were tried and are worse here: once
-the width is pinned, ExtraBold puts every stem at two cells, while Bold and
-SemiBold drop some stems to one cell and the word turns spindly.
-
-The output is a rendered raster of seven letters, the same way a logo image is
-output from a font; the typeface itself is neither embedded nor redistributed.
-
-Requires Pillow and JetBrains Mono ExtraBold. Regenerate with:
+"""Rasterize the landing wordmark as unpacked 5-unit pixels.
 
     python3 scripts/render-logo-face.py > internal/tui/logo_face.go
 """
 
-from __future__ import annotations
+import re
 
-import sys
-from pathlib import Path
-
-from PIL import Image, ImageDraw, ImageFont
-
-WORD = "another"
-SUB_ROWS = 10  # 10 square sub-pixels tall -> 5 terminal cell rows
-CELLS_PER_LETTER = 8
-# Slightly under half coverage, which keeps the counters of `a`, `e`, and `o`
-# open at this size without thinning the stems below two cells.
-THRESHOLD = 120
-
-INK, BARE = "#", " "
-
-FACE_CANDIDATES = [
-    Path.home() / "Library/Fonts/JetBrainsMono-ExtraBold.ttf",
-    Path("/opt/homebrew/Caskroom/font-jetbrains-mono/2.304/fonts/ttf/JetBrainsMono-ExtraBold.ttf"),
-    Path("/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-ExtraBold.ttf"),
-]
+# mjshao-portfolio/public/another/index.html, #wordmark-pixels (evenodd).
+PATHS = (
+    "M0 70V10H10V0H40V10H50V70H30V50H20V70ZM20 20V35H30V20Z",
+    "M60 70V0H80V10H90V30H100V0H110V70H90V50H80V40H75V70Z",
+    "M130 0H160V10H170V60H160V70H130V60H120V10H130ZM140 20V50H150V20Z",
+    "M180 0H230V20H215V70H195V20H180Z",
+    "M240 0H260V25H270V0H290V70H270V45H260V70H240Z",
+    "M300 0H350V20H320V25H340V45H320V50H350V70H300Z",
+    "M360 0H400V10H410V35H400V45H410V70H390V50H380V70H360ZM380 20V30H390V20Z",
+)
+STEP = 5
+WIDTH, HEIGHT = 410, 70  # Face bounds, before the landing SVG's offset copy.
 
 
-def find_face() -> Path:
-    for path in FACE_CANDIDATES:
-        if path.exists():
-            return path
-    sys.exit("JetBrains Mono ExtraBold not found; install font-jetbrains-mono")
+def vertical_edges(path):
+    """Read the absolute M/H/V/Z commands; a horizontal ray only hits V edges."""
+    for command, args in re.findall(r"([A-Z])([\d ]*)", path):
+        values = [int(value) for value in args.split()]
+        if command == "M":
+            start_x, start_y = x, y = values
+        elif command == "H":
+            x, = values
+        elif command == "V":
+            end_y, = values
+            yield x, min(y, end_y), max(y, end_y)
+            y = end_y
+        elif command == "Z":
+            if x == start_x and y != start_y:
+                yield x, min(y, start_y), max(y, start_y)
+        else:
+            raise ValueError(f"unsupported path command: {command}")
 
 
-def rasterize(face: Path) -> list[list[bool]]:
-    """Set the word, crop to its advance box, and scale to the cell grid."""
-    size = SUB_ROWS
-    while size < SUB_ROWS * 8:
-        font = ImageFont.truetype(str(face), size)
-        box = font.getbbox(WORD)
-        if box[3] - box[1] >= SUB_ROWS * 4:
-            break
-        size += 2
-    origin = size
-    canvas = Image.new("L", (size * len(WORD) * 2, size * 3), 0)
-    ImageDraw.Draw(canvas).text((origin, origin), WORD, font=font, fill=255)
+def main():
+    edges = [edge for path in PATHS for edge in vertical_edges(path)]
+    print("""// Code generated by scripts/render-logo-face.py. DO NOT EDIT.
 
-    # Horizontally the crop is the monospace advance box so the letters keep an
-    # even rhythm; vertically it is the ink, which spans ascender to baseline.
-    top, bottom = canvas.getbbox()[1], canvas.getbbox()[3]
-    advance = font.getlength("a") * len(WORD)
-    ink = canvas.crop((round(origin), top, round(origin + advance), bottom))
+package tui
 
-    width = CELLS_PER_LETTER * len(WORD)
-    small = ink.resize((width, SUB_ROWS), Image.Resampling.LANCZOS)
-    return [[small.getpixel((x, y)) >= THRESHOLD for x in range(width)]
-            for y in range(SUB_ROWS)]
+// faceBits is the landing page wordmark on a 5-unit grid, with '#' for ink
+// and ' ' for bare. The rows stay unpacked so logo.go can overlay the copies
+// before folding pairs of sub-rows into terminal cells.
+var faceBits = []string{""")
+    for row in range(HEIGHT // STEP):
+        y = (row + 0.5) * STEP
+        pixels = []
+        for col in range(WIDTH // STEP):
+            x = (col + 0.5) * STEP
+            crossings = sum(edge_x > x and top <= y < bottom for edge_x, top, bottom in edges)
+            pixels.append("#" if crossings % 2 else " ")
+        print(f'\t"{"".join(pixels)}",')
+    print(f"""}}
 
-
-def main() -> None:
-    grid = rasterize(find_face())
-    rows = ["".join(INK if on else BARE for on in row) for row in grid]
-    width = len(rows[0])
-    print("// Code generated by scripts/render-logo-face.py. DO NOT EDIT.")
-    print()
-    print("package tui")
-    print()
-    print("// faceBits is `another` rasterized from JetBrains Mono ExtraBold at")
-    print(f"// {SUB_ROWS} square sub-pixels, one string per sub-pixel row, where")
-    print(f"// {INK!r} is ink and {BARE!r} is bare.")
-    print("//")
-    print("// The rows are deliberately left unpacked. The goodbye overlays two")
-    print("// horizontally offset copies of this bitmap, and that has to happen")
-    print("// before pairs of sub-rows are folded into half-block cells, so the")
-    print("// packing lives in logo.go instead of here.")
-    print("var faceBits = []string{")
-    for row in rows:
-        print(f'\t"{row}",')
-    print("}")
-    print()
-    print("const (")
-    print(f"\tmarkWidth   = {width}")
-    print(f"\tfaceSubRows = {len(rows)}")
-    print(")")
+const (
+\tmarkWidth   = {WIDTH // STEP}
+\tfaceSubRows = {HEIGHT // STEP}
+)""")
 
 
 if __name__ == "__main__":

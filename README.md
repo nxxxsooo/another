@@ -426,7 +426,7 @@ golangci-lint run ./...   # brew install golangci-lint
 ./scripts/render-readme-assets.py                                  # TUI 预览 SVG
 python3 ./scripts/render-motion-banner.py                          # 品牌横幅，需要 Pillow 和 ffmpeg
 python3 ./scripts/render-goodbye-gif.py                            # 退出动效，需要 Pillow
-python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # 字标，需要 Pillow 和 JetBrains Mono ExtraBold
+python3 ./scripts/render-logo-face.py > internal/tui/logo_face.go  # 主页像素字标
 python3 ./scripts/render-mark-transparent.py                       # 标志透明版，从母版派生，需要 Pillow
 ```
 
@@ -459,7 +459,7 @@ python3 ./scripts/render-mark-transparent.py                       # 标志透�
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/tui-goodbye-static.png">
-    <img src="docs/assets/tui-goodbye.gif" width="500" alt="another 退出时打印的字标；一份紫色、一份薄荷绿的两份字标分列两侧，同时向中间靠拢，途中字标沿横向撕成错位的几条，两种颜色褪成两边共有的交叠青绿，最后重合成一个完整的青绿色字标">
+    <img src="docs/assets/tui-goodbye.gif" width="500" alt="another 退出时打印的像素字标。薄荷绿字标从右侧滑入，途中横向撕开成几条，最后停在紫色字标的右下方，像一道投影。">
   </picture>
 </p>
 
