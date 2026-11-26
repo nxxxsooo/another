@@ -312,7 +312,9 @@ func Suggest(ctx context.Context, cfg Config, req Request) (title string, sugges
 func suggestionDiagnostic(sources ...string) string {
 	for _, source := range sources {
 		for _, line := range strings.Split(source, "\n") {
-			if line = normalizeLine(line); line != "" && !(strings.HasPrefix(line, "> ") && strings.Contains(line, " · ")) {
+			line = normalizeLine(line)
+			isBanner := strings.HasPrefix(line, "> ") && strings.Contains(line, " · ")
+			if line != "" && !isBanner {
 				return truncateRunes(line, 80)
 			}
 		}
